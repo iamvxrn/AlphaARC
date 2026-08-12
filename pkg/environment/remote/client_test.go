@@ -25,8 +25,8 @@ func TestNewClientFromEnvUsesDefaultBaseURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
-	if c.baseURL != "https://arcprize.org" {
-		t.Fatalf("FAIL: expected default base URL https://arcprize.org, got %q", c.baseURL)
+	if c.baseURL != "https://three.arcprize.org" {
+		t.Fatalf("FAIL: expected default base URL https://three.arcprize.org, got %q", c.baseURL)
 	}
 	if c.apiKey != "test-key" {
 		t.Fatalf("FAIL: expected apiKey to be read from ARC_API_KEY")

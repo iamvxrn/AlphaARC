@@ -47,6 +47,20 @@ func NewClient(baseURL, apiKey string, httpClient *http.Client) *Client {
 // defaults to the real production service) from the environment, mirroring
 // the official Python SDK's .env convention. The key is held only inside
 // the returned *Client and never logged.
+//
+// The default base URL is https://three.arcprize.org, NOT https://arcprize.org
+// -- confirmed 2026-08-13 the hard way: a live run against arcprize.org got
+// real responses from GET /api/games and POST /api/scorecard/open (so it
+// looked right), but POST /api/cmd/RESET 400'd with "game <id> not found"
+// for every game_id that same /api/games call had just returned. The
+// ARC-AGI-3-Agents starter kit's own .env.example defaults to
+// HOST=arcprize.org, which is what this client's default originally copied
+// -- but the arc_agi toolkit's own README config table (arcprize/ARC-AGI)
+// documents arc_base_url's real default as "https://three.arcprize.org",
+// and that's the one that actually owns game session state. arcprize.org
+// apparently serves (at least) games listing and scorecard creation from
+// shared infrastructure, which is why those two calls silently succeeded
+// against the wrong host while RESET didn't.
 func NewClientFromEnv() (*Client, error) {
 	apiKey := os.Getenv("ARC_API_KEY")
 	if apiKey == "" {
@@ -54,7 +68,7 @@ func NewClientFromEnv() (*Client, error) {
 	}
 	baseURL := os.Getenv("ARC_BASE_URL")
 	if baseURL == "" {
-		baseURL = "https://arcprize.org"
+		baseURL = "https://three.arcprize.org"
 	}
 	return NewClient(baseURL, apiKey, nil), nil
 }

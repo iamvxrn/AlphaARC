@@ -10,11 +10,10 @@
 // WIN), and GameAction IDs 0 (RESET) through 7 (undo), with ID 6 being the
 // one "complex" action requiring explicit X/Y coordinates.
 //
-// No real network client exists yet -- that needs an ARC_API_KEY the user
-// has to obtain from arcprize.org. This package only defines the interface
-// and the types; pkg/environment/practice provides one local, offline
-// implementation for developing and testing against before wiring up the
-// real service.
+// This package only defines the interface and the types; pkg/environment/practice
+// provides one local, offline implementation for development, and
+// pkg/environment/remote is the real network client (needs an ARC_API_KEY,
+// registered at https://three.arcprize.org).
 package environment
 
 // GameState mirrors arcengine.GameState.
