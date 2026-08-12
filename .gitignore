@@ -17,3 +17,8 @@ a
 # Internal design docs -- kept locally, not for public GitHub
 ARCHITECTURE.md
 CONCEPT.md
+
+# Secrets -- never commit, never paste into chat
+.env
+.env.*
+*.key
