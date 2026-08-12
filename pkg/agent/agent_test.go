@@ -19,7 +19,7 @@ func TestMicroMLPAgentRoles(t *testing.T) {
 		Goal:        "Achieve homeostatic balance",
 	}
 
-	predictor := NewPredictorAgent("pred-1", sys, dim)
+	predictor := NewPredictorAgent("pred-1", sys, dim, 42)
 	actor := NewActorAgent("act-1", dim)
 	associator := NewAssociatorAgent("assoc-1", dim)
 

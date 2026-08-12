@@ -15,9 +15,9 @@ type PredictorAgent struct {
 	Sys      *core.System
 }
 
-func NewPredictorAgent(id string, sys *core.System, dim int) *PredictorAgent {
+func NewPredictorAgent(id string, sys *core.System, dim int, seed int64) *PredictorAgent {
 	// Tiny MLP: dim inputs -> 2*dim hidden -> dim predicted outputs
-	tinyMLP := mlp.NewMLP(dim, dim*2, dim, 0.05, 42)
+	tinyMLP := mlp.NewMLP(dim, dim*2, dim, 0.05, seed)
 	return &PredictorAgent{
 		BaseAgent: NewBaseAgent(id, RolePredictor),
 		MLP:       tinyMLP,
