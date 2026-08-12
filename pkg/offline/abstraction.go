@@ -1,6 +1,7 @@
 package offline
 
 import (
+	"fmt"
 	"protaxon/pkg/core"
 	"protaxon/pkg/graph"
 	"sort"
@@ -11,6 +12,13 @@ type CompressionStats struct {
 	ClustersCompressed  int
 	NodesAbsorbed       int
 	AbstractionsCreated int
+	// MaxCohesionObserved is the highest mean intra-cluster edge weight seen
+	// across all evaluated multi-member clusters this call, regardless of
+	// whether it cleared cohesionThreshold. 0 if no multi-member cluster with
+	// at least one intra-cluster edge was evaluated. Diagnostic only -- lets
+	// callers see how close the graph is to compressing without needing to
+	// guess from AbstractionsCreated alone.
+	MaxCohesionObserved float64
 }
 
 // CompressGraphAbstractions implements Stage 3 abstraction compression.
@@ -68,7 +76,16 @@ func CompressGraphAbstractions(sys *core.System, g *graph.Graph, cohesionThresho
 		}
 
 		cohesion, edgeCount := intraClusterCohesion(g, members)
-		if edgeCount == 0 || cohesion < cohesionThreshold {
+		if edgeCount == 0 {
+			continue
+		}
+		if cohesion > stats.MaxCohesionObserved {
+			stats.MaxCohesionObserved = cohesion
+		}
+
+		if cohesion < cohesionThreshold {
+			fmt.Printf("[COMPRESSION] cluster %d: %d members, cohesion=%.4f < threshold=%.4f -> not compressed\n",
+				cID, len(members), cohesion, cohesionThreshold)
 			continue
 		}
 
@@ -76,6 +93,9 @@ func CompressGraphAbstractions(sys *core.System, g *graph.Graph, cohesionThresho
 		nextID++
 
 		absorbCluster(g, members, abstractID, cID)
+
+		fmt.Printf("[COMPRESSION] cluster %d: %d members, cohesion=%.4f >= threshold=%.4f -> compressed to node %d\n",
+			cID, len(members), cohesion, cohesionThreshold, abstractID)
 
 		stats.ClustersCompressed++
 		stats.NodesAbsorbed += len(members)
