@@ -21,4 +21,5 @@ CONCEPT.md
 # Secrets -- never commit, never paste into chat
 .env
 .env.*
+!.env.example
 *.key
