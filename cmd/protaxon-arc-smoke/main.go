@@ -35,6 +35,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("client: %v", err)
 	}
+	fmt.Printf("base URL: %s\n", client.BaseURL())
 
 	games, err := client.ListGames(ctx)
 	if err != nil {

@@ -29,6 +29,14 @@ type Client struct {
 	http    *http.Client
 }
 
+// BaseURL returns the host this client sends requests to -- useful for
+// callers that want to log/print which service they actually hit, since a
+// wrong-but-reachable host can fail in confusing, endpoint-specific ways
+// (see NewClientFromEnv's doc comment for exactly this happening once).
+func (c *Client) BaseURL() string {
+	return c.baseURL
+}
+
 // NewClient builds a client against an explicit base URL and key. Mainly
 // for tests, which point baseURL at an httptest.Server instead of the real
 // service.
@@ -265,7 +273,8 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 		reqBody = bytes.NewReader(b)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reqBody)
+	fullURL := c.baseURL + path
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, reqBody)
 	if err != nil {
 		return fmt.Errorf("remote: build request: %w", err)
 	}
@@ -277,22 +286,22 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("remote: %s %s: %w", method, path, err)
+		return fmt.Errorf("remote: %s %s: %w", method, fullURL, err)
 	}
 	defer resp.Body.Close()
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("remote: read response body from %s %s: %w", method, path, err)
+		return fmt.Errorf("remote: read response body from %s %s: %w", method, fullURL, err)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("remote: %s %s: HTTP %d: %s", method, path, resp.StatusCode, string(data))
+		return fmt.Errorf("remote: %s %s: HTTP %d: %s", method, fullURL, resp.StatusCode, string(data))
 	}
 
 	if out != nil {
 		if err := json.Unmarshal(data, out); err != nil {
-			return fmt.Errorf("remote: decode response from %s %s: %w", method, path, err)
+			return fmt.Errorf("remote: decode response from %s %s: %w", method, fullURL, err)
 		}
 	}
 	return nil
