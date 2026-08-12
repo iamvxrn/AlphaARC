@@ -291,6 +291,42 @@ func TestSessionStepUnknownActionID(t *testing.T) {
 	}
 }
 
+// TestClientPersistsCookiesAcrossRequests locks in a real bug found
+// 2026-08-13 against the production service: the server uses sticky-session
+// cookies (AWSALB*, per docs.arcprize.org/rest_overview) to route requests
+// to the backend instance holding a session's game state. NewClient's
+// default *http.Client originally had no cookie jar, so Go silently dropped
+// every Set-Cookie header -- RESET after OpenScorecard could land on a
+// different backend instance and get "game not found" for a game that had
+// just been listed. This reproduces the mechanism (not the real server)
+// against an httptest.Server that sets a cookie on the first response and
+// checks it's present on the second request.
+func TestClientPersistsCookiesAcrossRequests(t *testing.T) {
+	var cookieOnSecondRequest string
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			http.SetCookie(w, &http.Cookie{Name: "AWSALB", Value: "sticky-session-token"})
+		} else if c, err := r.Cookie("AWSALB"); err == nil {
+			cookieOnSecondRequest = c.Value
+		}
+		json.NewEncoder(w).Encode([]GameInfo{})
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "secret-key", nil)
+	if _, err := c.ListGames(context.Background()); err != nil {
+		t.Fatalf("FAIL: unexpected error on first call: %v", err)
+	}
+	if _, err := c.ListGames(context.Background()); err != nil {
+		t.Fatalf("FAIL: unexpected error on second call: %v", err)
+	}
+	if cookieOnSecondRequest != "sticky-session-token" {
+		t.Fatalf("FAIL: expected the AWSALB cookie set on the first response to be sent on the second request, got %q -- client is not persisting cookies", cookieOnSecondRequest)
+	}
+}
+
 func TestNonSuccessStatusReturnsError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)

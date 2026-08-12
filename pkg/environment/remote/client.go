@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"os"
 	"strings"
 	"time"
@@ -40,9 +41,22 @@ func (c *Client) BaseURL() string {
 // NewClient builds a client against an explicit base URL and key. Mainly
 // for tests, which point baseURL at an httptest.Server instead of the real
 // service.
+//
+// When httpClient is nil, the constructed client carries a cookie jar --
+// required for the real service, confirmed 2026-08-13 via
+// docs.arcprize.org/rest_overview: "Games are stateful and require session
+// affinity... The server sets cookies (especially AWSALB* cookies)... These
+// cookies route requests to the correct backend instance maintaining your
+// game state." Without a jar, Go's http.Client silently drops every
+// Set-Cookie it receives, so RESET/ACTION calls after the first request in
+// a session can land on a different backend instance than the one holding
+// that game's state -- this is exactly what caused a real, reproducible
+// "game <id> not found" on POST /api/cmd/RESET for a game_id GET /api/games
+// had just returned.
 func NewClient(baseURL, apiKey string, httpClient *http.Client) *Client {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		jar, _ := cookiejar.New(nil) // New never actually errors, with or without an *Options
+		httpClient = &http.Client{Timeout: 30 * time.Second, Jar: jar}
 	}
 	return &Client{
 		baseURL: strings.TrimRight(baseURL, "/"),
