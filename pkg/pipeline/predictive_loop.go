@@ -3,6 +3,7 @@ package pipeline
 import (
 	"protaxon/pkg/agent"
 	"protaxon/pkg/core"
+	"protaxon/pkg/goals"
 	"protaxon/pkg/graph"
 	"protaxon/pkg/homeostasis"
 	"protaxon/pkg/memory"
@@ -31,6 +32,8 @@ type CycleResult struct {
 	MaxCohesionObserved float64
 	SpecialistCluster   int
 	PredictorPoolSize   int
+	GoalStackDepth      int
+	CurrentGoal         string
 }
 
 type Engine struct {
@@ -53,6 +56,14 @@ type Engine struct {
 
 	Actor      *agent.ActorAgent
 	Associator *agent.AssociatorAgent
+
+	// Goals is the Stage 4 piece 2 hierarchical goal stack (CONCEPT.md
+	// Section 8). RunPredictiveCycle auto-bootstraps a root External goal
+	// from the goal string the first time the stack is empty, then tags
+	// whichever goal is on top with every graph ClusterID active that
+	// cycle -- callers who want real hierarchy (sub-goals for a deficit,
+	// meta-goals, etc.) push/pop it explicitly via e.Goals.
+	Goals *goals.Stack
 
 	StepCounter int
 }
@@ -95,6 +106,8 @@ func NewEngine() *Engine {
 
 		Actor:      agent.NewActorAgent("act-main", dim),
 		Associator: agent.NewAssociatorAgent("assoc-main", dim),
+
+		Goals: goals.NewStack(),
 	}
 }
 
@@ -140,6 +153,16 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	e.Sys.Mode = core.Online
 	e.StepCounter++
 
+	// 0. Hierarchical Goal Stack (Stage 4 piece 2): auto-bootstrap a root
+	// External goal from the flat `goal` string the first time the stack is
+	// empty, so every caller gets a real (if shallow) stack for free.
+	// Callers that want genuine hierarchy push/pop sub-goals themselves via
+	// e.Goals -- this cycle's activity then gets recorded against whatever
+	// goal is actually on top, not always the root.
+	if e.Goals.Top() == nil {
+		e.Goals.Push(goal, goals.TypeExternal, 1.0, e.StepCounter)
+	}
+
 	// 1. Observation -> Node Lookup-or-Create -> Spreading Activation -> Active Subgraph Extraction
 	// EnsureConceptNodes lets the graph grow from real experience: novel
 	// vocabulary in the observation becomes new concept nodes instead of
@@ -155,6 +178,17 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	// (Winner-Takes-All lateral inhibition) -- agents attend to what actually
 	// won competition, not every merely-above-threshold candidate.
 	activeNodeIDs := e.Graph.RouteCompetingClusters(e.Sys, rawActiveNodeIDs, 0.3)
+
+	// 1b-ii. Tag the current goal (whatever's on top of the stack) with
+	// every distinct ClusterID actually active this cycle -- its real,
+	// accumulating "multi-layered subgraph" footprint.
+	taggedClusters := make(map[int]bool)
+	for _, id := range activeNodeIDs {
+		if node, exists := e.Graph.Nodes[id]; exists && !taggedClusters[node.ClusterID] {
+			taggedClusters[node.ClusterID] = true
+			e.Goals.RecordScope(node.ClusterID)
+		}
+	}
 
 	// 1c. Structural plasticity: concepts that won attention together this
 	// cycle get wired together if they weren't already, giving Hebbian
@@ -306,5 +340,17 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		MaxCohesionObserved: compression.MaxCohesionObserved,
 		SpecialistCluster:   specialistCluster,
 		PredictorPoolSize:   len(e.Predictors),
+		GoalStackDepth:      e.Goals.Depth(),
+		CurrentGoal:         currentGoalDescription(e.Goals),
 	}, nil
+}
+
+// currentGoalDescription returns the description of whichever goal is on
+// top of the stack, or "" if the stack is somehow empty (shouldn't happen
+// after RunPredictiveCycle's Step 0 bootstrap, but stay panic-safe).
+func currentGoalDescription(s *goals.Stack) string {
+	if top := s.Top(); top != nil {
+		return top.Description
+	}
+	return ""
 }

@@ -1,6 +1,7 @@
 package pipeline
 
 import (
+	"protaxon/pkg/goals"
 	"protaxon/pkg/graph"
 	"context"
 	"math"
@@ -329,6 +330,90 @@ func TestMoERoutingAcrossClusters(t *testing.T) {
 	}
 
 	t.Logf("MoE Routing PASS: cluster 1 -> pool=2, cluster 2 -> pool=3, fallback to cluster 0 -> pool stays 3")
+}
+
+// TestHierarchicalGoalStackWiring verifies the Stage 4 piece 2 wiring end to
+// end inside RunPredictiveCycle: the first cycle must auto-bootstrap a root
+// External goal from the flat `goal` string (backward compat for every
+// caller that never touches e.Goals directly); an explicitly pushed
+// sub-goal must become the new top and receive its own accumulating scope
+// (the ClusterIDs actually active while it was being pursued) separately
+// from the root; popping it must hand control back to the root goal.
+func TestHierarchicalGoalStackWiring(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine()
+
+	// Cycle 1: stack starts empty -> auto-bootstraps a root External goal.
+	res1, err := engine.RunPredictiveCycle(ctx, "Sensory Stimulus: system check", "Fix system", true)
+	if err != nil {
+		t.Fatalf("cycle 1 failed: %v", err)
+	}
+	if res1.GoalStackDepth != 1 {
+		t.Fatalf("FAIL: expected auto-bootstrapped depth 1 after cycle 1, got %d", res1.GoalStackDepth)
+	}
+	if res1.CurrentGoal != "Fix system" {
+		t.Fatalf("FAIL: expected root goal 'Fix system', got %q", res1.CurrentGoal)
+	}
+	root := engine.Goals.Top()
+	if len(root.ScopeClusters) == 0 {
+		t.Fatalf("FAIL: expected the root goal to have accumulated at least one active ClusterID from cycle 1")
+	}
+
+	// Explicitly push a sub-goal -- real hierarchy, not auto-bootstrapped.
+	sub := engine.Goals.Push("Isolate faulty node", goals.TypeInternal, 0.8, engine.StepCounter)
+	if engine.Goals.Depth() != 2 {
+		t.Fatalf("FAIL: expected depth 2 right after pushing a sub-goal, got %d", engine.Goals.Depth())
+	}
+
+	// Cycle 2: goal string repeated on purpose -- with a non-empty stack,
+	// Step 0's auto-bootstrap must NOT fire again (no accidental second
+	// root goal), and this cycle's activity must land on the SUB-goal.
+	res2, err := engine.RunPredictiveCycle(ctx, "Sensory Stimulus: anomaly detected", "Fix system", true)
+	if err != nil {
+		t.Fatalf("cycle 2 failed: %v", err)
+	}
+	if res2.GoalStackDepth != 2 {
+		t.Fatalf("FAIL: expected depth to stay at 2 (no duplicate auto-bootstrap), got %d", res2.GoalStackDepth)
+	}
+	if res2.CurrentGoal != "Isolate faulty node" {
+		t.Fatalf("FAIL: expected current goal to be the sub-goal 'Isolate faulty node', got %q", res2.CurrentGoal)
+	}
+	if len(sub.ScopeClusters) == 0 {
+		t.Fatalf("FAIL: expected the sub-goal to have accumulated at least one active ClusterID from cycle 2")
+	}
+
+	ancestry := engine.Goals.Ancestry()
+	if len(ancestry) != 2 || ancestry[0].Description != "Fix system" || ancestry[1].Description != "Isolate faulty node" {
+		t.Fatalf("FAIL: expected ancestry [Fix system, Isolate faulty node], got %v", describeGoals(ancestry))
+	}
+
+	// Pop the sub-goal -- control returns to the root.
+	popped := engine.Goals.Pop()
+	if popped.Description != "Isolate faulty node" || !popped.Satisfied {
+		t.Fatalf("FAIL: expected to pop the satisfied sub-goal, got %q satisfied=%v", popped.Description, popped.Satisfied)
+	}
+
+	res3, err := engine.RunPredictiveCycle(ctx, "Sensory Stimulus: recovery check", "Fix system", true)
+	if err != nil {
+		t.Fatalf("cycle 3 failed: %v", err)
+	}
+	if res3.GoalStackDepth != 1 {
+		t.Fatalf("FAIL: expected depth back to 1 after popping the sub-goal, got %d", res3.GoalStackDepth)
+	}
+	if res3.CurrentGoal != "Fix system" {
+		t.Fatalf("FAIL: expected control back on the root goal 'Fix system', got %q", res3.CurrentGoal)
+	}
+
+	t.Logf("Hierarchical Goal Stack PASS: root(depth1) -> push sub-goal(depth2, scope=%v) -> pop -> back to root(depth1)",
+		sub.ScopeClusters)
+}
+
+func describeGoals(gs []*goals.Goal) []string {
+	out := make([]string, len(gs))
+	for i, g := range gs {
+		out[i] = g.Description
+	}
+	return out
 }
 
 // TestOrganicGraphGrowthAndCompression closes the Stage 3 -> Stage 4 gate
