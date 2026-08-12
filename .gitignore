@@ -1,0 +1,19 @@
+# Executables & Binaries
+protaxon
+a
+*.exe
+*.exe;
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# IDEs & OS
+.DS_Store
+.idea/
+.vscode/
+
+# Internal design docs -- kept locally, not for public GitHub
+ARCHITECTURE.md
+CONCEPT.md
