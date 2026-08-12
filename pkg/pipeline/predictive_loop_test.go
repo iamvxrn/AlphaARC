@@ -4,6 +4,7 @@ import (
 	"protaxon/pkg/goals"
 	"protaxon/pkg/graph"
 	"context"
+	"fmt"
 	"math"
 	"testing"
 )
@@ -414,6 +415,136 @@ func describeGoals(gs []*goals.Goal) []string {
 		out[i] = g.Description
 	}
 	return out
+}
+
+// TestConflictResolutionAcrossClusters verifies the Stage 4 piece 3 wiring
+// (CONCEPT.md Section 16): when two clusters are simultaneously active in
+// one cycle, both specialists get to predict, the higher-trust one wins,
+// and -- critically -- the losing candidate is NOT discarded, it's kept in
+// Engine.RecentConflicts alongside the winner.
+func TestConflictResolutionAcrossClusters(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine()
+
+	engine.Graph.AddNode(graph.NewNode(10, 0.1, 1))
+	engine.Graph.AddLabel("quantum", 10)
+	engine.Graph.AddNode(graph.NewNode(20, 0.1, 2))
+	engine.Graph.AddLabel("photon", 20)
+
+	// Give cluster 2's specialist a trust head start so the winner is
+	// determined by a value this test controls directly, not by having to
+	// hand-simulate MLP confidence output.
+	engine.specialistFor(2).SetTrustScore(1.5)
+
+	res, err := engine.RunPredictiveCycle(ctx, "quantum photon", "n/a", true)
+	if err != nil {
+		t.Fatalf("cycle failed: %v", err)
+	}
+
+	if !res.ConflictDetected {
+		t.Fatalf("FAIL: expected a conflict to be detected with 2 simultaneously active clusters")
+	}
+	if res.ConflictCandidates != 2 {
+		t.Fatalf("FAIL: expected exactly 2 conflict candidates, got %d", res.ConflictCandidates)
+	}
+	if res.ConflictWinner != "pred-cluster-2" {
+		t.Fatalf("FAIL: expected 'pred-cluster-2' (trust 1.5) to win over 'pred-cluster-1' (trust 1.0), got %q", res.ConflictWinner)
+	}
+
+	if len(engine.RecentConflicts) != 1 {
+		t.Fatalf("FAIL: expected exactly 1 recorded conflict, got %d", len(engine.RecentConflicts))
+	}
+	sources := make(map[string]bool)
+	for _, c := range engine.RecentConflicts[0].Candidates {
+		sources[c.Source] = true
+	}
+	if !sources["pred-cluster-1"] || !sources["pred-cluster-2"] {
+		t.Fatalf("FAIL: expected the record to preserve BOTH candidates (winner and loser), got %v", sources)
+	}
+
+	t.Logf("Conflict Resolution PASS: 2 candidates, winner=%s, loser preserved in RecentConflicts (CONCEPT.md Section 16: never erase a losing position)", res.ConflictWinner)
+}
+
+// TestNoConflictWhenOnlyOneClusterActive verifies conflict resolution stays
+// silent (no false positives) on the overwhelmingly common case: a single
+// cluster active, exactly what every other pre-existing test already relies
+// on implicitly.
+func TestNoConflictWhenOnlyOneClusterActive(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine()
+
+	res, err := engine.RunPredictiveCycle(ctx, "Sensory Stimulus: system check", "n/a", true)
+	if err != nil {
+		t.Fatalf("cycle failed: %v", err)
+	}
+	if res.ConflictDetected {
+		t.Fatalf("FAIL: expected no conflict when only cluster 0 is active, got ConflictDetected=true (winner=%q)", res.ConflictWinner)
+	}
+	if len(engine.RecentConflicts) != 0 {
+		t.Fatalf("FAIL: expected zero recorded conflicts, got %d", len(engine.RecentConflicts))
+	}
+}
+
+// TestAshbyShockRecoveryAtScale verifies Stage 4 piece 3's other half: the
+// Ashby homeostasis shock-recovery mechanism, already verified in Stage 1
+// (pkg/homeostasis/hormones_test.go) on a single-agent engine, must still
+// work identically once the specialist pool has grown to non-trivial size.
+// Homeostasis is a single shared Engine field, independent of Predictors --
+// so this is a real empirical check that scaling the agent population
+// doesn't silently break it, not just an assumption.
+func TestAshbyShockRecoveryAtScale(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine()
+
+	// Grow the specialist pool first: 8 distinct clusters, one concept each.
+	for i := 0; i < 8; i++ {
+		clusterID := i + 1
+		nodeID := 100 + i
+		label := fmt.Sprintf("concept%d", i)
+		engine.Graph.AddNode(graph.NewNode(nodeID, 0.1, clusterID))
+		engine.Graph.AddLabel(label, nodeID)
+		if _, err := engine.RunPredictiveCycle(ctx, label, "grow pool", true); err != nil {
+			t.Fatalf("pool-growth cycle %d failed: %v", i, err)
+		}
+	}
+	if len(engine.Predictors) < 9 { // cluster 0 (default) + 8 new
+		t.Fatalf("FAIL: expected specialist pool grown to at least 9 before the shock test, got %d", len(engine.Predictors))
+	}
+	poolSizeAtShockTest := len(engine.Predictors)
+
+	// Baseline: settle with a few successes (mirrors Stage 1's own
+	// hormones_test.go setup, just replayed inside the real engine).
+	for i := 0; i < 3; i++ {
+		if _, err := engine.RunPredictiveCycle(ctx, "it is of the", "steady", true); err != nil {
+			t.Fatalf("baseline cycle failed: %v", err)
+		}
+	}
+	baselineCortisol := engine.Homeostasis.Cortisol
+
+	// Shock: a burst of failures.
+	for i := 0; i < 3; i++ {
+		if _, err := engine.RunPredictiveCycle(ctx, "it is of the", "shock", false); err != nil {
+			t.Fatalf("shock cycle failed: %v", err)
+		}
+	}
+	shockedCortisol := engine.Homeostasis.Cortisol
+	if shockedCortisol <= baselineCortisol {
+		t.Fatalf("FAIL: expected Cortisol to rise after a burst of failures (baseline=%.4f, after shock=%.4f)", baselineCortisol, shockedCortisol)
+	}
+
+	// Recovery: sustained success.
+	for i := 0; i < 15; i++ {
+		if _, err := engine.RunPredictiveCycle(ctx, "it is of the", "recover", true); err != nil {
+			t.Fatalf("recovery cycle failed: %v", err)
+		}
+	}
+	recoveredCortisol := engine.Homeostasis.Cortisol
+	if recoveredCortisol >= shockedCortisol {
+		t.Fatalf("FAIL: expected Cortisol to recover (drop) after sustained success (post-shock=%.4f, after recovery=%.4f)", shockedCortisol, recoveredCortisol)
+	}
+
+	t.Logf("Ashby Shock Recovery at Scale PASS: pool size=%d, Cortisol baseline=%.4f -> shocked=%.4f -> recovered=%.4f",
+		poolSizeAtShockTest, baselineCortisol, shockedCortisol, recoveredCortisol)
 }
 
 // TestOrganicGraphGrowthAndCompression closes the Stage 3 -> Stage 4 gate

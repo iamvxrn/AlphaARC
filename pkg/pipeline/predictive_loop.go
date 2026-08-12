@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"protaxon/pkg/agent"
+	"protaxon/pkg/conflict"
 	"protaxon/pkg/core"
 	"protaxon/pkg/goals"
 	"protaxon/pkg/graph"
@@ -11,6 +12,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 )
 
 type CycleResult struct {
@@ -34,6 +36,9 @@ type CycleResult struct {
 	PredictorPoolSize   int
 	GoalStackDepth      int
 	CurrentGoal         string
+	ConflictDetected    bool
+	ConflictCandidates  int
+	ConflictWinner      string
 }
 
 type Engine struct {
@@ -64,6 +69,13 @@ type Engine struct {
 	// cycle -- callers who want real hierarchy (sub-goals for a deficit,
 	// meta-goals, etc.) push/pop it explicitly via e.Goals.
 	Goals *goals.Stack
+
+	// RecentConflicts is the Stage 4 piece 3 conflict memory (CONCEPT.md
+	// Section 16): whenever more than one graph cluster is simultaneously
+	// active, every competing specialist's prediction is recorded here --
+	// winner AND losers -- instead of silently discarding all but the
+	// primary cluster's. Bounded to the most recent maxRecentConflicts.
+	RecentConflicts []*conflict.Record
 
 	StepCounter int
 }
@@ -149,6 +161,30 @@ func primaryCluster(g *graph.Graph, activeNodeIDs []int) int {
 	return best
 }
 
+// distinctClusters returns the sorted, deduplicated list of ClusterIDs
+// represented among activeNodeIDs. Since RouteCompetingClusters (Stage 2)
+// already guarantees at most one winner per cluster, this is normally just
+// "which clusters won at all" -- but it's written generically rather than
+// assuming that invariant holds forever.
+func distinctClusters(g *graph.Graph, activeNodeIDs []int) []int {
+	seen := make(map[int]bool)
+	clusters := make([]int, 0, len(activeNodeIDs))
+	for _, id := range activeNodeIDs {
+		node, exists := g.Nodes[id]
+		if !exists || seen[node.ClusterID] {
+			continue
+		}
+		seen[node.ClusterID] = true
+		clusters = append(clusters, node.ClusterID)
+	}
+	sort.Ints(clusters)
+	return clusters
+}
+
+// maxRecentConflicts bounds Engine.RecentConflicts so it doesn't grow
+// unbounded over a long-running engine.
+const maxRecentConflicts = 20
+
 func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal string, actualSuccess bool) (*CycleResult, error) {
 	e.Sys.Mode = core.Online
 	e.StepCounter++
@@ -181,13 +217,11 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 
 	// 1b-ii. Tag the current goal (whatever's on top of the stack) with
 	// every distinct ClusterID actually active this cycle -- its real,
-	// accumulating "multi-layered subgraph" footprint.
-	taggedClusters := make(map[int]bool)
-	for _, id := range activeNodeIDs {
-		if node, exists := e.Graph.Nodes[id]; exists && !taggedClusters[node.ClusterID] {
-			taggedClusters[node.ClusterID] = true
-			e.Goals.RecordScope(node.ClusterID)
-		}
+	// accumulating "multi-layered subgraph" footprint. The same distinct-
+	// cluster list also drives Step 4's conflict resolution below.
+	activeClusters := distinctClusters(e.Graph, activeNodeIDs)
+	for _, cID := range activeClusters {
+		e.Goals.RecordScope(cID)
 	}
 
 	// 1c. Structural plasticity: concepts that won attention together this
@@ -239,6 +273,39 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	predResp, err := predictor.Process(ctx, payload)
 	if err != nil {
 		return nil, fmt.Errorf("predictor error: %w", err)
+	}
+
+	// 4b. Conflict resolution (Stage 4 piece 3, CONCEPT.md Section 16): when
+	// more than one cluster is simultaneously active, every competing
+	// specialist gets to predict, and the resulting conflict -- winner AND
+	// losers -- is recorded rather than silently discarding everything but
+	// the primary cluster's opinion. Process() is a pure forward pass (no
+	// training, no trust-score mutation), so querying extra specialists here
+	// has zero effect on anything Stage 1-3 already verified.
+	var conflictRecord *conflict.Record
+	if len(activeClusters) > 1 {
+		candidates := make([]conflict.Candidate, 0, len(activeClusters))
+		for _, cID := range activeClusters {
+			specialist := e.specialistFor(cID)
+			resp, cErr := specialist.Process(ctx, payload)
+			if cErr != nil {
+				continue
+			}
+			candidates = append(candidates, conflict.Candidate{
+				Source:     specialist.ID(),
+				ClusterID:  cID,
+				Value:      resp.ValueVector,
+				TrustScore: specialist.TrustScore(),
+				Confidence: resp.Confidence,
+			})
+		}
+		conflictRecord = conflict.Resolve(e.StepCounter, candidates)
+		if conflictRecord != nil {
+			e.RecentConflicts = append(e.RecentConflicts, conflictRecord)
+			if len(e.RecentConflicts) > maxRecentConflicts {
+				e.RecentConflicts = e.RecentConflicts[len(e.RecentConflicts)-maxRecentConflicts:]
+			}
+		}
 	}
 
 	// 5. Compute Target Outcome Vector & Prediction Error
@@ -342,7 +409,24 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		PredictorPoolSize:   len(e.Predictors),
 		GoalStackDepth:      e.Goals.Depth(),
 		CurrentGoal:         currentGoalDescription(e.Goals),
+		ConflictDetected:    conflictRecord != nil,
+		ConflictCandidates:  conflictCandidateCount(conflictRecord),
+		ConflictWinner:      conflictWinnerSource(conflictRecord),
 	}, nil
+}
+
+func conflictCandidateCount(r *conflict.Record) int {
+	if r == nil {
+		return 0
+	}
+	return len(r.Candidates)
+}
+
+func conflictWinnerSource(r *conflict.Record) string {
+	if r == nil {
+		return ""
+	}
+	return r.Winner().Source
 }
 
 // currentGoalDescription returns the description of whichever goal is on
