@@ -26,6 +26,14 @@ type CycleResult struct {
 	AssociatorRecall    agent.AgentResponse
 	ActualOutcome       string
 	PredictionError     float64
+	// ForecastError is the REAL cross-cycle prediction error (Step 1e): how
+	// far the previous cycle's forecast of this cycle's stateVector was
+	// from what actually happened. Unlike PredictionError (mlpLoss, a
+	// same-cycle synthetic-target training loss), this is a genuine
+	// expectation-vs-reality mismatch across time. Always 0.0 on a cold
+	// Engine's first cycle, since nothing was forecast yet to compare
+	// against.
+	ForecastError       float64
 	DriveError          float64
 	MLPTrainLoss        float64
 	SleepTriggered      bool
@@ -78,13 +86,26 @@ type Engine struct {
 	RecentConflicts []*conflict.Record
 
 	StepCounter int
+
+	// PendingPrediction is the previous cycle's specialist's forecast of
+	// THIS cycle's stateVector -- the cross-cycle "expectation" half of a
+	// real predictive-coding comparison (see RunPredictiveCycle's Step 1e).
+	// nil before the first cycle ever runs, since there's nothing to have
+	// predicted yet.
+	PendingPrediction []float64
 }
 
 func NewEngine() *Engine {
 	sys := core.NewSystem()
 	g := graph.NewGraph()
 	state := homeostasis.NewState()
-	dim := 20
+	// Tied to ObservationVectorDim, not redeclared as its own magic 20:
+	// vectorMSE(e.PendingPrediction, stateVector) in RunPredictiveCycle
+	// requires every specialist's Predictor MLP output length to exactly
+	// match ObservationVector's output length, or it panics on mismatch.
+	// Two independently-declared 20s would silently drift apart the moment
+	// either one changed.
+	dim := ObservationVectorDim
 	hopfield := memory.NewModernHopfield(dim, 10.0)
 
 	// Initial graph nodes (Concepts / State Neurons)
@@ -145,9 +166,19 @@ func (e *Engine) specialistFor(clusterID int) *agent.PredictorAgent {
 // the ClusterID of the highest-Activation node among the router's post-
 // competition winners. Falls back to cluster 0 (the default/generalist) when
 // nothing is active this cycle, matching every node's default ClusterID.
+//
+// bestActivation starts at math.Inf(-1), not a hardcoded -1.0: the same bug
+// class already found and fixed once in winningBlobLabel (pkg/environment/
+// bridge/bridge.go) -- real node activations were observed live to go well
+// below -1.0 (down to roughly -4.12) before edge weights got a floor, and
+// nothing bounds Node.Activation itself even now, only Hebbian edge
+// weights. A hardcoded -1.0 sentinel here would silently misroute every
+// cycle where every active node's Activation is more negative than that,
+// always falling through to cluster 0 regardless of which cluster actually
+// won.
 func primaryCluster(g *graph.Graph, activeNodeIDs []int) int {
 	best := 0
-	bestActivation := -1.0
+	bestActivation := math.Inf(-1)
 	for _, id := range activeNodeIDs {
 		node, exists := g.Nodes[id]
 		if !exists {
@@ -179,6 +210,27 @@ func distinctClusters(g *graph.Graph, activeNodeIDs []int) []int {
 	}
 	sort.Ints(clusters)
 	return clusters
+}
+
+// vectorMSE returns the mean squared error between a and b -- the real
+// forecast-vs-actual mismatch RunPredictiveCycle's Step 1e compares
+// e.PendingPrediction against the current cycle's actual ObservationVector
+// with. Panics on length mismatch rather than silently truncating or
+// zero-padding: a and b are always both ObservationVectorDim-length by
+// construction (ObservationVector's fixed output size, and the Predictor
+// MLP's OutDim==InDim==dim guarantee -- see pkg/agent), so a mismatch here
+// would mean something upstream is already broken, not a normal input to
+// tolerate quietly.
+func vectorMSE(a, b []float64) float64 {
+	if len(a) != len(b) {
+		panic(fmt.Sprintf("vectorMSE: length mismatch %d vs %d", len(a), len(b)))
+	}
+	sum := 0.0
+	for i := range a {
+		d := a[i] - b[i]
+		sum += d * d
+	}
+	return sum / float64(len(a))
 }
 
 // maxRecentConflicts bounds Engine.RecentConflicts so it doesn't grow
@@ -234,13 +286,30 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	// reinforcement, not a trivially pre-cleared bar.
 	e.Graph.FormCoActivationEdges(e.Sys, activeNodeIDs, 0.4)
 
-	stateVector := make([]float64, 20)
-	for i := 0; i < 20; i++ {
-		if (i+e.StepCounter)%2 == 0 {
-			stateVector[i] = 1.0
-		} else {
-			stateVector[i] = -1.0
-		}
+	// 1d. Content-based observation embedding (replaces a pseudo-random
+	// placeholder derived purely from e.StepCounter's parity, which carried
+	// zero information about what was actually observed -- see
+	// ObservationVector's doc comment in observation_vector.go for why that
+	// made real forecasting impossible: the same observation never produced
+	// the same vector twice, and different observations were
+	// indistinguishable to the Predictor MLP by construction).
+	stateVector := ObservationVector(observation)
+
+	// 1e. Real, cross-cycle prediction error (Active Inference / predictive
+	// coding, CONCEPT.md's north-star framing): e.PendingPrediction is
+	// whatever the PREVIOUS cycle's specialist forecast THIS cycle's
+	// stateVector would look like (set below, after this cycle's own
+	// predictor runs). Comparing it against the actual stateVector just
+	// computed is a genuine expectation-vs-reality mismatch across time --
+	// unlike mlpLoss/PredictionError below, which trains the same cycle's
+	// predictor against a synthetic same-cycle target and was already found
+	// too noisy to drive structural learning (see Step 6's comment).
+	// forecastError is 0 on the very first cycle (nothing was predicted yet
+	// to compare against).
+	var forecastError float64
+	hadPendingPrediction := e.PendingPrediction != nil
+	if hadPendingPrediction {
+		forecastError = vectorMSE(e.PendingPrediction, stateVector)
 	}
 
 	payload := agent.ContextPayload{
@@ -274,6 +343,14 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	if err != nil {
 		return nil, fmt.Errorf("predictor error: %w", err)
 	}
+
+	// Cache this cycle's forecast for next cycle's forecastError comparison
+	// (Step 1e above). Copied defensively rather than aliasing predResp's
+	// slice directly, since predictor.Process's Hopfield-blended output is
+	// an internal buffer this function doesn't own the lifetime of.
+	pending := make([]float64, len(predResp.ValueVector))
+	copy(pending, predResp.ValueVector)
+	e.PendingPrediction = pending
 
 	// 4b. Conflict resolution (Stage 4 piece 3, CONCEPT.md Section 16): when
 	// more than one cluster is simultaneously active, every competing
@@ -357,6 +434,32 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	newDriveErr := e.Homeostasis.DriveError()
 	e.Homeostasis.UpdateHormones(prevDriveErr, newDriveErr)
 
+	// 7b. Real forecast accuracy modulates Dopamine directly (Homeostasis's
+	// own doc comment already labels it "Reward / Prediction Error" --
+	// hormones.go:11 -- but nothing fed it anything resembling a real
+	// prediction error until now). Mutated directly from here rather than
+	// folded into UpdateHormones's own signature, the same way bridge.go
+	// already mutates Homeostasis.Curiosity directly from outside the
+	// package -- an established pattern in this codebase, not a new one.
+	//
+	// Deliberately NOT wired into Hebbian/structuralReward or Curiosity in
+	// this pass. Step 6's comment above documents a real prior incident
+	// where an MLP-loss-derived signal turned out to be unlearnable noise
+	// that leaked into structural learning and capped organic graph growth
+	// -- forecastError is a genuinely different, content-grounded signal,
+	// but it hasn't been observed live yet either, so it starts on the
+	// lowest-stakes hormone (Dopamine, already otherwise unused) rather
+	// than the mechanisms that already burned this exact way once.
+	if hadPendingPrediction {
+		// surprise saturates smoothly into [0,1) as forecastError grows,
+		// instead of scaling Dopamine by a raw unbounded MSE value (whose
+		// magnitude depends on how many tokens an observation happens to
+		// have -- see ObservationVector's doc comment).
+		surprise := forecastError / (forecastError + 1.0)
+		dopamineDelta := (0.5 - surprise) * 0.2
+		e.Homeostasis.Dopamine = math.Min(2.0, math.Max(0.1, e.Homeostasis.Dopamine+dopamineDelta))
+	}
+
 	// 8. Agent Trust Score Update -- applies to the specialist that actually
 	// handled this cycle, not always the cluster-0 generalist.
 	if actualSuccess {
@@ -398,6 +501,7 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		AssociatorRecall: assocResp,
 		ActualOutcome:    actualOutcome,
 		PredictionError:  predErr,
+		ForecastError:    forecastError,
 		DriveError:       newDriveErr,
 		MLPTrainLoss:     mlpLoss,
 		SleepTriggered:   sleepTriggered,
