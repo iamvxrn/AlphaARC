@@ -87,31 +87,35 @@ func TestRunPredictiveCycleForecastErrorMatchesCachedPredictionVsActualObservati
 	}
 }
 
-// TestRunPredictiveCycleDopamineRisesWithAccurateForecastVsInaccurate is a
-// differential test: two engines run an identical bootstrap cycle 1 (same
-// deterministic seeds, same observation, same actualSuccess -- NewEngine
-// gives every fresh engine the same seeded MLP weights, so both evolve
-// identically). Before cycle 2, one engine's PendingPrediction is
-// overridden to exactly match cycle 2's real ObservationVector (a perfect
-// forecast, ForecastError=0) and the other's is overridden to something
-// wildly far away (an inaccurate forecast, large ForecastError) -- isolating
-// the forecastError -> Dopamine wiring from whatever the real Predictor MLP
-// happened to output, which neither engine's cycle-2 Dopamine computation
-// otherwise depends on differently (both go through an identical
-// drive-error-delta contribution from UpdateHormones, since Energy/
-// Curiosity/Stress evolve identically on both engines). The accurate
-// forecast must leave Dopamine strictly higher than the inaccurate one.
-func TestRunPredictiveCycleDopamineRisesWithAccurateForecastVsInaccurate(t *testing.T) {
+// TestRunPredictiveCycleSurpriseRaisesDopaminePlasticity is a differential
+// test of the CORRECTED Dopamine direction: two engines run an identical
+// bootstrap cycle 1 (same deterministic seeds, same observation, same
+// actualSuccess -- NewEngine gives every fresh engine the same seeded MLP
+// weights, so both evolve identically). Before cycle 2, one engine's
+// PendingPrediction is overridden to exactly match cycle 2's real
+// ObservationVector (a perfect forecast, ForecastError=0, surprise 0) and
+// the other's to something wildly far away (a large ForecastError, surprise
+// ~1) -- isolating the forecastError -> Dopamine wiring from whatever the
+// real Predictor MLP happened to output (both engines otherwise get an
+// identical drive-error-delta from UpdateHormones, since Energy/Curiosity/
+// Stress evolve identically).
+//
+// Dopamine is the global plasticity multiplier: a prediction error is the
+// signal worth LEARNING from, so surprise must turn plasticity UP. The
+// surprised engine must therefore end with Dopamine strictly HIGHER than
+// the perfectly-accurate one. (An earlier version asserted the opposite --
+// rewarding accuracy/stasis -- which was the bug this direction fixes.)
+func TestRunPredictiveCycleSurpriseRaisesDopaminePlasticity(t *testing.T) {
 	ctx := context.Background()
 	engineAccurate := NewEngine()
-	engineInaccurate := NewEngine()
+	engineSurprised := NewEngine()
 
 	obs1 := "color3-cell0-0 north"
 	if _, err := engineAccurate.RunPredictiveCycle(ctx, obs1, "goal", true); err != nil {
 		t.Fatalf("FAIL: unexpected error (accurate engine, cycle 1): %v", err)
 	}
-	if _, err := engineInaccurate.RunPredictiveCycle(ctx, obs1, "goal", true); err != nil {
-		t.Fatalf("FAIL: unexpected error (inaccurate engine, cycle 1): %v", err)
+	if _, err := engineSurprised.RunPredictiveCycle(ctx, obs1, "goal", true); err != nil {
+		t.Fatalf("FAIL: unexpected error (surprised engine, cycle 1): %v", err)
 	}
 
 	obs2 := "color5-cell1-1 south"
@@ -120,17 +124,60 @@ func TestRunPredictiveCycleDopamineRisesWithAccurateForecastVsInaccurate(t *test
 	for i := range far {
 		far[i] = 100.0
 	}
-	engineInaccurate.PendingPrediction = far
+	engineSurprised.PendingPrediction = far
 
 	if _, err := engineAccurate.RunPredictiveCycle(ctx, obs2, "goal", true); err != nil {
 		t.Fatalf("FAIL: unexpected error (accurate engine, cycle 2): %v", err)
 	}
-	if _, err := engineInaccurate.RunPredictiveCycle(ctx, obs2, "goal", true); err != nil {
-		t.Fatalf("FAIL: unexpected error (inaccurate engine, cycle 2): %v", err)
+	if _, err := engineSurprised.RunPredictiveCycle(ctx, obs2, "goal", true); err != nil {
+		t.Fatalf("FAIL: unexpected error (surprised engine, cycle 2): %v", err)
 	}
 
-	if engineAccurate.Homeostasis.Dopamine <= engineInaccurate.Homeostasis.Dopamine {
-		t.Fatalf("FAIL: expected an accurate forecast to leave Dopamine higher than a wildly inaccurate one, got accurate=%.4f inaccurate=%.4f",
-			engineAccurate.Homeostasis.Dopamine, engineInaccurate.Homeostasis.Dopamine)
+	if engineSurprised.Homeostasis.Dopamine <= engineAccurate.Homeostasis.Dopamine {
+		t.Fatalf("FAIL: expected surprise (high forecast error) to raise Dopamine/plasticity above an accurate forecast, got surprised=%.4f accurate=%.4f",
+			engineSurprised.Homeostasis.Dopamine, engineAccurate.Homeostasis.Dopamine)
+	}
+}
+
+// TestRunPredictiveCycleTrainsForwardModelOnRealizedTransition is the test
+// that distinguishes a genuine forward model from the autoencoder it
+// replaced. On cycle 2 (with the Predictors' Hopfield still empty, since the
+// forward-model fix means cycle 1 does no training at all -- no previous
+// specialist to train yet), the cached forecast PendingPrediction is the
+// pure MLP forward pass of cycle 1's stateVector. This cycle then trains
+// that same specialist on (cycle1 stateVector -> cycle2's realized
+// stateVector); MLP.Train returns the loss of that forward pass against the
+// realized target, computed with the exact weights that produced the
+// forecast (unchanged since -- Process never trains). So the reported
+// PredictionError (the training loss on the realized transition) must equal
+// ForecastError (the independently-cached forecast vs. reality) to floating
+// point. The old autoencoder trained on (stateVector -> stateVector), whose
+// loss has no such relationship to the cross-cycle ForecastError -- this
+// identity is the signature of training on the realized NEXT observation.
+func TestRunPredictiveCycleTrainsForwardModelOnRealizedTransition(t *testing.T) {
+	ctx := context.Background()
+	engine := NewEngine()
+
+	if _, err := engine.RunPredictiveCycle(ctx, "color3-cell0-0 north", "goal", true); err != nil {
+		t.Fatalf("FAIL: unexpected error on cycle 1: %v", err)
+	}
+	// Cycle 1 does no predictor training (no previous specialist yet), so
+	// PrevPredictor/PrevStateVector must be armed for cycle 2 to train.
+	if engine.PrevPredictor == nil || engine.PrevStateVector == nil {
+		t.Fatalf("FAIL: expected PrevPredictor/PrevStateVector to be cached after cycle 1")
+	}
+
+	res2, err := engine.RunPredictiveCycle(ctx, "color5-cell1-1 south", "goal", true)
+	if err != nil {
+		t.Fatalf("FAIL: unexpected error on cycle 2: %v", err)
+	}
+	if !approxEqual(res2.PredictionError, res2.ForecastError) {
+		t.Fatalf("FAIL: expected PredictionError (training loss on the realized transition) to equal ForecastError (cached forecast vs. reality) -- the forward-model signature -- got predErr=%.6f forecastErr=%.6f",
+			res2.PredictionError, res2.ForecastError)
+	}
+	// Sanity: it must actually be a nonzero error here (the two observations
+	// differ), otherwise the identity above could hold trivially at 0.
+	if res2.ForecastError == 0 {
+		t.Fatalf("FAIL: expected a nonzero forecast error between two different observations, got 0")
 	}
 }

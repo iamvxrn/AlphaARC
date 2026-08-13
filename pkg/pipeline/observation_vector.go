@@ -18,26 +18,16 @@ const ObservationVectorDim = 20
 // whitespace-separated token is hashed to one dimension and a +1/-1 sign,
 // and tokens landing on the same dimension accumulate.
 //
-// This exists to replace RunPredictiveCycle's current stateVector, which is
-// a pseudo-random vector derived purely from e.StepCounter's parity --
-// carrying zero information about what was actually observed, so the same
-// observation content never produces the same vector twice and different
-// observations are indistinguishable to the Predictor MLP by construction.
-// ObservationVector fixes exactly that: the same observation string always
-// maps to the same vector (needed for a real forward model to have any
-// hope of learning "given this content, predict the next"), and different
-// token sets map to different vectors with high probability.
-//
-// Deliberately NOT yet wired into RunPredictiveCycle -- this is the first,
-// isolated, independently testable piece of a larger predictive-coding
-// change (caching a cycle's prediction and comparing it against the next
-// cycle's actual embedding as a real prediction-error signal, replacing the
-// same-cycle synthetic target RunPredictiveCycle's Predictor is trained
-// against today). That wiring is a substantially bigger, riskier change --
-// see predictive_loop.go's own comment on why the current mlpLoss-derived
-// signal was already found to be unlearnable noise and deliberately
-// excluded from driving Hebbian plasticity -- and deserves its own review
-// before touching the shared engine loop every existing test exercises.
+// This IS RunPredictiveCycle's stateVector (predictive_loop.go Step 1d). It
+// replaced a pseudo-random vector derived purely from e.StepCounter's parity
+// -- which carried zero information about what was actually observed, so the
+// same observation content never produced the same vector twice and
+// different observations were indistinguishable to the Predictor MLP by
+// construction. ObservationVector fixes exactly that: the same observation
+// string always maps to the same vector (a hard requirement for the forward
+// model in Step 5 to have any hope of learning "given this content, predict
+// the next"), and different token sets map to different vectors with high
+// probability.
 func ObservationVector(observation string) []float64 {
 	vec := make([]float64, ObservationVectorDim)
 	for _, token := range strings.Fields(observation) {

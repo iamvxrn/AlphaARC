@@ -28,11 +28,14 @@ type CycleResult struct {
 	PredictionError     float64
 	// ForecastError is the REAL cross-cycle prediction error (Step 1e): how
 	// far the previous cycle's forecast of this cycle's stateVector was
-	// from what actually happened. Unlike PredictionError (mlpLoss, a
-	// same-cycle synthetic-target training loss), this is a genuine
-	// expectation-vs-reality mismatch across time. Always 0.0 on a cold
-	// Engine's first cycle, since nothing was forecast yet to compare
-	// against.
+	// from what actually happened -- a genuine expectation-vs-reality
+	// mismatch across time. Since the forward-model fix, PredictionError
+	// (mlpLoss) is the training loss of that same forecast against the
+	// realized transition and numerically coincides with ForecastError
+	// while the forecaster's Hopfield is empty; the two are kept as separate
+	// fields because they can diverge once the Hopfield blend kicks in.
+	// Always 0.0 on a cold Engine's first cycle, since nothing was forecast
+	// yet to compare against.
 	ForecastError       float64
 	DriveError          float64
 	MLPTrainLoss        float64
@@ -93,6 +96,17 @@ type Engine struct {
 	// nil before the first cycle ever runs, since there's nothing to have
 	// predicted yet.
 	PendingPrediction []float64
+
+	// PrevStateVector and PrevPredictor are the OTHER half of the forward
+	// model: the input the previous cycle fed its predictor, and the
+	// specialist that made that forecast. Next cycle trains THAT specialist
+	// on (PrevStateVector -> the observation that actually arrived), so the
+	// network learns genuine (state_t -> state_{t+1}) transitions instead of
+	// autoencoding a single frame. Both nil before the first cycle. See
+	// RunPredictiveCycle Step 5 for why this one-cycle lag is what makes
+	// PendingPrediction an actual forecast rather than a reconstruction.
+	PrevStateVector []float64
+	PrevPredictor   *agent.PredictorAgent
 }
 
 func NewEngine() *Engine {
@@ -300,12 +314,14 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	// whatever the PREVIOUS cycle's specialist forecast THIS cycle's
 	// stateVector would look like (set below, after this cycle's own
 	// predictor runs). Comparing it against the actual stateVector just
-	// computed is a genuine expectation-vs-reality mismatch across time --
-	// unlike mlpLoss/PredictionError below, which trains the same cycle's
-	// predictor against a synthetic same-cycle target and was already found
-	// too noisy to drive structural learning (see Step 6's comment).
-	// forecastError is 0 on the very first cycle (nothing was predicted yet
-	// to compare against).
+	// computed is a genuine expectation-vs-reality mismatch across time.
+	// Step 5 then trains the specialist that made that forecast on the
+	// transition that actually happened, so PendingPrediction is a real
+	// forward-model forecast rather than an autoencoded copy of the previous
+	// frame (which is what the first cut of this did -- see Step 5's comment
+	// for the autoencoder pitfall that collapsed forecastError into a mere
+	// "did the observation change" proxy). forecastError is 0 on the very
+	// first cycle (nothing was predicted yet to compare against).
 	var forecastError float64
 	hadPendingPrediction := e.PendingPrediction != nil
 	if hadPendingPrediction {
@@ -385,36 +401,64 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		}
 	}
 
-	// 5. Compute Target Outcome Vector & Prediction Error
-	targetVector := make([]float64, len(stateVector))
-	copy(targetVector, stateVector)
-	if !actualSuccess {
-		for i := range targetVector {
-			targetVector[i] = -targetVector[i] // Invert state vector on failure shock
-		}
+	// 5. Forward-model training (the fix that makes PendingPrediction a real
+	// forecast). Train the specialist that made LAST cycle's forecast on the
+	// transition it actually observed: its input then (e.PrevStateVector)
+	// mapped to the observation that actually arrived now (stateVector).
+	// That teaches the network genuine (state_t -> state_{t+1}) transitions.
+	//
+	// The old version trained THIS cycle's predictor on
+	// (stateVector -> stateVector), i.e. to autoencode the current frame,
+	// inverting the target on failure. That had two problems: (a) a network
+	// trained to reproduce its input can't forecast the next input -- its
+	// "prediction" was just a lossy copy of the current frame, so the
+	// resulting forecastError collapsed to "how much did the observation
+	// change," the very grid-changed proxy this work set out to move past;
+	// and (b) the failure-inversion made the same input demand two different
+	// outputs depending on actualSuccess (not part of the input), which is
+	// the unlearnable-noise incident the Step 6 comment records. Both are
+	// gone: the target is now simply the realized next observation, and
+	// "did the last action succeed" stays a separate channel (structuralReward
+	// below, Curiosity in bridge.go) rather than being folded into what the
+	// world is predicted to look like.
+	mlpLoss := 0.0
+	if e.PrevPredictor != nil {
+		mlpLoss = e.PrevPredictor.TrainStep(e.PrevStateVector, stateVector)
 	}
+	predErr := mlpLoss
 
-	// Train Predictor Micro-MLP via Online Backpropagation!
-	mlpLoss := predictor.TrainStep(stateVector, targetVector)
+	// Snapshot this cycle's input and specialist so next cycle can train them
+	// on next cycle's realized observation -- mirrors the PendingPrediction
+	// snapshot above, which froze this cycle's forecast for next cycle's
+	// forecastError. Copied for the same lifetime-safety reason.
+	e.PrevStateVector = append([]float64(nil), stateVector...)
+	e.PrevPredictor = predictor
+
+	// Actor/Associator keep their pre-existing same-cycle training (out of
+	// scope for the forward-model change, which is specifically about the
+	// Predictor's temporal forecast).
 	e.Actor.TrainStep(stateVector, actResp.ValueVector)
 	e.Associator.TrainStep(stateVector)
-
-	predErr := mlpLoss
 
 	// 6. Update Eligibility Traces & Hebbian Plasticity (temporal credit assignment)
 	//
 	// Structural graph plasticity is driven by actualSuccess (+1/-1), NOT by
-	// mlpLoss-derived reward. Diagnosed 2026-08-12 (TestOrganicGraphGrowthAndCompression):
-	// 1-predErr swung negative in 10/20 cycles (mean +0.0644, min -2.0262)
-	// because the Predictor's target (stateVector, inverted on failure) isn't
-	// actually learnable from stateVector alone -- actualSuccess isn't part
-	// of its input, so the same input demands two different "correct"
-	// outputs depending on an unobserved variable. That noise was leaking
-	// straight into Hebbian/eligibility, capping organic cohesion growth far
-	// below the 0.75 compression threshold regardless of how many cycles ran.
-	// The graph's structural learning signal ("was this experience good or
-	// bad") is conceptually independent of how well the Predictor's MLP
-	// happens to be converging, so it no longer rides on mlpLoss at all.
+	// any predictor-derived reward -- and deliberately kept that way even now
+	// that the predictor is a real forward model. The original reason this
+	// separation was introduced (2026-08-12, TestOrganicGraphGrowthAndCompression):
+	// the old same-cycle target (stateVector, inverted on failure) wasn't
+	// learnable from stateVector alone -- actualSuccess, an unobserved
+	// variable, decided the target -- so the same input demanded two
+	// different outputs and 1-predErr swung negative in 10/20 cycles (mean
+	// +0.0644, min -2.0262), noise that leaked into Hebbian/eligibility and
+	// capped cohesion growth. That specific pathology is now fixed at the
+	// source (the forward-model target is the realized next observation, no
+	// inversion). The separation still stands on principle, though: "was this
+	// experience good or bad" (what grows structure) is a different question
+	// from "how surprising was the world" (predErr/forecastError, which now
+	// modulates Dopamine/plasticity in Step 7b) -- conflating them is exactly
+	// how this burned once, so forecast error stays off structural learning
+	// until there's live evidence it behaves.
 	structuralReward := 1.0
 	if !actualSuccess {
 		structuralReward = -1.0
@@ -434,29 +478,39 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	newDriveErr := e.Homeostasis.DriveError()
 	e.Homeostasis.UpdateHormones(prevDriveErr, newDriveErr)
 
-	// 7b. Real forecast accuracy modulates Dopamine directly (Homeostasis's
-	// own doc comment already labels it "Reward / Prediction Error" --
+	// 7b. Forecast surprise modulates Dopamine directly (Homeostasis's own
+	// doc comment already labels it "Reward / Prediction Error" --
 	// hormones.go:11 -- but nothing fed it anything resembling a real
 	// prediction error until now). Mutated directly from here rather than
 	// folded into UpdateHormones's own signature, the same way bridge.go
 	// already mutates Homeostasis.Curiosity directly from outside the
 	// package -- an established pattern in this codebase, not a new one.
 	//
-	// Deliberately NOT wired into Hebbian/structuralReward or Curiosity in
-	// this pass. Step 6's comment above documents a real prior incident
-	// where an MLP-loss-derived signal turned out to be unlearnable noise
-	// that leaked into structural learning and capped organic graph growth
-	// -- forecastError is a genuinely different, content-grounded signal,
-	// but it hasn't been observed live yet either, so it starts on the
-	// lowest-stakes hormone (Dopamine, already otherwise unused) rather
-	// than the mechanisms that already burned this exact way once.
+	// Direction: surprise RAISES Dopamine, accurate prediction lowers it.
+	// Dopamine here is the global plasticity multiplier (hormones.go:11), and
+	// the predictive-coding principle is that a prediction error is precisely
+	// the signal worth learning from -- when the world violates the forward
+	// model, turn plasticity UP; when it's already well predicted, there's
+	// nothing new to learn, so turn it down. The first cut of this had the
+	// sign inverted (rewarding low error), which rewarded stasis: it turned
+	// plasticity up exactly when nothing changed and down on novelty -- the
+	// "dark room" failure mode, and a quiet way to make the agent prefer a
+	// dead, predictable corner. Note this is deliberately NOT "reward =
+	// accurate prediction": accurately predicting a bad outcome is not good
+	// news, so prediction accuracy drives learning-rate here, not reward --
+	// reward/goal signal stays on actualSuccess (structuralReward, Curiosity).
+	//
+	// Still NOT wired into Hebbian/structuralReward or Curiosity -- see Step
+	// 6's comment for why forecast error stays off structural learning until
+	// there's live evidence it behaves; Dopamine is the lowest-stakes place
+	// to let a not-yet-live-tested signal prove itself first.
 	if hadPendingPrediction {
 		// surprise saturates smoothly into [0,1) as forecastError grows,
 		// instead of scaling Dopamine by a raw unbounded MSE value (whose
 		// magnitude depends on how many tokens an observation happens to
 		// have -- see ObservationVector's doc comment).
 		surprise := forecastError / (forecastError + 1.0)
-		dopamineDelta := (0.5 - surprise) * 0.2
+		dopamineDelta := (surprise - 0.5) * 0.2
 		e.Homeostasis.Dopamine = math.Min(2.0, math.Max(0.1, e.Homeostasis.Dopamine+dopamineDelta))
 	}
 
