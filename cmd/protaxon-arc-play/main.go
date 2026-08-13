@@ -33,6 +33,7 @@ import (
 
 	"protaxon/pkg/environment"
 	"protaxon/pkg/environment/bridge"
+	"protaxon/pkg/environment/perception"
 	"protaxon/pkg/environment/remote"
 	"protaxon/pkg/pipeline"
 )
@@ -92,6 +93,12 @@ func main() {
 			break
 		}
 
+		labeled := perception.RankedLabeledBlobs(frame.Grid, *maxBlobs, *cols, *rows)
+		labels := make([]string, len(labeled))
+		for i, lb := range labeled {
+			labels[i] = lb.Label
+		}
+
 		action, observation, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation)
 		if err != nil {
 			fmt.Printf("action %d: choose action failed: %v\n", actionsTaken, err)
@@ -103,6 +110,12 @@ func main() {
 		// previous click for actually changing anything.
 		changedSinceLastFrame := prevObservation == "" || observation != prevObservation
 		fmt.Printf("action %d: perceives %q (changed since last frame: %v)\n", actionsTaken+1, observation, changedSinceLastFrame)
+		// Diagnostic: real internal graph state for THIS cycle's candidate
+		// categories -- cluster assignment, activation, and edges between
+		// them -- so diversification in the click choice can be attributed
+		// to an actual mechanism (Hebbian edge weight vs. Louvain
+		// re-clustering) instead of guessed from external behavior alone.
+		fmt.Printf("action %d: graph state: %s\n", actionsTaken+1, bridge.DescribeCategoryGraphState(engine.Graph, labels))
 		prevObservation = observation
 
 		newFrame, stepErr := sess.Step(action)
