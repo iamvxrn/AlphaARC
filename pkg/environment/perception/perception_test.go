@@ -1,6 +1,9 @@
 package perception
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // grid indices are grid[y][x] throughout, matching environment.Frame.Grid.
 
@@ -179,5 +182,99 @@ func TestDescribeGridCenteredBlobEmitsCenterWord(t *testing.T) {
 	want := "color9 center"
 	if got != want {
 		t.Fatalf("FAIL: expected %q, got %q", want, got)
+	}
+}
+
+func TestCellTokenBasicBuckets(t *testing.T) {
+	cases := []struct {
+		name                   string
+		x, y                   int
+		gridW, gridH           int
+		cols, rows             int
+		want                   string
+	}{
+		{"top-left corner", 0, 0, 64, 64, 8, 8, "cell0-0"},
+		{"bottom-right pixel", 63, 63, 64, 64, 8, 8, "cell7-7"},
+		{"exact bucket boundary", 32, 32, 64, 64, 8, 8, "cell4-4"},
+		{"at far edge clamps to last bucket", 64, 64, 64, 64, 8, 8, "cell7-7"},
+		{"invalid dimensions fall back", 5, 5, 0, 64, 8, 8, "cell0-0"},
+	}
+	for _, c := range cases {
+		got := CellToken(c.x, c.y, c.gridW, c.gridH, c.cols, c.rows)
+		if got != c.want {
+			t.Fatalf("FAIL [%s]: expected %q, got %q", c.name, c.want, got)
+		}
+	}
+}
+
+func TestCellTokenClampsNegativeComputedIndex(t *testing.T) {
+	// x=-70 with gridW=64, cols=8: col = -70*8/64 = -560/64 = -8 (Go integer
+	// division truncates toward zero), which must clamp to column 0, not
+	// stay negative or panic on the eventual Sprintf.
+	got := CellToken(-70, 0, 64, 64, 8, 8)
+	want := "cell0-0"
+	if got != want {
+		t.Fatalf("FAIL: expected negative computed column to clamp to %q, got %q", want, got)
+	}
+}
+
+func TestDescribeGridCellsFineResolutionMatchesGridExactly(t *testing.T) {
+	grid := [][]int{
+		{0, 0, 0, 0, 0},
+		{0, 3, 3, 0, 0},
+		{0, 3, 0, 0, 0},
+		{0, 0, 0, 5, 5},
+		{0, 0, 0, 0, 0},
+	}
+	// cols=rows=5 on a 5x5 grid: one bucket per cell, so the token directly
+	// encodes each blob's centroid (color3 at (1,1), color5 at (3,3) --
+	// same centroids TestDescribeGridRanksBySizeThenDirection already
+	// confirmed for this exact grid).
+	got := DescribeGridCells(grid, 2, 5, 5)
+	want := "color3-cell1-1 color5-cell3-3"
+	if got != want {
+		t.Fatalf("FAIL: expected %q, got %q", want, got)
+	}
+}
+
+func TestDescribeGridCellsCoarseResolutionSharesBucketsAcrossDistinctPoints(t *testing.T) {
+	grid := [][]int{
+		{0, 0, 0, 0, 0},
+		{0, 3, 3, 0, 0},
+		{0, 3, 0, 0, 0},
+		{0, 0, 0, 5, 5},
+		{0, 0, 0, 0, 0},
+	}
+	// cols=rows=2 on a 5x5 grid: color3 centroid (1,1) -> col=1*2/5=0,
+	// row=0; color5 centroid (3,3) -> col=3*2/5=1, row=1.
+	got := DescribeGridCells(grid, 2, 2, 2)
+	want := "color3-cell0-0 color5-cell1-1"
+	if got != want {
+		t.Fatalf("FAIL: expected %q, got %q", want, got)
+	}
+}
+
+func TestDescribeGridCellsIsOneTokenPerBlobNotSplitWords(t *testing.T) {
+	grid := [][]int{
+		{0, 0, 0},
+		{0, 9, 0},
+		{0, 0, 0},
+	}
+	got := DescribeGridCells(grid, 1, 3, 3)
+	if strings.Contains(got, " ") {
+		t.Fatalf("FAIL: expected a single-blob result to contain no spaces (one composite token), got %q", got)
+	}
+}
+
+func TestDescribeGridCellsEmptyOnUniformGrid(t *testing.T) {
+	grid := [][]int{{5, 5}, {5, 5}}
+	if got := DescribeGridCells(grid, 3, 8, 8); got != "empty" {
+		t.Fatalf("FAIL: expected \"empty\" for an all-background grid, got %q", got)
+	}
+}
+
+func TestDescribeGridCellsEmptyOnZeroSizedGrid(t *testing.T) {
+	if got := DescribeGridCells(nil, 3, 8, 8); got != "" {
+		t.Fatalf("FAIL: expected \"\" for a nil grid, got %q", got)
 	}
 }
