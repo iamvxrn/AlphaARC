@@ -93,11 +93,19 @@ func main() {
 			break
 		}
 
+		// Diagnostic: total blobs actually present this frame, UNBOUNDED by
+		// -maxblobs -- confirms or refutes, from a real count instead of a
+		// guessed flag value, whether a real interactive element could be
+		// getting cut off by the top-N-by-size ranking before it's ever
+		// perceived at all.
+		totalBlobs := len(perception.FindBlobs(frame.Grid, perception.BackgroundColor(frame.Grid)))
+
 		labeled := perception.RankedLabeledBlobs(frame.Grid, *maxBlobs, *cols, *rows)
 		labels := make([]string, len(labeled))
 		for i, lb := range labeled {
 			labels[i] = lb.Label
 		}
+		fmt.Printf("action %d: %d total blobs in frame (using top %d)\n", actionsTaken+1, totalBlobs, *maxBlobs)
 
 		action, observation, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation)
 		if err != nil {
