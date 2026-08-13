@@ -33,7 +33,6 @@ import (
 
 	"protaxon/pkg/environment"
 	"protaxon/pkg/environment/bridge"
-	"protaxon/pkg/environment/perception"
 	"protaxon/pkg/environment/remote"
 	"protaxon/pkg/pipeline"
 )
@@ -93,22 +92,18 @@ func main() {
 			break
 		}
 
-		// Diagnostic: what does perception actually see this frame, and did
-		// it change at all since the last one? Answers "did the last click
-		// do anything visible" and "how many distinct blobs is the router
-		// even choosing among" without guessing -- printed BEFORE choosing
-		// the next action so it reflects the frame the decision is about to
-		// be made on.
-		observation := perception.DescribeGridCells(frame.Grid, *maxBlobs, *cols, *rows)
-		changedSinceLastFrame := actionsTaken == 0 || observation != prevObservation
-		fmt.Printf("action %d: perceives %q (changed since last frame: %v)\n", actionsTaken+1, observation, changedSinceLastFrame)
-		prevObservation = observation
-
-		action, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows)
+		action, observation, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation)
 		if err != nil {
 			fmt.Printf("action %d: choose action failed: %v\n", actionsTaken, err)
 			break
 		}
+		// actualSuccess fed into this call's predictive cycle was exactly
+		// this comparison (see bridge.actionSucceeded) -- printed here so
+		// it's visible whether the router just credited or blamed the
+		// previous click for actually changing anything.
+		changedSinceLastFrame := prevObservation == "" || observation != prevObservation
+		fmt.Printf("action %d: perceives %q (changed since last frame: %v)\n", actionsTaken+1, observation, changedSinceLastFrame)
+		prevObservation = observation
 
 		newFrame, stepErr := sess.Step(action)
 		actionsTaken++

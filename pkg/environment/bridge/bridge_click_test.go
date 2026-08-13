@@ -5,9 +5,29 @@ import (
 	"testing"
 
 	"protaxon/pkg/environment"
+	"protaxon/pkg/environment/perception"
 	"protaxon/pkg/graph"
 	"protaxon/pkg/pipeline"
 )
+
+func TestActionSucceeded(t *testing.T) {
+	cases := []struct {
+		name     string
+		previous string
+		current  string
+		want     bool
+	}{
+		{"no prior frame is a bootstrap success", "", "color3-cell0-0", true},
+		{"identical observation means nothing changed", "color3-cell0-0", "color3-cell0-0", false},
+		{"different observation means something changed", "color3-cell0-0", "color3-cell0-1", true},
+		{"both empty (no blobs either frame) is unchanged", "empty", "empty", false},
+	}
+	for _, c := range cases {
+		if got := actionSucceeded(c.previous, c.current); got != c.want {
+			t.Fatalf("FAIL [%s]: expected %v, got %v", c.name, c.want, got)
+		}
+	}
+}
 
 func TestLooksLikeBlobLabel(t *testing.T) {
 	cases := []struct {
@@ -78,9 +98,12 @@ func TestChooseClickActionSingleBlobTrivialWin(t *testing.T) {
 	engine := pipeline.NewEngine()
 	grid := gridWithCell(10, 10, 3, 3, 4)
 
-	action, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 1, 2, 2)
+	action, obs, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 1, 2, 2, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
+	}
+	if want := perception.DescribeGridCells(grid, 1, 2, 2); obs != want {
+		t.Fatalf("FAIL: expected returned observation %q to match DescribeGridCells, got %q", want, obs)
 	}
 	want := environment.Action{ID: environment.Action6, X: 3, Y: 3}
 	if action != want {
@@ -120,7 +143,7 @@ func TestChooseClickActionPicksHighestRankedBlobOnFreshEngine(t *testing.T) {
 	}
 	grid[5][5] = 7
 
-	action, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 2, 2, 2)
+	action, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 2, 2, 2, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
@@ -143,7 +166,7 @@ func TestChooseClickActionBindsToCurrentFrameNotStaleCentroid(t *testing.T) {
 	engine := pipeline.NewEngine()
 
 	frame1 := gridWithCell(10, 10, 2, 2, 4)
-	action1, _, err := ChooseClickAction(ctx, engine, frame1, "investigate the scene", 1, 2, 2)
+	action1, _, _, err := ChooseClickAction(ctx, engine, frame1, "investigate the scene", 1, 2, 2, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error on frame 1: %v", err)
 	}
@@ -152,7 +175,7 @@ func TestChooseClickActionBindsToCurrentFrameNotStaleCentroid(t *testing.T) {
 	}
 
 	frame2 := gridWithCell(10, 10, 4, 3, 4)
-	action2, _, err := ChooseClickAction(ctx, engine, frame2, "investigate the scene", 1, 2, 2)
+	action2, _, _, err := ChooseClickAction(ctx, engine, frame2, "investigate the scene", 1, 2, 2, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error on frame 2: %v", err)
 	}
@@ -166,7 +189,7 @@ func TestChooseClickActionErrorsOnEmptyGrid(t *testing.T) {
 	engine := pipeline.NewEngine()
 	grid := [][]int{{0, 0}, {0, 0}}
 
-	_, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2)
+	_, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "")
 	if err == nil {
 		t.Fatalf("FAIL: expected an error when the grid has no blobs to click")
 	}

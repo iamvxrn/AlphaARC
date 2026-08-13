@@ -128,27 +128,56 @@ func labelForNode(g *graph.Graph, nodeID int) string {
 // concrete click instead of leaving it unconnected. Games where the
 // correct target isn't "the most-reinforced category of colored region"
 // (most of them, honestly) will not be well served by this.
-func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int) (environment.Action, *pipeline.CycleResult, error) {
+//
+// previousObservation is the observation string ChooseClickAction returned
+// last call (empty string on the very first call, e.g. right after
+// Reset()) -- used to compute actualSuccess as "did the grid visibly
+// change since the action that produced THIS frame" (see
+// actionSucceeded), instead of unconditionally claiming success. This is
+// a real, if cheap, signal: confirmed 2026-08-13 against the live service
+// that without it, the router just keeps re-clicking whatever category won
+// once, with nothing to push it away from a click that provably does
+// nothing (one location got clicked 14 of 20 actions with zero observed
+// effect, while a different, rarely-tried location visibly changed the
+// grid twice and was never reinforced over the dead one). "Grid changed"
+// is not the same as "score went up" -- a strictly better signal (real
+// score/levels_completed) is a natural next upgrade, not a claim that
+// this one is sufficient on its own.
+//
+// Returns the observation this call computed, so the caller can pass it
+// back in as previousObservation next call without recomputing it.
+func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string) (environment.Action, string, *pipeline.CycleResult, error) {
 	labeled := perception.RankedLabeledBlobs(grid, maxBlobs, cols, rows)
 	if len(labeled) == 0 {
-		return environment.Action{}, nil, fmt.Errorf("bridge: no blobs found in grid, nothing to click")
+		return environment.Action{}, "", nil, fmt.Errorf("bridge: no blobs found in grid, nothing to click")
 	}
 
 	observation := perception.DescribeGridCells(grid, maxBlobs, cols, rows)
-	res, err := engine.RunPredictiveCycle(ctx, observation, goal, true)
+	actualSuccess := actionSucceeded(previousObservation, observation)
+	res, err := engine.RunPredictiveCycle(ctx, observation, goal, actualSuccess)
 	if err != nil {
-		return environment.Action{}, nil, fmt.Errorf("predictive cycle: %w", err)
+		return environment.Action{}, observation, nil, fmt.Errorf("predictive cycle: %w", err)
 	}
 
 	if winner := winningBlobLabel(engine.Graph, res.ActiveNodeIDs); winner != "" {
 		for _, lb := range labeled {
 			if lb.Label == winner {
-				return clickAction(lb.Blob), res, nil
+				return clickAction(lb.Blob), observation, res, nil
 			}
 		}
 	}
 
-	return clickAction(labeled[0].Blob), res, nil
+	return clickAction(labeled[0].Blob), observation, res, nil
+}
+
+// actionSucceeded reports whether the grid visibly changed since the
+// previous frame's observation -- the cheapest honestly-available proxy
+// for "did the last action accomplish anything." An empty
+// previousObservation (no prior frame, e.g. the very first call after
+// Reset) counts as success: there is no action of ours to judge yet, so
+// this is a bootstrap default, not a real judgment.
+func actionSucceeded(previousObservation, observation string) bool {
+	return previousObservation == "" || observation != previousObservation
 }
 
 func clickAction(b perception.Blob) environment.Action {
