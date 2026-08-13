@@ -176,7 +176,21 @@ func labelForNode(g *graph.Graph, nodeID int) string {
 // about the world actually changed. Returns the label actually clicked
 // this call, for the caller to pass back in as previousClickedLabel next
 // time.
-func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string, curiosityStep, explorationRoll float64, memory *OutcomeMemory, previousClickedLabel string) (environment.Action, string, string, *pipeline.CycleResult, error) {
+//
+// levelsCompletedIncreased is real ground truth from the game server (the
+// caller compares environment.Frame.LevelsCompleted across calls) and, when
+// true, forces actualSuccess regardless of what actionSucceeded's grid-diff
+// proxy says. This closes a real gap confirmed 2026-08-13: a 300-action
+// live run had OutcomeMemory correctly, mechanically lock onto a click that
+// reliably satisfied the grid-changed proxy (96% of the time) while
+// levels_completed and score stayed at 0 the entire run -- proof the proxy
+// and the actual goal aren't the same thing, not a bug in OutcomeMemory
+// itself. levelsCompletedIncreased is deliberately an OR-strengthener, not
+// a replacement: real level completion is rare (most individual actions
+// won't trigger one even when making real progress), so the grid-changed
+// proxy still has to carry most cycles -- this only means "if the game
+// itself just confirmed real progress, believe that over anything else."
+func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string, levelsCompletedIncreased bool, curiosityStep, explorationRoll float64, memory *OutcomeMemory, previousClickedLabel string) (environment.Action, string, string, *pipeline.CycleResult, error) {
 	if memory == nil {
 		// A caller that forgot to construct one loses cross-call persistence
 		// (this fresh instance dies with the call), but that's a silent
@@ -191,7 +205,7 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 	}
 
 	observation := perception.DescribeGridCells(grid, maxBlobs, cols, rows)
-	actualSuccess := actionSucceeded(previousObservation, observation)
+	actualSuccess := levelsCompletedIncreased || actionSucceeded(previousObservation, observation)
 	memory.Record(previousClickedLabel, actualSuccess)
 
 	if actualSuccess {
