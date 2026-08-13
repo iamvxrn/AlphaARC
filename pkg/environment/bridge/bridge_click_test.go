@@ -65,14 +65,19 @@ func TestDescribeCategoryGraphStateEdgeOrderFollowsInputLabelsNotMapOrder(t *tes
 	g.AddNode(graph.NewNode(1, 0.5, 0))
 	g.AddNode(graph.NewNode(2, 0.5, 0))
 	g.AddNode(graph.NewNode(3, 0.5, 0))
-	g.AddLabel("A", 1)
-	g.AddLabel("B", 2)
-	g.AddLabel("C", 3)
+	// AddLabel lowercases its keyword internally (pkg/graph/spreading.go),
+	// and DescribeCategoryGraphState does a direct, non-lowercasing map
+	// lookup -- so labels here must already be lowercase, exactly like
+	// real perception.DescribeGridCells output always is ("color2-cell0-0"),
+	// never uppercase single letters.
+	g.AddLabel("a", 1)
+	g.AddLabel("b", 2)
+	g.AddLabel("c", 3)
 	g.AddEdge(1, 2, 0.1, false)
 	g.AddEdge(1, 3, 0.2, false)
 
-	got := DescribeCategoryGraphState(g, []string{"A", "B", "C"})
-	want := "A: node=1 cluster=0 activation=0.0000 edges:->B(w=0.1000),->C(w=0.2000) | B: node=2 cluster=0 activation=0.0000 | C: node=3 cluster=0 activation=0.0000"
+	got := DescribeCategoryGraphState(g, []string{"a", "b", "c"})
+	want := "a: node=1 cluster=0 activation=0.0000 edges:->b(w=0.1000),->c(w=0.2000) | b: node=2 cluster=0 activation=0.0000 | c: node=3 cluster=0 activation=0.0000"
 	if got != want {
 		t.Fatalf("FAIL:\nexpected %q\ngot      %q", want, got)
 	}
