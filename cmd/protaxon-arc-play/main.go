@@ -33,6 +33,7 @@ import (
 
 	"protaxon/pkg/environment"
 	"protaxon/pkg/environment/bridge"
+	"protaxon/pkg/environment/perception"
 	"protaxon/pkg/environment/remote"
 	"protaxon/pkg/pipeline"
 )
@@ -81,6 +82,7 @@ func main() {
 
 	engine := pipeline.NewEngine()
 	actionsTaken := 0
+	prevObservation := ""
 
 	for actionsTaken < *maxActions {
 		if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
@@ -90,6 +92,17 @@ func main() {
 			fmt.Printf("game does not offer ACTION6 (available: %v) -- ChooseClickAction only proposes clicks, stopping\n", frame.AvailableActions)
 			break
 		}
+
+		// Diagnostic: what does perception actually see this frame, and did
+		// it change at all since the last one? Answers "did the last click
+		// do anything visible" and "how many distinct blobs is the router
+		// even choosing among" without guessing -- printed BEFORE choosing
+		// the next action so it reflects the frame the decision is about to
+		// be made on.
+		observation := perception.DescribeGridCells(frame.Grid, *maxBlobs, *cols, *rows)
+		changedSinceLastFrame := actionsTaken == 0 || observation != prevObservation
+		fmt.Printf("action %d: perceives %q (changed since last frame: %v)\n", actionsTaken+1, observation, changedSinceLastFrame)
+		prevObservation = observation
 
 		action, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows)
 		if err != nil {
