@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"protaxon/pkg/environment"
+	"protaxon/pkg/environment/perception"
 	"protaxon/pkg/graph"
 	"protaxon/pkg/pipeline"
 	"strings"
@@ -92,4 +93,97 @@ func labelForNode(g *graph.Graph, nodeID int) string {
 		}
 	}
 	return ""
+}
+
+// ChooseClickAction runs one predictive cycle over a real ARC-AGI-3 grid
+// and returns a concrete ACTION6 click (X, Y).
+//
+// The graph/router (Stage 2/4) competes over blob CATEGORIES --
+// perception.DescribeGridCells's composite tokens like "color2-cell3-2" --
+// exactly the way ChooseAction competes over direction words for Beacon.
+// Category identity is stable across frames via the same label-reuse
+// mechanism EnsureConceptNodes already gives "north"/"south" (same graph
+// node ID reused every time the label recurs), so Hebbian weight and
+// eligibility traces on a category node accumulate real, comparable
+// signal over time -- unlike a fresh per-frame blob object/ID, which
+// would never accumulate anything at all.
+//
+// A category node has no pixel coordinates of its own, though: WHICH blob
+// currently carries that label has to be re-derived every call from the
+// frame actually in hand -- that's the bind step. After RunPredictiveCycle,
+// this reads off the true WTA winner (the active node with the highest
+// post-inhibition Activation -- ActiveNodeIDs itself is just ascending
+// sorted IDs, see graph.ExtractActiveSubgraph, not ranked by strength),
+// and looks up which of THIS frame's blobs (perception.RankedLabeledBlobs,
+// the same ranking DescribeGridCells used to build the observation)
+// currently carries that label. If the winning label isn't a recognized
+// blob-category token, or doesn't match any blob actually present now
+// (e.g. spreading activation surfaced a node from past experience that
+// this frame doesn't have), it falls back to the frame's single
+// highest-ranked blob rather than hanging the caller on a zero-value
+// action.
+//
+// This does NOT claim to solve action selection for arbitrary ARC-AGI-3
+// games -- it wires the existing Stage 2/4 competition machinery into a
+// concrete click instead of leaving it unconnected. Games where the
+// correct target isn't "the most-reinforced category of colored region"
+// (most of them, honestly) will not be well served by this.
+func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int) (environment.Action, *pipeline.CycleResult, error) {
+	labeled := perception.RankedLabeledBlobs(grid, maxBlobs, cols, rows)
+	if len(labeled) == 0 {
+		return environment.Action{}, nil, fmt.Errorf("bridge: no blobs found in grid, nothing to click")
+	}
+
+	observation := perception.DescribeGridCells(grid, maxBlobs, cols, rows)
+	res, err := engine.RunPredictiveCycle(ctx, observation, goal, true)
+	if err != nil {
+		return environment.Action{}, nil, fmt.Errorf("predictive cycle: %w", err)
+	}
+
+	if winner := winningBlobLabel(engine.Graph, res.ActiveNodeIDs); winner != "" {
+		for _, lb := range labeled {
+			if lb.Label == winner {
+				return clickAction(lb.Blob), res, nil
+			}
+		}
+	}
+
+	return clickAction(labeled[0].Blob), res, nil
+}
+
+func clickAction(b perception.Blob) environment.Action {
+	return environment.Action{ID: environment.Action6, X: b.Centroid.X, Y: b.Centroid.Y}
+}
+
+// winningBlobLabel finds the highest-Activation node among activeNodeIDs
+// whose label looks like a DescribeGridCells composite token, and returns
+// that label ("" if none qualify). Restricting to blob-shaped labels means
+// this ignores any other vocabulary that might also be active in
+// ActiveNodeIDs (defensive: not a concern with the current single-workload
+// caller, but ChooseClickAction shouldn't silently misfire if this engine
+// is ever reused alongside other observation sources).
+func winningBlobLabel(g *graph.Graph, activeNodeIDs []int) string {
+	bestActivation := -1.0
+	best := ""
+	for _, id := range activeNodeIDs {
+		node, exists := g.Nodes[id]
+		if !exists {
+			continue
+		}
+		word := labelForNode(g, id)
+		if !looksLikeBlobLabel(word) {
+			continue
+		}
+		if node.Activation > bestActivation {
+			bestActivation = node.Activation
+			best = word
+		}
+	}
+	return best
+}
+
+// looksLikeBlobLabel reports whether word matches DescribeGridCells's
+// "color<N>-cell<C>-<R>" shape.
+func looksLikeBlobLabel(word string) bool {
+	return strings.HasPrefix(word, "color") && strings.Contains(word, "-cell")
 }

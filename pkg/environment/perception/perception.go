@@ -219,29 +219,58 @@ func CellToken(x, y, gridW, gridH, cols, rows int) string {
 	return fmt.Sprintf("cell%d-%d", col, row)
 }
 
-// DescribeGridCells converts grid into observation words like DescribeGrid,
-// but each blob becomes ONE composite token -- "color<N>-cell<C>-<R>" --
-// instead of separate "color<N>" and direction words. A composite token is
-// a single unit to the graph's tokenizer (EnsureConceptNodes splits on
-// whitespace, not hyphens), so it gets one stable node ID reused every time
-// the same (color, cell) combination recurs, exactly like "north" already
-// does -- and unlike a fresh per-frame blob object/ID, which would never
-// accumulate Hebbian weight or eligibility trace across frames at all.
-func DescribeGridCells(grid [][]int, maxBlobs, cols, rows int) string {
+// LabeledBlob pairs a blob with the composite category label
+// DescribeGridCells would assign it at a given lattice resolution.
+type LabeledBlob struct {
+	Blob  Blob
+	Label string
+}
+
+// RankedLabeledBlobs returns grid's top maxBlobs blobs (the same
+// deterministic ranking DescribeGridCells uses: cell count descending,
+// ties by color ascending then row-major centroid), each paired with its
+// "color<N>-cell<C>-<R>" composite label at the given cols x rows
+// resolution. This is the shared source of truth behind DescribeGridCells
+// and is also what a caller needs for the "bind" step of action selection:
+// after the graph/router picks a winning category label (stable across
+// frames), re-deriving which of THIS frame's actual blobs currently
+// carries that label to recover a concrete (X,Y).
+func RankedLabeledBlobs(grid [][]int, maxBlobs, cols, rows int) []LabeledBlob {
 	if len(grid) == 0 || len(grid[0]) == 0 {
-		return ""
+		return nil
 	}
 	h, w := len(grid), len(grid[0])
 
-	var words []string
+	var out []LabeledBlob
 	for i, b := range rankedBlobs(grid) {
 		if i >= maxBlobs {
 			break
 		}
-		words = append(words, fmt.Sprintf("color%d-%s", b.Color, CellToken(b.Centroid.X, b.Centroid.Y, w, h, cols, rows)))
+		label := fmt.Sprintf("color%d-%s", b.Color, CellToken(b.Centroid.X, b.Centroid.Y, w, h, cols, rows))
+		out = append(out, LabeledBlob{Blob: b, Label: label})
 	}
-	if len(words) == 0 {
+	return out
+}
+
+// DescribeGridCells converts grid into observation words: each blob
+// becomes ONE composite token -- "color<N>-cell<C>-<R>" -- instead of
+// separate "color<N>" and direction words. A composite token is a single
+// unit to the graph's tokenizer (EnsureConceptNodes splits on whitespace,
+// not hyphens), so it gets one stable node ID reused every time the same
+// (color, cell) combination recurs, exactly like "north" already does --
+// and unlike a fresh per-frame blob object/ID, which would never
+// accumulate Hebbian weight or eligibility trace across frames at all.
+func DescribeGridCells(grid [][]int, maxBlobs, cols, rows int) string {
+	labeled := RankedLabeledBlobs(grid, maxBlobs, cols, rows)
+	if len(labeled) == 0 {
+		if len(grid) == 0 || len(grid[0]) == 0 {
+			return ""
+		}
 		return "empty"
+	}
+	words := make([]string, len(labeled))
+	for i, lb := range labeled {
+		words[i] = lb.Label
 	}
 	return strings.Join(words, " ")
 }
