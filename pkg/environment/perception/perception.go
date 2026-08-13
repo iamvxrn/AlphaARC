@@ -138,19 +138,11 @@ func direction(x, y, cx, cy int) string {
 	}
 }
 
-// DescribeGrid converts grid into observation words: for up to maxBlobs of
-// the grid's largest color blobs, emits "color<N>" followed by that blob's
-// direction from the grid's center. Deterministic: blobs are ranked by
-// cell count (descending), ties broken by color then by row-major centroid,
-// so the same grid always produces the same words regardless of Go's
-// unordered map iteration during flood fill.
-func DescribeGrid(grid [][]int, maxBlobs int) string {
-	if len(grid) == 0 || len(grid[0]) == 0 {
-		return ""
-	}
-	h, w := len(grid), len(grid[0])
-	cx, cy := w/2, h/2
-
+// rankedBlobs finds grid's blobs and sorts them deterministically: cell
+// count descending, ties broken by color ascending then row-major centroid
+// -- shared by every Describe* function so they all rank blobs the same
+// way regardless of Go's unordered map iteration during flood fill.
+func rankedBlobs(grid [][]int) []Blob {
 	background := BackgroundColor(grid)
 	blobs := FindBlobs(grid, background)
 	sort.Slice(blobs, func(i, j int) bool {
@@ -165,14 +157,88 @@ func DescribeGrid(grid [][]int, maxBlobs int) string {
 		}
 		return blobs[i].Centroid.X < blobs[j].Centroid.X
 	})
+	return blobs
+}
+
+// DescribeGrid converts grid into observation words: for up to maxBlobs of
+// the grid's largest color blobs, emits "color<N>" followed by that blob's
+// direction from the grid's center, as SEPARATE words (so "color2" and
+// "north" are independent, reusable graph concepts, not one unit). Callers
+// that need each blob to compete as a single bound candidate -- e.g. to
+// pick one blob's centroid as a click target -- want DescribeGridCells
+// instead, which never splits a blob's label across multiple words.
+func DescribeGrid(grid [][]int, maxBlobs int) string {
+	if len(grid) == 0 || len(grid[0]) == 0 {
+		return ""
+	}
+	h, w := len(grid), len(grid[0])
+	cx, cy := w/2, h/2
 
 	var words []string
-	for i, b := range blobs {
+	for i, b := range rankedBlobs(grid) {
 		if i >= maxBlobs {
 			break
 		}
 		words = append(words, fmt.Sprintf("color%d", b.Color))
 		words = append(words, strings.Fields(direction(b.Centroid.X, b.Centroid.Y, cx, cy))...)
+	}
+	if len(words) == 0 {
+		return "empty"
+	}
+	return strings.Join(words, " ")
+}
+
+// CellToken returns a stable categorical label for point (x,y) in a
+// gridW x gridH space, quantized into a cols x rows lattice of buckets --
+// e.g. "cell3-2" for column 3, row 2 (0-indexed). Finer lattices (higher
+// cols/rows) shrink each bucket's footprint, which reduces how many
+// physically different targets can share one category label (the
+// "referent instability" problem a coarse compass-direction bucket has),
+// at the cost of a larger vocabulary -- more distinct graph nodes for the
+// same amount of experience to spread across. Points on or past the far
+// edge (x == gridW or y == gridH) clamp into the last column/row rather
+// than going out of bounds.
+func CellToken(x, y, gridW, gridH, cols, rows int) string {
+	if gridW <= 0 || gridH <= 0 || cols <= 0 || rows <= 0 {
+		return "cell0-0"
+	}
+	col := x * cols / gridW
+	row := y * rows / gridH
+	if col >= cols {
+		col = cols - 1
+	}
+	if row >= rows {
+		row = rows - 1
+	}
+	if col < 0 {
+		col = 0
+	}
+	if row < 0 {
+		row = 0
+	}
+	return fmt.Sprintf("cell%d-%d", col, row)
+}
+
+// DescribeGridCells converts grid into observation words like DescribeGrid,
+// but each blob becomes ONE composite token -- "color<N>-cell<C>-<R>" --
+// instead of separate "color<N>" and direction words. A composite token is
+// a single unit to the graph's tokenizer (EnsureConceptNodes splits on
+// whitespace, not hyphens), so it gets one stable node ID reused every time
+// the same (color, cell) combination recurs, exactly like "north" already
+// does -- and unlike a fresh per-frame blob object/ID, which would never
+// accumulate Hebbian weight or eligibility trace across frames at all.
+func DescribeGridCells(grid [][]int, maxBlobs, cols, rows int) string {
+	if len(grid) == 0 || len(grid[0]) == 0 {
+		return ""
+	}
+	h, w := len(grid), len(grid[0])
+
+	var words []string
+	for i, b := range rankedBlobs(grid) {
+		if i >= maxBlobs {
+			break
+		}
+		words = append(words, fmt.Sprintf("color%d-%s", b.Color, CellToken(b.Centroid.X, b.Centroid.Y, w, h, cols, rows)))
 	}
 	if len(words) == 0 {
 		return "empty"
