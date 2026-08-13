@@ -216,3 +216,64 @@ func winningBlobLabel(g *graph.Graph, activeNodeIDs []int) string {
 func looksLikeBlobLabel(word string) bool {
 	return strings.HasPrefix(word, "color") && strings.Contains(word, "-cell")
 }
+
+// DescribeCategoryGraphState is a diagnostic, not a decision function: for
+// each of the given blob-category labels, it reports the graph node's ID,
+// ClusterID, current Activation, and any edges to the OTHER given labels
+// with their weights.
+//
+// Purpose: answer, from real internal graph state rather than guessing
+// from external behavior, WHICH mechanism is actually diversifying
+// ChooseClickAction's choices over repeated failed clicks -- (a) Hebbian
+// edge-weight changes driven by actualSuccess (see ChooseClickAction),
+// which only affect a node's activation via propagation on
+// SpreadingActivation's last hop (seed activation itself is always a flat
+// 1.0 from LookupSeeds, confirmed 2026-08-13 by reading pkg/graph/node.go
+// and pkg/graph/spreading.go -- Hebbian reward cannot suppress a directly-
+// seeded node's own activation, only what it propagates to others via an
+// edge), or (b) SubconsciousSleep's Louvain re-clustering splitting
+// labels into separate competing clusters, a structural process
+// independent of reward. Both look identical from outside (clicks
+// diversify); this tells them apart.
+func DescribeCategoryGraphState(g *graph.Graph, labels []string) string {
+	idFor := make(map[string]int, len(labels))
+	for _, label := range labels {
+		if ids := g.Labels[label]; len(ids) > 0 {
+			idFor[label] = ids[0]
+		}
+	}
+
+	var lines []string
+	for _, label := range labels {
+		id, ok := idFor[label]
+		if !ok {
+			lines = append(lines, fmt.Sprintf("%s: not yet in graph", label))
+			continue
+		}
+		node, exists := g.Nodes[id]
+		if !exists {
+			lines = append(lines, fmt.Sprintf("%s: node %d missing from graph", label, id))
+			continue
+		}
+
+		line := fmt.Sprintf("%s: node=%d cluster=%d activation=%.4f", label, id, node.ClusterID, node.Activation)
+		var edgeParts []string
+		for _, other := range labels {
+			if other == label {
+				continue
+			}
+			otherID, ok := idFor[other]
+			if !ok {
+				continue
+			}
+			if edge, exists := node.Edges[otherID]; exists {
+				edgeParts = append(edgeParts, fmt.Sprintf("->%s(w=%.4f)", other, edge.Weight))
+			}
+		}
+		if len(edgeParts) > 0 {
+			line += " edges:" + strings.Join(edgeParts, ",")
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, " | ")
+}

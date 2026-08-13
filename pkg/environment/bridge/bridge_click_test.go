@@ -29,6 +29,55 @@ func TestActionSucceeded(t *testing.T) {
 	}
 }
 
+func TestDescribeCategoryGraphStateReportsClusterActivationAndEdges(t *testing.T) {
+	g := graph.NewGraph()
+	g.AddNode(graph.NewNode(1, 0.5, 3))
+	g.AddNode(graph.NewNode(2, 0.5, 3))
+	g.AddLabel("color2-cell0-0", 1)
+	g.AddLabel("color5-cell1-1", 2)
+	g.Nodes[1].Activation = 0.8
+	g.Nodes[2].Activation = 0.3
+	g.AddEdge(1, 2, 0.42, false) // directed 1 -> 2 only
+
+	got := DescribeCategoryGraphState(g, []string{"color2-cell0-0", "color5-cell1-1"})
+	want := "color2-cell0-0: node=1 cluster=3 activation=0.8000 edges:->color5-cell1-1(w=0.4200) | color5-cell1-1: node=2 cluster=3 activation=0.3000"
+	if got != want {
+		t.Fatalf("FAIL:\nexpected %q\ngot      %q", want, got)
+	}
+}
+
+func TestDescribeCategoryGraphStateReportsUnregisteredLabel(t *testing.T) {
+	g := graph.NewGraph()
+	got := DescribeCategoryGraphState(g, []string{"color9-cell9-9"})
+	want := "color9-cell9-9: not yet in graph"
+	if got != want {
+		t.Fatalf("FAIL: expected %q, got %q", want, got)
+	}
+}
+
+// TestDescribeCategoryGraphStateEdgeOrderFollowsInputLabelsNotMapOrder
+// confirms a hub node's edges are listed in the SAME order the caller's
+// labels slice was given, not Go's unordered map iteration over
+// node.Edges -- otherwise this diagnostic would be non-deterministic
+// output for the exact same graph state, defeating its own purpose.
+func TestDescribeCategoryGraphStateEdgeOrderFollowsInputLabelsNotMapOrder(t *testing.T) {
+	g := graph.NewGraph()
+	g.AddNode(graph.NewNode(1, 0.5, 0))
+	g.AddNode(graph.NewNode(2, 0.5, 0))
+	g.AddNode(graph.NewNode(3, 0.5, 0))
+	g.AddLabel("A", 1)
+	g.AddLabel("B", 2)
+	g.AddLabel("C", 3)
+	g.AddEdge(1, 2, 0.1, false)
+	g.AddEdge(1, 3, 0.2, false)
+
+	got := DescribeCategoryGraphState(g, []string{"A", "B", "C"})
+	want := "A: node=1 cluster=0 activation=0.0000 edges:->B(w=0.1000),->C(w=0.2000) | B: node=2 cluster=0 activation=0.0000 | C: node=3 cluster=0 activation=0.0000"
+	if got != want {
+		t.Fatalf("FAIL:\nexpected %q\ngot      %q", want, got)
+	}
+}
+
 func TestLooksLikeBlobLabel(t *testing.T) {
 	cases := []struct {
 		word string
