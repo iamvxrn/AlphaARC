@@ -23,3 +23,5 @@ CONCEPT.md
 .env.*
 !.env.example
 *.key
+
+.log
