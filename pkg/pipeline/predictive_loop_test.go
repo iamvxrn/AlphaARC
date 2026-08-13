@@ -220,6 +220,27 @@ func TestPrimaryClusterPicksHighestActivationWinner(t *testing.T) {
 	}
 }
 
+// TestPrimaryClusterFindsWinnerAmongAllNegativeActivations is a regression
+// test for the same bug class already found and fixed once in
+// winningBlobLabel (pkg/environment/bridge/bridge_click_test.go's
+// TestWinningBlobLabelFindsWinnerAmongAllNegativeActivations): a hardcoded
+// -1.0 sentinel silently breaks once real activations go more negative than
+// that (observed live, roughly -4.12, before edge weights got a floor --
+// Node.Activation itself is still unbounded even now). With math.Inf(-1),
+// the actual highest (least negative) candidate's cluster must always win.
+func TestPrimaryClusterFindsWinnerAmongAllNegativeActivations(t *testing.T) {
+	g := graph.NewGraph()
+	g.AddNode(graph.NewNode(1, 0.1, 3))
+	g.AddNode(graph.NewNode(2, 0.1, 7))
+	g.Nodes[1].Activation = -4.12
+	g.Nodes[2].Activation = -2.5 // less negative -- must win
+
+	got := primaryCluster(g, []int{1, 2})
+	if got != 7 {
+		t.Fatalf("FAIL: expected cluster 7 (node 2's cluster, least-negative activation -2.5), got %d -- sentinel regression", got)
+	}
+}
+
 // TestSpecialistForCreatesDistinctDeterministicAgents verifies the Stage 4
 // MoE pool itself: specialistFor must lazily create exactly one specialist
 // per distinct ClusterID, cache and reuse it on repeat calls (not create
