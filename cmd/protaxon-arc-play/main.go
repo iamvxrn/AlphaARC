@@ -83,8 +83,10 @@ func main() {
 	fmt.Printf("RESET %s -> state=%s available_actions=%v\n", target, frame.State, frame.AvailableActions)
 
 	engine := pipeline.NewEngine()
+	memory := bridge.NewOutcomeMemory()
 	actionsTaken := 0
 	prevObservation := ""
+	prevClickedLabel := ""
 
 	for actionsTaken < *maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -106,7 +108,7 @@ func main() {
 		}
 		fmt.Printf("action %d: %d total blobs in frame (using top %d)\n", actionsTaken+1, totalBlobs, *maxBlobs)
 
-		action, observation, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, *curiosityStep, rand.Float64())
+		action, observation, clickedLabel, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, *curiosityStep, rand.Float64(), memory, prevClickedLabel)
 		if err != nil {
 			fmt.Printf("action %d: choose action failed: %v\n", actionsTaken, err)
 			break
@@ -126,7 +128,16 @@ func main() {
 		// to an actual mechanism (Hebbian edge weight vs. Louvain
 		// re-clustering) instead of guessed from external behavior alone.
 		fmt.Printf("action %d: graph state: %s\n", actionsTaken+1, bridge.DescribeCategoryGraphState(engine.Graph, labels))
+		// Diagnostic: what OutcomeMemory has accumulated for the category
+		// about to be clicked -- distinguishes "picked because it's proven"
+		// from "picked because WTA/exploration said so with zero evidence."
+		if rate, attempts := memory.SuccessRate(clickedLabel); attempts > 0 {
+			fmt.Printf("action %d: clicking %q, prior record: %d/%d successful\n", actionsTaken+1, clickedLabel, int(rate*float64(attempts)+0.5), attempts)
+		} else {
+			fmt.Printf("action %d: clicking %q, no prior record\n", actionsTaken+1, clickedLabel)
+		}
 		prevObservation = observation
+		prevClickedLabel = clickedLabel
 
 		newFrame, stepErr := sess.Step(action)
 		actionsTaken++
@@ -149,7 +160,7 @@ func main() {
 			// nothing left to click); only the actualSuccess judgment it
 			// computes internally -- whether the terminal frame's perception
 			// differs from the pre-terminal one -- matters here.
-			if _, finalObs, _, regErr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, *curiosityStep, rand.Float64()); regErr != nil {
+			if _, finalObs, _, _, regErr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, *curiosityStep, rand.Float64(), memory, prevClickedLabel); regErr != nil {
 				fmt.Printf("terminal state %s: outcome registration failed: %v\n", frame.State, regErr)
 			} else {
 				fmt.Printf("terminal state %s registered (changed since last frame: %v)\n", frame.State, finalObs != prevObservation)
