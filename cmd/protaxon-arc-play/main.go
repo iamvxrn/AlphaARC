@@ -87,9 +87,6 @@ func main() {
 	prevObservation := ""
 
 	for actionsTaken < *maxActions {
-		if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
-			break
-		}
 		if !hasAction6(frame.AvailableActions) {
 			fmt.Printf("game does not offer ACTION6 (available: %v) -- ChooseClickAction only proposes clicks, stopping\n", frame.AvailableActions)
 			break
@@ -140,6 +137,25 @@ func main() {
 		frame = newFrame
 		fmt.Printf("action %d: click (%d,%d) -> state=%s levels_completed=%d (cohesion this cycle=%.4f)\n",
 			actionsTaken, action.X, action.Y, frame.State, frame.LevelsCompleted, res.MaxCohesionObserved)
+
+		if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
+			// Register the outcome of the action that just caused this
+			// terminal state before stopping. Real bug this fixes: the loop
+			// used to check for terminal state at the TOP, before ever
+			// calling ChooseClickAction again -- so it broke on the NEXT
+			// iteration without the credit-assignment machinery ever seeing
+			// the final frame or judging the action that caused WIN/GAME_OVER.
+			// The action this call proposes is discarded (the game is over,
+			// nothing left to click); only the actualSuccess judgment it
+			// computes internally -- whether the terminal frame's perception
+			// differs from the pre-terminal one -- matters here.
+			if _, finalObs, _, regErr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, *curiosityStep, rand.Float64()); regErr != nil {
+				fmt.Printf("terminal state %s: outcome registration failed: %v\n", frame.State, regErr)
+			} else {
+				fmt.Printf("terminal state %s registered (changed since last frame: %v)\n", frame.State, finalObs != prevObservation)
+			}
+			break
+		}
 	}
 
 	fmt.Printf("stopped after %d actions, final state=%s levels_completed=%d\n", actionsTaken, frame.State, frame.LevelsCompleted)
