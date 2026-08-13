@@ -87,6 +87,7 @@ func main() {
 	actionsTaken := 0
 	prevObservation := ""
 	prevClickedLabel := ""
+	prevLevelsCompleted := frame.LevelsCompleted
 
 	for actionsTaken < *maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -108,7 +109,17 @@ func main() {
 		}
 		fmt.Printf("action %d: %d total blobs in frame (using top %d)\n", actionsTaken+1, totalBlobs, *maxBlobs)
 
-		action, observation, clickedLabel, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, *curiosityStep, rand.Float64(), memory, prevClickedLabel)
+		// Real ground truth from the game server for whether the PREVIOUS
+		// action actually completed a level, computed the same way as
+		// changedSinceLastFrame below (comparing this frame's value against
+		// the one recorded before that previous action). Passed into
+		// ChooseClickAction as a strong override on top of the "did the
+		// grid change" proxy -- see the doc comment on ChooseClickAction for
+		// why this override was added (2026-08-13, a 300-action live run
+		// exploiting the proxy while levels_completed never moved).
+		levelsCompletedIncreased := frame.LevelsCompleted > prevLevelsCompleted
+
+		action, observation, clickedLabel, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, levelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel)
 		if err != nil {
 			fmt.Printf("action %d: choose action failed: %v\n", actionsTaken, err)
 			break
@@ -120,8 +131,8 @@ func main() {
 		// printed too since it's what determined whether this action was
 		// an exploration override or the default WTA/fallback choice.
 		changedSinceLastFrame := prevObservation == "" || observation != prevObservation
-		fmt.Printf("action %d: perceives %q (changed since last frame: %v, curiosity=%.4f)\n",
-			actionsTaken+1, observation, changedSinceLastFrame, engine.Homeostasis.Curiosity)
+		fmt.Printf("action %d: perceives %q (changed since last frame: %v, levels_completed_increased: %v, curiosity=%.4f)\n",
+			actionsTaken+1, observation, changedSinceLastFrame, levelsCompletedIncreased, engine.Homeostasis.Curiosity)
 		// Diagnostic: real internal graph state for THIS cycle's candidate
 		// categories -- cluster assignment, activation, and edges between
 		// them -- so diversification in the click choice can be attributed
@@ -138,6 +149,7 @@ func main() {
 		}
 		prevObservation = observation
 		prevClickedLabel = clickedLabel
+		prevLevelsCompleted = frame.LevelsCompleted
 
 		newFrame, stepErr := sess.Step(action)
 		actionsTaken++
@@ -159,11 +171,15 @@ func main() {
 			// The action this call proposes is discarded (the game is over,
 			// nothing left to click); only the actualSuccess judgment it
 			// computes internally -- whether the terminal frame's perception
-			// differs from the pre-terminal one -- matters here.
-			if _, finalObs, _, _, regErr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, *curiosityStep, rand.Float64(), memory, prevClickedLabel); regErr != nil {
+			// differs from the pre-terminal one, OR whether this final action
+			// completed a level (frame.LevelsCompleted was just reassigned
+			// from newFrame above; prevLevelsCompleted still holds the
+			// pre-this-action value) -- matters here.
+			terminalLevelsCompletedIncreased := frame.LevelsCompleted > prevLevelsCompleted
+			if _, finalObs, _, _, regErr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, terminalLevelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel); regErr != nil {
 				fmt.Printf("terminal state %s: outcome registration failed: %v\n", frame.State, regErr)
 			} else {
-				fmt.Printf("terminal state %s registered (changed since last frame: %v)\n", frame.State, finalObs != prevObservation)
+				fmt.Printf("terminal state %s registered (changed since last frame: %v, levels_completed_increased: %v)\n", frame.State, finalObs != prevObservation, terminalLevelsCompletedIncreased)
 			}
 			break
 		}

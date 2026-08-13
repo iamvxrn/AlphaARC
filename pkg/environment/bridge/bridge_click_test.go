@@ -181,7 +181,7 @@ func TestChooseClickActionSingleBlobTrivialWin(t *testing.T) {
 	// max is 1.0 and explorationRoll < curiosity is never true at exactly
 	// 1.0), keeping this test's hand-traced result independent of the
 	// curiosity/exploration mechanics under test elsewhere.
-	action, obs, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 1, 2, 2, "", 0.1, 1.0, NewOutcomeMemory(), "")
+	action, obs, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 1, 2, 2, "", false, 0.1, 1.0, NewOutcomeMemory(), "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
@@ -226,7 +226,7 @@ func TestChooseClickActionPicksHighestRankedBlobOnFreshEngine(t *testing.T) {
 	}
 	grid[5][5] = 7
 
-	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 2, 2, 2, "", 0.1, 1.0, NewOutcomeMemory(), "")
+	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 2, 2, 2, "", false, 0.1, 1.0, NewOutcomeMemory(), "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
@@ -249,7 +249,7 @@ func TestChooseClickActionBindsToCurrentFrameNotStaleCentroid(t *testing.T) {
 	engine := pipeline.NewEngine()
 
 	frame1 := gridWithCell(10, 10, 2, 2, 4)
-	action1, _, _, _, err := ChooseClickAction(ctx, engine, frame1, "investigate the scene", 1, 2, 2, "", 0.1, 1.0, NewOutcomeMemory(), "")
+	action1, _, _, _, err := ChooseClickAction(ctx, engine, frame1, "investigate the scene", 1, 2, 2, "", false, 0.1, 1.0, NewOutcomeMemory(), "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error on frame 1: %v", err)
 	}
@@ -258,7 +258,7 @@ func TestChooseClickActionBindsToCurrentFrameNotStaleCentroid(t *testing.T) {
 	}
 
 	frame2 := gridWithCell(10, 10, 4, 3, 4)
-	action2, _, _, _, err := ChooseClickAction(ctx, engine, frame2, "investigate the scene", 1, 2, 2, "", 0.1, 1.0, NewOutcomeMemory(), "")
+	action2, _, _, _, err := ChooseClickAction(ctx, engine, frame2, "investigate the scene", 1, 2, 2, "", false, 0.1, 1.0, NewOutcomeMemory(), "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error on frame 2: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestChooseClickActionErrorsOnEmptyGrid(t *testing.T) {
 	engine := pipeline.NewEngine()
 	grid := [][]int{{0, 0}, {0, 0}}
 
-	_, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", 0.1, 1.0, NewOutcomeMemory(), "")
+	_, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", false, 0.1, 1.0, NewOutcomeMemory(), "")
 	if err == nil {
 		t.Fatalf("FAIL: expected an error when the grid has no blobs to click")
 	}
@@ -286,13 +286,58 @@ func TestChooseClickActionNilMemoryDoesNotPanic(t *testing.T) {
 	engine := pipeline.NewEngine()
 	grid := gridWithCell(10, 10, 3, 3, 4)
 
-	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 1, 2, 2, "", 0.1, 1.0, nil, "")
+	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 1, 2, 2, "", false, 0.1, 1.0, nil, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error with nil memory: %v", err)
 	}
 	want := environment.Action{ID: environment.Action6, X: 3, Y: 3}
 	if action != want {
 		t.Fatalf("FAIL: expected %+v even with nil memory, got %+v", want, action)
+	}
+}
+
+// TestChooseClickActionLevelsCompletedIncreasedForcesSuccessDespiteUnchangedGrid
+// is a regression test for the real gap confirmed 2026-08-13: a 300-action
+// live run had the grid-changed proxy alone driving every success/failure
+// judgment, and OutcomeMemory correctly, mechanically exploited a click that
+// satisfied that proxy without ever completing a level. Call 1 is a
+// bootstrap success (Curiosity falls 0.5 -> 0.4, see
+// TestChooseClickActionCuriosityFallsOnSuccessAndRisesOnFailure for the
+// baseline this contrasts with). Call 2 sees the EXACT SAME grid -- the
+// proxy alone (actionSucceeded) would say false and Curiosity would rise
+// back to 0.5 -- but levelsCompletedIncreased=true is passed, so
+// actualSuccess must be forced true anyway: Curiosity must keep FALLING (to
+// 0.3), not rise, and the previously clicked label must be recorded as a
+// success, not a failure.
+func TestChooseClickActionLevelsCompletedIncreasedForcesSuccessDespiteUnchangedGrid(t *testing.T) {
+	ctx := context.Background()
+	engine := pipeline.NewEngine()
+	grid := gridWithCell(10, 10, 3, 3, 4)
+	const step = 0.1
+
+	memory := NewOutcomeMemory()
+	start := engine.Homeostasis.Curiosity
+	_, obs1, label1, _, err := ChooseClickAction(ctx, engine, grid, "goal", 1, 2, 2, "", false, step, 1.0, memory, "")
+	if err != nil {
+		t.Fatalf("FAIL: unexpected error on call 1: %v", err)
+	}
+	if got, want := engine.Homeostasis.Curiosity, start-step; !approxEqual(got, want) {
+		t.Fatalf("FAIL: expected curiosity to fall to %.4f after a bootstrap success, got %.4f", want, got)
+	}
+
+	_, _, _, _, err = ChooseClickAction(ctx, engine, grid, "goal", 1, 2, 2, obs1, true, step, 1.0, memory, label1)
+	if err != nil {
+		t.Fatalf("FAIL: unexpected error on call 2: %v", err)
+	}
+	if got, want := engine.Homeostasis.Curiosity, start-2*step; !approxEqual(got, want) {
+		t.Fatalf("FAIL: expected curiosity to keep falling to %.4f (levelsCompletedIncreased must override the unchanged-grid proxy), got %.4f", want, got)
+	}
+	rate, attempts := memory.SuccessRate(label1)
+	if attempts != 1 {
+		t.Fatalf("FAIL: expected exactly 1 recorded attempt for %q after call 2, got %d", label1, attempts)
+	}
+	if rate != 1.0 {
+		t.Fatalf("FAIL: expected rate 1.0 (levelsCompletedIncreased forces success despite an identical grid), got %.4f", rate)
 	}
 }
 
@@ -315,7 +360,7 @@ func TestChooseClickActionCuriosityFallsOnSuccessAndRisesOnFailure(t *testing.T)
 
 	memory := NewOutcomeMemory()
 	start := engine.Homeostasis.Curiosity
-	_, obs1, _, _, err := ChooseClickAction(ctx, engine, grid, "goal", 1, 2, 2, "", step, 1.0, memory, "")
+	_, obs1, _, _, err := ChooseClickAction(ctx, engine, grid, "goal", 1, 2, 2, "", false, step, 1.0, memory, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error on call 1: %v", err)
 	}
@@ -323,7 +368,7 @@ func TestChooseClickActionCuriosityFallsOnSuccessAndRisesOnFailure(t *testing.T)
 		t.Fatalf("FAIL: expected curiosity to fall to %.4f after a bootstrap success, got %.4f", want, got)
 	}
 
-	_, _, _, _, err = ChooseClickAction(ctx, engine, grid, "goal", 1, 2, 2, obs1, step, 1.0, memory, "")
+	_, _, _, _, err = ChooseClickAction(ctx, engine, grid, "goal", 1, 2, 2, obs1, false, step, 1.0, memory, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error on call 2: %v", err)
 	}
@@ -366,7 +411,7 @@ func TestChooseClickActionExplorationPicksNonDefaultBlob(t *testing.T) {
 	engine := pipeline.NewEngine()
 	grid := threeRankedBlobsGrid()
 
-	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", 0.1, 0.1, NewOutcomeMemory(), "")
+	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", false, 0.1, 0.1, NewOutcomeMemory(), "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
@@ -385,7 +430,7 @@ func TestChooseClickActionNoExplorationWhenRollMeetsCuriosity(t *testing.T) {
 	engine := pipeline.NewEngine()
 	grid := threeRankedBlobsGrid()
 
-	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", 0.1, 0.4, NewOutcomeMemory(), "")
+	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", false, 0.1, 0.4, NewOutcomeMemory(), "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
@@ -414,7 +459,7 @@ func TestChooseClickActionProvenOutcomeOverridesDefaultAndExploration(t *testing
 		memory.Record("color7-cell1-1", true)
 	}
 
-	action, _, clickedLabel, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", 0.1, 1.0, memory, "")
+	action, _, clickedLabel, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", false, 0.1, 1.0, memory, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
@@ -440,7 +485,7 @@ func TestChooseClickActionInsufficientAttemptsDoNotOverride(t *testing.T) {
 	memory.Record("color7-cell1-1", true)
 	memory.Record("color7-cell1-1", true)
 
-	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", 0.1, 1.0, memory, "")
+	action, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", false, 0.1, 1.0, memory, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
@@ -462,7 +507,7 @@ func TestChooseClickActionRecordsPreviousClickedLabelOutcome(t *testing.T) {
 	grid := threeRankedBlobsGrid()
 	memory := NewOutcomeMemory()
 
-	_, obs1, label1, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", 0.1, 1.0, memory, "")
+	_, obs1, label1, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", false, 0.1, 1.0, memory, "")
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error on call 1: %v", err)
 	}
@@ -473,7 +518,7 @@ func TestChooseClickActionRecordsPreviousClickedLabelOutcome(t *testing.T) {
 		t.Fatalf("FAIL: expected 0 recorded attempts before call 2 (nothing to attribute the first click's outcome to yet), got %d", attempts)
 	}
 
-	if _, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, obs1, 0.1, 1.0, memory, label1); err != nil {
+	if _, _, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, obs1, false, 0.1, 1.0, memory, label1); err != nil {
 		t.Fatalf("FAIL: unexpected error on call 2: %v", err)
 	}
 	rate, attempts := memory.SuccessRate(label1)
