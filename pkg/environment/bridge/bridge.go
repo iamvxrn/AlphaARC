@@ -163,14 +163,36 @@ func labelForNode(g *graph.Graph, nodeID int) string {
 // a real failure mode confirmed 2026-08-13: 123 real actions, only 5
 // distinct points ever tried, because nothing ever pushed the choice away
 // from whatever won once.
-func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string, curiosityStep, explorationRoll float64) (environment.Action, string, *pipeline.CycleResult, error) {
+//
+// memory and previousClickedLabel add a first, deliberately modest step
+// toward tracking real outcomes instead of relying purely on graph
+// dynamics: previousClickedLabel (the label THIS caller clicked last call,
+// "" on the first) gets its outcome recorded into memory using THIS
+// cycle's actualSuccess, and if any of the CURRENT frame's candidates has
+// a proven track record (see minProvenAttempts), that candidate is
+// preferred over both the WTA default and any exploration pick -- real
+// accumulated evidence outranks structural graph state, which a live run
+// showed can get scrambled by Louvain re-clustering even when nothing
+// about the world actually changed. Returns the label actually clicked
+// this call, for the caller to pass back in as previousClickedLabel next
+// time.
+func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string, curiosityStep, explorationRoll float64, memory *OutcomeMemory, previousClickedLabel string) (environment.Action, string, string, *pipeline.CycleResult, error) {
+	if memory == nil {
+		// A caller that forgot to construct one loses cross-call persistence
+		// (this fresh instance dies with the call), but that's a silent
+		// capability downgrade, not a nil-pointer panic on memory.Record/
+		// SuccessRate below.
+		memory = NewOutcomeMemory()
+	}
+
 	labeled := perception.RankedLabeledBlobs(grid, maxBlobs, cols, rows)
 	if len(labeled) == 0 {
-		return environment.Action{}, "", nil, fmt.Errorf("bridge: no blobs found in grid, nothing to click")
+		return environment.Action{}, "", "", nil, fmt.Errorf("bridge: no blobs found in grid, nothing to click")
 	}
 
 	observation := perception.DescribeGridCells(grid, maxBlobs, cols, rows)
 	actualSuccess := actionSucceeded(previousObservation, observation)
+	memory.Record(previousClickedLabel, actualSuccess)
 
 	if actualSuccess {
 		engine.Homeostasis.Curiosity = math.Max(0.0, engine.Homeostasis.Curiosity-curiosityStep)
@@ -180,7 +202,7 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 
 	res, err := engine.RunPredictiveCycle(ctx, observation, goal, actualSuccess)
 	if err != nil {
-		return environment.Action{}, observation, nil, fmt.Errorf("predictive cycle: %w", err)
+		return environment.Action{}, observation, "", nil, fmt.Errorf("predictive cycle: %w", err)
 	}
 
 	defaultIndex := 0
@@ -209,8 +231,28 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 		chosenIndex = others[idx]
 	}
 
-	return clickAction(labeled[chosenIndex].Blob), observation, res, nil
+	bestProvenIndex := -1
+	bestProvenRate := 0.0
+	for i, lb := range labeled {
+		if rate, attempts := memory.SuccessRate(lb.Label); attempts >= minProvenAttempts && rate > bestProvenRate {
+			bestProvenRate = rate
+			bestProvenIndex = i
+		}
+	}
+	if bestProvenIndex >= 0 {
+		chosenIndex = bestProvenIndex
+	}
+
+	clickedLabel := labeled[chosenIndex].Label
+	return clickAction(labeled[chosenIndex].Blob), observation, clickedLabel, res, nil
 }
+
+// minProvenAttempts is how many recorded attempts a label needs before
+// OutcomeMemory's accumulated success rate is trusted enough to override
+// the WTA/exploration choice -- low enough to matter within a real run's
+// action budget (tens, not thousands, of actions), high enough that a
+// single lucky/unlucky outcome can't flip the decision.
+const minProvenAttempts = 3
 
 // actionSucceeded reports whether the grid visibly changed since the
 // previous frame's observation -- the cheapest honestly-available proxy
