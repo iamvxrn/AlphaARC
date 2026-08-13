@@ -7,6 +7,7 @@ package bridge
 import (
 	"context"
 	"fmt"
+	"math"
 	"protaxon/pkg/environment"
 	"protaxon/pkg/environment/perception"
 	"protaxon/pkg/graph"
@@ -146,7 +147,23 @@ func labelForNode(g *graph.Graph, nodeID int) string {
 //
 // Returns the observation this call computed, so the caller can pass it
 // back in as previousObservation next call without recomputing it.
-func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string) (environment.Action, string, *pipeline.CycleResult, error) {
+//
+// curiosityStep is how much engine.Homeostasis.Curiosity (setpoint 0.0 per
+// pkg/homeostasis, otherwise unwired into any real cycle before this) moves
+// per call: up on failure, down on success, clamped to [0,1] -- unresolved
+// "why didn't that work" tension that exploration below discharges.
+//
+// explorationRoll is a caller-supplied number in [0,1) (production: a real
+// random draw; tests: a fixed value for determinism, same philosophy as
+// this codebase's explicit MLP seeds). When explorationRoll < Curiosity,
+// this deliberately picks a DIFFERENT blob than the one WTA/fallback would
+// have chosen -- excluding that default choice rather than sampling over
+// everything means an exploration roll always actually changes behavior,
+// never coincidentally reselects the same dead click. This is the fix for
+// a real failure mode confirmed 2026-08-13: 123 real actions, only 5
+// distinct points ever tried, because nothing ever pushed the choice away
+// from whatever won once.
+func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string, curiosityStep, explorationRoll float64) (environment.Action, string, *pipeline.CycleResult, error) {
 	labeled := perception.RankedLabeledBlobs(grid, maxBlobs, cols, rows)
 	if len(labeled) == 0 {
 		return environment.Action{}, "", nil, fmt.Errorf("bridge: no blobs found in grid, nothing to click")
@@ -154,20 +171,45 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 
 	observation := perception.DescribeGridCells(grid, maxBlobs, cols, rows)
 	actualSuccess := actionSucceeded(previousObservation, observation)
+
+	if actualSuccess {
+		engine.Homeostasis.Curiosity = math.Max(0.0, engine.Homeostasis.Curiosity-curiosityStep)
+	} else {
+		engine.Homeostasis.Curiosity = math.Min(1.0, engine.Homeostasis.Curiosity+curiosityStep)
+	}
+
 	res, err := engine.RunPredictiveCycle(ctx, observation, goal, actualSuccess)
 	if err != nil {
 		return environment.Action{}, observation, nil, fmt.Errorf("predictive cycle: %w", err)
 	}
 
+	defaultIndex := 0
 	if winner := winningBlobLabel(engine.Graph, res.ActiveNodeIDs); winner != "" {
-		for _, lb := range labeled {
+		for i, lb := range labeled {
 			if lb.Label == winner {
-				return clickAction(lb.Blob), observation, res, nil
+				defaultIndex = i
+				break
 			}
 		}
 	}
+	chosenIndex := defaultIndex
 
-	return clickAction(labeled[0].Blob), observation, res, nil
+	if curiosity := engine.Homeostasis.Curiosity; explorationRoll < curiosity && len(labeled) > 1 {
+		others := make([]int, 0, len(labeled)-1)
+		for i := range labeled {
+			if i != defaultIndex {
+				others = append(others, i)
+			}
+		}
+		normalizedRoll := explorationRoll / curiosity // curiosity > explorationRoll >= 0, so curiosity > 0 here
+		idx := int(normalizedRoll * float64(len(others)))
+		if idx >= len(others) {
+			idx = len(others) - 1
+		}
+		chosenIndex = others[idx]
+	}
+
+	return clickAction(labeled[chosenIndex].Blob), observation, res, nil
 }
 
 // actionSucceeded reports whether the grid visibly changed since the
@@ -191,8 +233,17 @@ func clickAction(b perception.Blob) environment.Action {
 // ActiveNodeIDs (defensive: not a concern with the current single-workload
 // caller, but ChooseClickAction shouldn't silently misfire if this engine
 // is ever reused alongside other observation sources).
+//
+// bestActivation starts at negative infinity, not a hardcoded -1.0: a real
+// live run (2026-08-13) drove several nodes' Activation to roughly -4.12
+// after a long actualSuccess=false streak (see MaxWeightMagnitude's doc
+// comment) -- with a -1.0 sentinel, EVERY candidate would have failed the
+// `Activation > bestActivation` check and this returned "" (silently
+// forcing ChooseClickAction's fallback path), even though a real, correct
+// winner (the least-negative candidate) existed. -Inf has no such blind
+// spot regardless of how negative activations get.
 func winningBlobLabel(g *graph.Graph, activeNodeIDs []int) string {
-	bestActivation := -1.0
+	bestActivation := math.Inf(-1)
 	best := ""
 	for _, id := range activeNodeIDs {
 		node, exists := g.Nodes[id]

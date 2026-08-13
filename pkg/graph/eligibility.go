@@ -36,6 +36,20 @@ func (g *Graph) DecayEligibilityTraces(sys *core.System, decay float64) {
 	}
 }
 
+// MaxWeightMagnitude bounds a single edge's weight to [-MaxWeightMagnitude,
+// MaxWeightMagnitude] after every Hebbian update, independent of
+// NormalizeNodeL1's node-wide budget. The two serve different purposes:
+// NormalizeNodeL1 only triggers once a node's TOTAL |weight| exceeds its
+// cap, so a single edge with few siblings can drift arbitrarily far in one
+// direction for many cycles without ever tripping that budget. Confirmed
+// 2026-08-13 against a real live run: a ~19-cycle streak of
+// actualSuccess=false (see bridge.actionSucceeded) drove one edge's weight,
+// and consequently propagated Activation, to roughly -4.12 with no floor
+// in sight -- large enough to break downstream code that assumes
+// Activation has some sane lower bound (see bridge.winningBlobLabel's
+// sentinel fix, same commit).
+const MaxWeightMagnitude = 1.0
+
 // HebbianUpdateWithEligibility is HebbianUpdate's temporal-credit-assignment
 // counterpart: plasticity is driven by each edge's accumulated, decayed
 // Eligibility trace instead of this tick's instantaneous pre*post product,
@@ -54,6 +68,11 @@ func (g *Graph) HebbianUpdateWithEligibility(sys *core.System, learningRate, dop
 				continue
 			}
 			edge.Weight += learningRate * dopamine * edge.Eligibility
+			if edge.Weight > MaxWeightMagnitude {
+				edge.Weight = MaxWeightMagnitude
+			} else if edge.Weight < -MaxWeightMagnitude {
+				edge.Weight = -MaxWeightMagnitude
+			}
 		}
 		NormalizeNodeL1(node, l1Cap)
 	}

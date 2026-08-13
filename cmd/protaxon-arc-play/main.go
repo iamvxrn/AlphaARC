@@ -30,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/rand"
 
 	"protaxon/pkg/environment"
 	"protaxon/pkg/environment/bridge"
@@ -44,6 +45,7 @@ func main() {
 	maxBlobs := flag.Int("maxblobs", 5, "max blobs perceived per frame")
 	cols := flag.Int("cols", 16, "grid-cell lattice columns for ChooseClickAction")
 	rows := flag.Int("rows", 16, "grid-cell lattice rows for ChooseClickAction")
+	curiosityStep := flag.Float64("curiosity-step", 0.1, "how much Curiosity moves per action, up on failure, down on success")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -107,7 +109,7 @@ func main() {
 		}
 		fmt.Printf("action %d: %d total blobs in frame (using top %d)\n", actionsTaken+1, totalBlobs, *maxBlobs)
 
-		action, observation, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation)
+		action, observation, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, *curiosityStep, rand.Float64())
 		if err != nil {
 			fmt.Printf("action %d: choose action failed: %v\n", actionsTaken, err)
 			break
@@ -115,9 +117,12 @@ func main() {
 		// actualSuccess fed into this call's predictive cycle was exactly
 		// this comparison (see bridge.actionSucceeded) -- printed here so
 		// it's visible whether the router just credited or blamed the
-		// previous click for actually changing anything.
+		// previous click for actually changing anything. Curiosity is
+		// printed too since it's what determined whether this action was
+		// an exploration override or the default WTA/fallback choice.
 		changedSinceLastFrame := prevObservation == "" || observation != prevObservation
-		fmt.Printf("action %d: perceives %q (changed since last frame: %v)\n", actionsTaken+1, observation, changedSinceLastFrame)
+		fmt.Printf("action %d: perceives %q (changed since last frame: %v, curiosity=%.4f)\n",
+			actionsTaken+1, observation, changedSinceLastFrame, engine.Homeostasis.Curiosity)
 		// Diagnostic: real internal graph state for THIS cycle's candidate
 		// categories -- cluster assignment, activation, and edges between
 		// them -- so diversification in the click choice can be attributed

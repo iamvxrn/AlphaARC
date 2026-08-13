@@ -133,6 +133,31 @@ func TestWinningBlobLabelReturnsEmptyWhenNoneQualify(t *testing.T) {
 	}
 }
 
+// TestWinningBlobLabelFindsWinnerAmongAllNegativeActivations is a
+// regression test for a real bug: bestActivation used to start at a
+// hardcoded -1.0. A live run (2026-08-13) drove several nodes' Activation
+// below -1.0 (to roughly -4.12, see MaxWeightMagnitude's doc comment in
+// pkg/graph/eligibility.go), which meant EVERY candidate failed the
+// `Activation > bestActivation` check and this silently returned "" even
+// though a correct winner (the least-negative candidate) existed. With
+// -Inf as the sentinel, the actual highest (least negative) candidate
+// must always be found, however negative activations get.
+func TestWinningBlobLabelFindsWinnerAmongAllNegativeActivations(t *testing.T) {
+	g := graph.NewGraph()
+	g.AddNode(graph.NewNode(1, 0.5, 0))
+	g.AddNode(graph.NewNode(2, 0.5, 0))
+	g.AddLabel("color2-cell0-0", 1)
+	g.AddLabel("color5-cell1-1", 2)
+	g.Nodes[1].Activation = -4.12
+	g.Nodes[2].Activation = -2.5 // less negative -- must win
+
+	got := winningBlobLabel(g, []int{1, 2})
+	want := "color5-cell1-1"
+	if got != want {
+		t.Fatalf("FAIL: expected the least-negative candidate %q to win, got %q -- sentinel regression", want, got)
+	}
+}
+
 // gridWithCell builds a gridW x gridH grid (all background=0) with a single
 // filled cell at (x,y) in the given color -- the minimal single-blob case.
 func gridWithCell(gridW, gridH, x, y, color int) [][]int {
@@ -152,7 +177,11 @@ func TestChooseClickActionSingleBlobTrivialWin(t *testing.T) {
 	engine := pipeline.NewEngine()
 	grid := gridWithCell(10, 10, 3, 3, 4)
 
-	action, obs, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 1, 2, 2, "")
+	// explorationRoll=1.0 guarantees no exploration override (Curiosity's
+	// max is 1.0 and explorationRoll < curiosity is never true at exactly
+	// 1.0), keeping this test's hand-traced result independent of the
+	// curiosity/exploration mechanics under test elsewhere.
+	action, obs, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 1, 2, 2, "", 0.1, 1.0)
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
@@ -197,7 +226,7 @@ func TestChooseClickActionPicksHighestRankedBlobOnFreshEngine(t *testing.T) {
 	}
 	grid[5][5] = 7
 
-	action, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 2, 2, 2, "")
+	action, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 2, 2, 2, "", 0.1, 1.0)
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
@@ -220,7 +249,7 @@ func TestChooseClickActionBindsToCurrentFrameNotStaleCentroid(t *testing.T) {
 	engine := pipeline.NewEngine()
 
 	frame1 := gridWithCell(10, 10, 2, 2, 4)
-	action1, _, _, err := ChooseClickAction(ctx, engine, frame1, "investigate the scene", 1, 2, 2, "")
+	action1, _, _, err := ChooseClickAction(ctx, engine, frame1, "investigate the scene", 1, 2, 2, "", 0.1, 1.0)
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error on frame 1: %v", err)
 	}
@@ -229,7 +258,7 @@ func TestChooseClickActionBindsToCurrentFrameNotStaleCentroid(t *testing.T) {
 	}
 
 	frame2 := gridWithCell(10, 10, 4, 3, 4)
-	action2, _, _, err := ChooseClickAction(ctx, engine, frame2, "investigate the scene", 1, 2, 2, "")
+	action2, _, _, err := ChooseClickAction(ctx, engine, frame2, "investigate the scene", 1, 2, 2, "", 0.1, 1.0)
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error on frame 2: %v", err)
 	}
@@ -243,8 +272,106 @@ func TestChooseClickActionErrorsOnEmptyGrid(t *testing.T) {
 	engine := pipeline.NewEngine()
 	grid := [][]int{{0, 0}, {0, 0}}
 
-	_, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "")
+	_, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", 0.1, 1.0)
 	if err == nil {
 		t.Fatalf("FAIL: expected an error when the grid has no blobs to click")
+	}
+}
+
+func approxEqual(a, b float64) bool {
+	diff := a - b
+	return diff < 1e-9 && diff > -1e-9
+}
+
+// TestChooseClickActionCuriosityFallsOnSuccessAndRisesOnFailure hand-traces
+// Curiosity's dynamics across two calls on a fresh engine (starts 0.5, see
+// pkg/homeostasis.NewState). Call 1 is a bootstrap success (no prior
+// observation) -> Curiosity falls by curiosityStep. Call 2 sees the exact
+// same grid, so the observation is identical -> actionSucceeded is false
+// -> Curiosity rises by curiosityStep, landing back at the start value.
+func TestChooseClickActionCuriosityFallsOnSuccessAndRisesOnFailure(t *testing.T) {
+	ctx := context.Background()
+	engine := pipeline.NewEngine()
+	grid := gridWithCell(10, 10, 3, 3, 4)
+	const step = 0.1
+
+	start := engine.Homeostasis.Curiosity
+	_, obs1, _, err := ChooseClickAction(ctx, engine, grid, "goal", 1, 2, 2, "", step, 1.0)
+	if err != nil {
+		t.Fatalf("FAIL: unexpected error on call 1: %v", err)
+	}
+	if got, want := engine.Homeostasis.Curiosity, start-step; !approxEqual(got, want) {
+		t.Fatalf("FAIL: expected curiosity to fall to %.4f after a bootstrap success, got %.4f", want, got)
+	}
+
+	_, _, _, err = ChooseClickAction(ctx, engine, grid, "goal", 1, 2, 2, obs1, step, 1.0)
+	if err != nil {
+		t.Fatalf("FAIL: unexpected error on call 2: %v", err)
+	}
+	if got, want := engine.Homeostasis.Curiosity, start; !approxEqual(got, want) {
+		t.Fatalf("FAIL: expected curiosity to rise back to %.4f after an identical (failed) frame, got %.4f", want, got)
+	}
+}
+
+// threeRankedBlobsGrid builds a 10x10 grid with three blobs of distinct
+// sizes -- a 6-cell color-3 rectangle (centroid (2,1), ranked first), a
+// 2-cell color-5 pair (centroid (5,5), ranked second), and a 1-cell
+// color-7 dot (centroid (8,8), ranked third) -- reusing the same ranking
+// mechanics TestChooseClickActionPicksHighestRankedBlobOnFreshEngine
+// already confirmed: on a fresh engine, the largest blob's label is
+// created first and wins WTA's exact-activation tie by lowest node ID.
+func threeRankedBlobsGrid() [][]int {
+	grid := make([][]int, 10)
+	for y := range grid {
+		grid[y] = make([]int, 10)
+	}
+	for _, x := range []int{1, 2, 3} {
+		grid[1][x] = 3
+		grid[2][x] = 3
+	}
+	grid[5][5] = 5
+	grid[5][6] = 5
+	grid[8][8] = 7
+	return grid
+}
+
+// TestChooseClickActionExplorationPicksNonDefaultBlob: on a fresh engine's
+// first call, a bootstrap success drops Curiosity from 0.5 to 0.4.
+// explorationRoll=0.1 < 0.4, so exploration must trigger. It excludes the
+// default WTA winner (the 6-cell blob at index 0) and picks deterministically
+// among the 2 remaining blobs via normalizedRoll = 0.1/0.4 = 0.25,
+// idx = int(0.25*2) = 0 -> the first remaining ranked blob, the 2-cell
+// blob at (5,5) -- NOT the 6-cell default.
+func TestChooseClickActionExplorationPicksNonDefaultBlob(t *testing.T) {
+	ctx := context.Background()
+	engine := pipeline.NewEngine()
+	grid := threeRankedBlobsGrid()
+
+	action, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", 0.1, 0.1)
+	if err != nil {
+		t.Fatalf("FAIL: unexpected error: %v", err)
+	}
+	want := environment.Action{ID: environment.Action6, X: 5, Y: 5}
+	if action != want {
+		t.Fatalf("FAIL: expected exploration to pick the 2-cell blob's centroid %+v (not the default 6-cell winner (2,1)), got %+v", want, action)
+	}
+}
+
+// TestChooseClickActionNoExplorationWhenRollMeetsCuriosity: same setup as
+// above, but explorationRoll=0.4 exactly meets (does not fall below)
+// post-update Curiosity 0.4, so exploration must NOT trigger -- the
+// default WTA winner (the 6-cell blob, centroid (2,1)) must be returned.
+func TestChooseClickActionNoExplorationWhenRollMeetsCuriosity(t *testing.T) {
+	ctx := context.Background()
+	engine := pipeline.NewEngine()
+	grid := threeRankedBlobsGrid()
+
+	action, _, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", 0.1, 0.4)
+	if err != nil {
+		t.Fatalf("FAIL: unexpected error: %v", err)
+	}
+	want := environment.Action{ID: environment.Action6, X: 2, Y: 1}
+	if action != want {
+		t.Fatalf("FAIL: expected the default (6-cell) WTA winner %+v when roll meets curiosity exactly, got %+v", want, action)
 	}
 }
