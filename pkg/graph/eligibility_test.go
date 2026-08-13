@@ -128,3 +128,33 @@ func TestEligibilityTraceAccumulatesAcrossRepeatedFiring(t *testing.T) {
 
 	t.Logf("Accumulating Trace PASS: two firings within decay window -> trace=%.4f (> single-firing 1.0)", got)
 }
+
+// TestHebbianUpdateWithEligibilityClampsWeightMagnitude confirms a real bug
+// found 2026-08-13 against a live run stays fixed: with no per-edge bound,
+// a long streak of negative reward drove a weight (and downstream,
+// propagated Activation) to roughly -4.12, with NormalizeNodeL1 never
+// intervening because a single low-degree node's L1 sum never approached
+// its 10.0 cap. Five repeated large negative updates on a fresh edge
+// (start 0.5, delta -0.5 each call) would reach -2.0 uncapped; clamped,
+// it must stop exactly at -MaxWeightMagnitude and go no further.
+func TestHebbianUpdateWithEligibilityClampsWeightMagnitude(t *testing.T) {
+	sys := core.NewSystem()
+	g := buildTwoNodeEdge()
+	g.Nodes[1].Edges[2].Eligibility = 1.0 // fixed trace, isolates the clamp from decay/accumulation mechanics
+
+	learningRate, reward, l1Cap := 0.5, -1.0, 10.0
+	var got float64
+	for i := 0; i < 5; i++ {
+		g.HebbianUpdateWithEligibility(sys, learningRate, reward, l1Cap)
+		got = g.Nodes[1].Edges[2].Weight
+	}
+
+	if got != -MaxWeightMagnitude {
+		t.Fatalf("FAIL: expected weight clamped to exactly %.4f after sustained negative reward, got %.4f", -MaxWeightMagnitude, got)
+	}
+	if got < -MaxWeightMagnitude {
+		t.Fatalf("FAIL: weight %.4f fell below the floor -- clamp is not holding", got)
+	}
+
+	t.Logf("Weight Clamp PASS: 5 successive delta=-0.5 updates on a 0.5-start edge held at floor %.4f instead of drifting to -2.0", got)
+}
