@@ -184,6 +184,15 @@ type Engine struct {
 	// toward competence, with no external reward.
 	PendingActionToken     string
 	ActionLearningProgress map[string]float64
+
+	// ActionPreferenceGain is the PRAGMATIC half of expected free energy: the
+	// learned expected increase in PRIOR PREFERENCE (source of meaning, e.g.
+	// perception.StructureScore) from taking each action. The caller feeds the
+	// realized preference delta via AttributePreferenceGain, credited to the
+	// action that conditioned the forecast. BestAction then plans toward
+	// meaning -- choosing the action expected to move the world toward the
+	// preferred state -- instead of only reacting after the fact.
+	ActionPreferenceGain map[string]float64
 }
 
 const (
@@ -374,7 +383,48 @@ func NewEngine() *Engine {
 
 		CompressionThreshold:   0.75,
 		ActionLearningProgress: make(map[string]float64),
+		ActionPreferenceGain:   make(map[string]float64),
 	}
+}
+
+// preferenceGainAlpha smooths the per-action preference-gain estimate.
+const preferenceGainAlpha = 0.25
+
+// expectedFreeEnergyEpiWeight is how much epistemic value (competence gain)
+// counts alongside pragmatic value (preference gain) when planning an action.
+// Pragmatic dominates -- the agent chiefly seeks the goal -- but a little
+// epistemic weight keeps it drawn toward actions it can still learn from.
+const expectedFreeEnergyEpiWeight = 0.3
+
+// AttributePreferenceGain credits a realized change in prior preference (the
+// source of meaning) to the action that conditioned the current forecast, as
+// a smoothed per-action estimate. The caller computes the delta (it needs the
+// raw state, e.g. the grid, which the vector-space forward model doesn't
+// carry) and calls this after the action's outcome is observed. No-op when no
+// action is pending.
+func (e *Engine) AttributePreferenceGain(delta float64) {
+	if e.PendingActionToken == "" {
+		return
+	}
+	prev := e.ActionPreferenceGain[e.PendingActionToken]
+	e.ActionPreferenceGain[e.PendingActionToken] = preferenceGainAlpha*delta + (1-preferenceGainAlpha)*prev
+}
+
+// BestAction plans by minimizing expected free energy: it picks the candidate
+// with the highest pragmatic value (expected preference gain -- movement
+// toward the preferred/meaningful state) plus a modest epistemic term
+// (competence gain). Unseen candidates score 0. This is the deliberative
+// upgrade over BestCompetenceAction: the agent chooses actions expected to
+// reach the goal, not only ones it learns from. "" for no candidates.
+func (e *Engine) BestAction(candidates []string) string {
+	best, bestVal := "", math.Inf(-1)
+	for _, c := range candidates {
+		val := e.ActionPreferenceGain[c] + expectedFreeEnergyEpiWeight*e.ActionLearningProgress[c]
+		if val > bestVal {
+			bestVal, best = val, c
+		}
+	}
+	return best
 }
 
 // specialistFor returns the Predictor specialist responsible for clusterID,
