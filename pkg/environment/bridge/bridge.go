@@ -204,7 +204,11 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 		return environment.Action{}, "", "", nil, fmt.Errorf("bridge: no blobs found in grid, nothing to click")
 	}
 
-	observation := perception.DescribeGridCells(grid, maxBlobs, cols, rows)
+	// Structural observation: per-blob surface tokens PLUS surface-agnostic
+	// structural tokens (RelationalTokens). The forward model and graph now
+	// see structure that can transfer across surface-different domains; the
+	// structural tokens aren't blob-shaped so they never become click targets.
+	observation := perception.DescribeGridStructural(grid, maxBlobs, cols, rows)
 	actualSuccess := levelsCompletedIncreased || actionSucceeded(previousObservation, observation)
 	memory.Record(previousClickedLabel, actualSuccess)
 
