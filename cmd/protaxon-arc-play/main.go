@@ -46,6 +46,7 @@ func main() {
 	cols := flag.Int("cols", 16, "grid-cell lattice columns for ChooseClickAction")
 	rows := flag.Int("rows", 16, "grid-cell lattice rows for ChooseClickAction")
 	curiosityStep := flag.Float64("curiosity-step", 0.1, "how much Curiosity moves per action, up on failure, down on success")
+	exploreActions := flag.Float64("explore-actions", 0.2, "probability of trying a random available SIMPLE action (ACTION1-5) instead of a click, so the agent explores the whole action space, not just clicks")
 	flag.Parse()
 
 	ctx := context.Background()
@@ -160,7 +161,25 @@ func main() {
 		// Diagnostic: what OutcomeMemory has accumulated for the category
 		// about to be clicked -- distinguishes "picked because it's proven"
 		// from "picked because WTA/exploration said so with zero evidence."
-		if rate, attempts := memory.SuccessRate(clickedLabel); attempts > 0 {
+		// Action-space exploration: ChooseClickAction only ever proposes a
+		// click (ACTION6), so the agent has been playing with 1 of the 3
+		// available actions. A game may REQUIRE a simple control (ACTION1-5)
+		// that no click can substitute for -- the most likely reason a
+		// click-only agent stalls at score 0 forever. With probability
+		// -explore-actions, send a random available simple action instead, so
+		// the agent actually tries the whole action space and can discover
+		// (via levels_completed / the forecast) what those controls do. Click
+		// (6) and undo (7) are excluded from this exploration.
+		exploredAction := false
+		if simple := availableSimpleActions(frame.AvailableActions); len(simple) > 0 && rand.Float64() < *exploreActions {
+			action = environment.Action{ID: simple[rand.Intn(len(simple))]}
+			clickedLabel = "" // not a click -- don't credit a blob label to this step
+			exploredAction = true
+		}
+
+		if exploredAction {
+			fmt.Printf("action %d: exploring simple action %v (not a click)\n", actionsTaken+1, action.ID)
+		} else if rate, attempts := memory.SuccessRate(clickedLabel); attempts > 0 {
 			fmt.Printf("action %d: clicking %q, prior record: %d/%d successful\n", actionsTaken+1, clickedLabel, int(rate*float64(attempts)+0.5), attempts)
 		} else {
 			fmt.Printf("action %d: clicking %q, no prior record\n", actionsTaken+1, clickedLabel)
@@ -176,8 +195,13 @@ func main() {
 			break
 		}
 		frame = newFrame
-		fmt.Printf("action %d: click (%d,%d) -> state=%s levels_completed=%d (cohesion this cycle=%.4f)\n",
-			actionsTaken, action.X, action.Y, frame.State, frame.LevelsCompleted, res.MaxCohesionObserved)
+		if exploredAction {
+			fmt.Printf("action %d: sent %v -> state=%s levels_completed=%d\n",
+				actionsTaken, action.ID, frame.State, frame.LevelsCompleted)
+		} else {
+			fmt.Printf("action %d: click (%d,%d) -> state=%s levels_completed=%d (cohesion this cycle=%.4f)\n",
+				actionsTaken, action.X, action.Y, frame.State, frame.LevelsCompleted, res.MaxCohesionObserved)
+		}
 
 		if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
 			// Register the outcome of the action that just caused this
@@ -219,4 +243,19 @@ func hasAction6(actions []environment.ActionID) bool {
 		}
 	}
 	return false
+}
+
+// availableSimpleActions returns the offered "simple" actions (ACTION1-5, no
+// X/Y) -- the controls the click-only agent never tries. Click (ACTION6) and
+// undo (ACTION7) are deliberately excluded: 6 is what ChooseClickAction
+// already handles, and randomly firing undo would mostly just reverse
+// progress rather than explore a control.
+func availableSimpleActions(actions []environment.ActionID) []environment.ActionID {
+	simple := make([]environment.ActionID, 0, len(actions))
+	for _, a := range actions {
+		if a >= environment.Action1 && a <= environment.Action5 {
+			simple = append(simple, a)
+		}
+	}
+	return simple
 }
