@@ -17,13 +17,26 @@ package bridge
 type OutcomeMemory struct {
 	attempts  map[string]int
 	successes map[string]int
+	// eligibility is a decaying trace per label -- how recently/repeatedly it
+	// was clicked -- so a sparse reward (a level completion) can be credited
+	// BACK along the recent action sequence, most to the last click, less to
+	// earlier ones. This is branch C: the only ground-truth reward is
+	// levels_completed, which is rare and has never fired live, so when it
+	// finally does the whole sequence that produced it must stick, not just
+	// the single last click.
+	eligibility map[string]float64
 }
+
+// eligibilityDecay is how fast a label's credit trace fades each click
+// (0.7 -> a click ~3 steps back still carries ~1/3 the credit of the last).
+const eligibilityDecay = 0.7
 
 // NewOutcomeMemory returns an empty memory, ready to use.
 func NewOutcomeMemory() *OutcomeMemory {
 	return &OutcomeMemory{
-		attempts:  make(map[string]int),
-		successes: make(map[string]int),
+		attempts:    make(map[string]int),
+		successes:   make(map[string]int),
+		eligibility: make(map[string]float64),
 	}
 }
 
@@ -34,9 +47,31 @@ func (m *OutcomeMemory) Record(label string, success bool) {
 	if label == "" {
 		return
 	}
+	// Age every eligibility trace, then mark this label as most-recent.
+	for l := range m.eligibility {
+		m.eligibility[l] *= eligibilityDecay
+	}
 	m.attempts[label]++
 	if success {
 		m.successes[label]++
+	}
+	m.eligibility[label] += 1.0
+}
+
+// ReinforceLevelCompletion credits a sparse reward (a completed level) back
+// along the recent action sequence: each label gets a success-and-attempt
+// boost proportional to its eligibility trace, so the clicks that led up to
+// the win -- most of all the last one -- become strongly "proven" and get
+// repeated. strength scales the boost (successes added to the last click ~=
+// strength). Traces are consumed (reset) so one win is credited once.
+func (m *OutcomeMemory) ReinforceLevelCompletion(strength float64) {
+	for label, elig := range m.eligibility {
+		credit := int(strength*elig + 0.5)
+		if credit > 0 {
+			m.successes[label] += credit
+			m.attempts[label] += credit
+		}
+		m.eligibility[label] = 0
 	}
 }
 
