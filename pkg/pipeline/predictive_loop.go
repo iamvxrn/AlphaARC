@@ -240,6 +240,43 @@ func changedTokens(cur, prev string) string {
 	return strings.Join(changed, " ")
 }
 
+// actionBlendWeight is how strongly the chosen action perturbs the state
+// representation the forward model conditions on (see ConditionForecastOnAction).
+const actionBlendWeight = 1.0
+
+// ConditionForecastOnAction makes the forward model action-conditioned:
+// p(next | state, action) instead of p(next | state). Call it AFTER the action
+// for this cycle is chosen (the action isn't known when RunPredictiveCycle
+// runs). It blends the action's embedding into the state just cached, so both
+// (a) the forecast of next cycle's observation and (b) the input the next cycle
+// trains that forecaster on are conditioned on the action actually taken --
+// which is what lets the model learn that the SAME state leads to DIFFERENT
+// next states under different actions (unlearnable without conditioning: one
+// input, two targets). No-op before the first cycle / on an empty token.
+func (e *Engine) ConditionForecastOnAction(actionToken string) {
+	if e.PrevPredictor == nil || e.PrevStateVector == nil || actionToken == "" {
+		return
+	}
+	actVec := ObservationVector(actionToken)
+	blended := make([]float64, len(e.PrevStateVector))
+	norm := 0.0
+	for i := range blended {
+		blended[i] = e.PrevStateVector[i] + actionBlendWeight*actVec[i]
+		norm += blended[i] * blended[i]
+	}
+	if norm > 0 {
+		norm = math.Sqrt(norm)
+		for i := range blended {
+			blended[i] /= norm
+		}
+	}
+	e.PrevStateVector = blended // next cycle trains (state+action -> realized next)
+	_, out := e.PrevPredictor.MLP.Forward(blended)
+	pending := make([]float64, len(out))
+	copy(pending, out)
+	e.PendingPrediction = pending // forecast now conditioned on the action
+}
+
 func NewEngine() *Engine {
 	sys := core.NewSystem()
 	g := graph.NewGraph()

@@ -286,6 +286,10 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 	}
 
 	clickedLabel := labeled[chosenIndex].Label
+	// Action-condition the forward model on WHICH blob was clicked, so it
+	// learns that clicking different things from the same scene leads to
+	// different next states (branch A: p(next | state, action)).
+	engine.ConditionForecastOnAction("click-" + clickedLabel)
 	return clickAction(labeled[chosenIndex].Blob), observation, clickedLabel, res, nil
 }
 
