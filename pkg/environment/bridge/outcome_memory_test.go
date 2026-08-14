@@ -52,3 +52,33 @@ func TestOutcomeMemoryTracksLabelsIndependently(t *testing.T) {
 		t.Fatalf("FAIL: expected color5-cell1-1 at rate=0.0 attempts=1, got rate=%.4f attempts=%d", rate, attempts)
 	}
 }
+
+// TestReinforceLevelCompletionCreditsRecentSequenceMostAndProves is branch C:
+// a sparse level-completion reward must flow back along the recent click
+// sequence with recency weighting -- the last click credited most, earlier
+// ones less -- and lift them all to "proven", so the winning path sticks.
+func TestReinforceLevelCompletionCreditsRecentSequenceMostAndProves(t *testing.T) {
+	m := NewOutcomeMemory()
+	// Three clicks in order, none a proxy-success on its own.
+	for _, l := range []string{"L1", "L2", "L3"} {
+		m.Record(l, false)
+	}
+	// Level completes right after L3.
+	m.ReinforceLevelCompletion(5.0)
+
+	successesOf := func(label string) int {
+		rate, attempts := m.SuccessRate(label)
+		return int(rate*float64(attempts) + 0.5)
+	}
+	s1, s2, s3 := successesOf("L1"), successesOf("L2"), successesOf("L3")
+	if !(s3 > s2 && s2 > s1) {
+		t.Fatalf("FAIL: level-completion credit not recency-weighted: L3=%d L2=%d L1=%d (want L3>L2>L1)", s3, s2, s1)
+	}
+	// The winning path must now read as proven (>= minProvenAttempts, rate > 0.5).
+	for _, l := range []string{"L1", "L2", "L3"} {
+		rate, attempts := m.SuccessRate(l)
+		if attempts < minProvenAttempts || rate <= 0.5 {
+			t.Fatalf("FAIL: %s not proven after level completion: rate=%.2f attempts=%d", l, rate, attempts)
+		}
+	}
+}

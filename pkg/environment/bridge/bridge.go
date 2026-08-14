@@ -211,6 +211,13 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 	observation := perception.DescribeGridStructural(grid, maxBlobs, cols, rows)
 	actualSuccess := levelsCompletedIncreased || actionSucceeded(previousObservation, observation)
 	memory.Record(previousClickedLabel, actualSuccess)
+	// Branch C: a real level completion is the only ground-truth reward. When
+	// it fires, credit it back along the recent click sequence (Record above
+	// just set previousClickedLabel as the most-recent trace), so the whole
+	// path that won -- not only the last click -- becomes strongly preferred.
+	if levelsCompletedIncreased {
+		memory.ReinforceLevelCompletion(levelCompletionStrength)
+	}
 
 	if actualSuccess {
 		engine.Homeostasis.Curiosity = math.Max(0.0, engine.Homeostasis.Curiosity-curiosityStep)
@@ -299,6 +306,11 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 // action budget (tens, not thousands, of actions), high enough that a
 // single lucky/unlucky outcome can't flip the decision.
 const minProvenAttempts = 3
+
+// levelCompletionStrength scales how hard a completed level reinforces the
+// recent click sequence (branch C). ~5 successes onto the last click makes it
+// immediately clear minProvenAttempts and read as strongly proven.
+const levelCompletionStrength = 5.0
 
 // actionSucceeded reports whether the grid visibly changed since the
 // previous frame's observation -- the cheapest honestly-available proxy
