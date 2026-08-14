@@ -494,12 +494,16 @@ func TestChooseClickActionPredictableOutcomeSuppressesProvenOverride(t *testing.
 	}
 
 	// Arm the forward model to predict this frame well: PendingPrediction ~=
-	// the observation's embedding, so RunPredictiveCycle reports a tiny
-	// (predictable) forecast error this cycle.
+	// the observation's embedding, so RunPredictiveCycle reports a tiny error
+	// this cycle. Past warmup (ForecastSamples) with a HIGH running norm, so
+	// the tiny error registers as SETTLED both absolutely and relative to the
+	// norm -- exercising the relativized predictability signal.
+	engine.ForecastSamples = 10
+	engine.ForecastErrorEMA = 0.5
 	obs := perception.DescribeGridStructural(grid, 3, 2, 2) // must match what ChooseClickAction now feeds the cycle
 	pv := pipeline.ObservationVector(obs)
 	pend := append([]float64(nil), pv...)
-	pend[0] += 0.1 // MSE = 0.1^2 / 20 = 0.0005, below predictableForecastError
+	pend[0] += 0.1 // MSE = 0.1^2 / 20 = 0.0005, a settled (well-predicted) spot
 	engine.PendingPrediction = pend
 
 	action, _, clickedLabel, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", false, 0.1, 1.0, memory, "")

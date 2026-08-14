@@ -17,14 +17,14 @@ func TestRegisterForecastErrorIgnoresColdStartLargeErrors(t *testing.T) {
 	// though each is huge, none may fire -- they're establishing the norm,
 	// not deviating from it, and warmup isn't satisfied yet.
 	for i := 0; i < minForecastSamplesForSurprise; i++ {
-		if acute := e.registerForecastError(5.0, true); acute {
+		if acute, _ := e.registerForecastError(5.0, true); acute {
 			t.Fatalf("FAIL: cold-start large error #%d flagged acute during warmup", i+1)
 		}
 	}
 
 	// Still 5.0 -- past warmup now, but 5.0 is exactly the running norm, not a
 	// spike above it, so it must NOT be acute.
-	if acute := e.registerForecastError(5.0, true); acute {
+	if acute, _ := e.registerForecastError(5.0, true); acute {
 		t.Fatalf("FAIL: an error equal to the running norm was flagged acute")
 	}
 }
@@ -36,13 +36,13 @@ func TestRegisterForecastErrorFlagsGenuineSpike(t *testing.T) {
 
 	// Settle the running norm near 0.05 with several small errors (past warmup).
 	for i := 0; i < minForecastSamplesForSurprise+3; i++ {
-		if acute := e.registerForecastError(0.05, true); acute {
+		if acute, _ := e.registerForecastError(0.05, true); acute {
 			t.Fatalf("FAIL: a steady small error #%d was flagged acute", i+1)
 		}
 	}
 
 	// A spike an order of magnitude above the settled norm must fire.
-	if acute := e.registerForecastError(1.0, true); !acute {
+	if acute, _ := e.registerForecastError(1.0, true); !acute {
 		t.Fatalf("FAIL: expected a spike (1.0) far above the settled norm (~0.05) to be flagged acute, got false (EMA=%.4f)", e.ForecastErrorEMA)
 	}
 }
@@ -52,7 +52,7 @@ func TestRegisterForecastErrorFlagsGenuineSpike(t *testing.T) {
 // the sample count.
 func TestRegisterForecastErrorNoForecastNeverAcute(t *testing.T) {
 	e := NewEngine()
-	if acute := e.registerForecastError(0.0, false); acute {
+	if acute, _ := e.registerForecastError(0.0, false); acute {
 		t.Fatalf("FAIL: a cycle with no prior forecast was flagged acute")
 	}
 	if e.ForecastSamples != 0 {
@@ -71,16 +71,39 @@ func TestRegisterForecastErrorAbsoluteFloorKillsTinyOscillationFalsePositive(t *
 	e := NewEngine()
 	// Reproduce the loop: alternate 0.0011 / 0.0045 for a while past warmup.
 	for i := 0; i < minForecastSamplesForSurprise+2; i++ {
-		lo := e.registerForecastError(0.0011, true)
-		hi := e.registerForecastError(0.0045, true)
+		lo, _ := e.registerForecastError(0.0011, true)
+		hi, _ := e.registerForecastError(0.0045, true)
 		if lo || hi {
 			t.Fatalf("FAIL: a tiny 2-state oscillation (0.0011/0.0045) flagged acute surprise at iter %d -- absolute floor not applied", i)
 		}
 	}
 	// Sanity that the floor isn't just always-false: a real spike well above
 	// the floor still fires.
-	if !e.registerForecastError(1.0, true) {
+	if acute, _ := e.registerForecastError(1.0, true); !acute {
 		t.Fatalf("FAIL: a genuine 1.0 spike above both the norm and the floor did not fire")
+	}
+}
+
+// TestRegisterForecastErrorSettledIsRelativeToNorm is the regression for the
+// A-broke-B interaction: wiring structural tokens raised every forecast error,
+// and an ABSOLUTE predictability cutoff (0.05) then sat below 87% of them, so
+// the epistemic escape stopped firing and the agent re-locked. With a relative
+// "settled" signal, an error well below its running norm counts as settled
+// even when that norm is high -- and an error sitting at the norm does not.
+func TestRegisterForecastErrorSettledIsRelativeToNorm(t *testing.T) {
+	e := NewEngine()
+	// Establish a HIGH norm (structure-inflated errors), past warmup.
+	for i := 0; i < minForecastSamplesForSurprise+3; i++ {
+		e.registerForecastError(0.30, true)
+	}
+	// 0.10 is well above the old absolute 0.05 cutoff, but well below the ~0.30
+	// running norm -> must be settled now.
+	if _, settled := e.registerForecastError(0.10, true); !settled {
+		t.Fatalf("FAIL: error 0.10 far below the running norm (EMA=%.4f) not flagged settled -- relativization not applied", e.ForecastErrorEMA)
+	}
+	// An error at/above the norm is not settled.
+	if _, settled := e.registerForecastError(0.40, true); settled {
+		t.Fatalf("FAIL: error 0.40 above the running norm was flagged settled")
 	}
 }
 
