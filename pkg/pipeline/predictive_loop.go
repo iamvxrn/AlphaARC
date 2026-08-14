@@ -150,6 +150,16 @@ const (
 	// very first (necessarily untrained, necessarily large) errors can never
 	// trigger narrowing before there's any baseline to be surprised against.
 	minForecastSamplesForSurprise = 5
+	// minAbsoluteForecastSurprise is an absolute floor on what counts as
+	// acute, ON TOP of the relative test. A 1000-action live run exposed the
+	// need: once the forward model perfectly predicts a dead 2-state loop, its
+	// error oscillates between tiny values (e.g. 0.0011 and 0.0045), and the
+	// high phase, though microscopic, is >1.5x the blended norm -- so the pure
+	// relative test flagged "acute surprise" on ~half of a perfectly-predicted
+	// dead loop (445/1000 actions). A surprise on a 0.0045 error is not a
+	// surprise; requiring the error to also clear this floor kills that false
+	// alarm while leaving genuine spikes (observed 0.1-1.4) untouched.
+	minAbsoluteForecastSurprise = 0.02
 )
 
 // registerForecastError folds this cycle's forecast error into the running-
@@ -162,6 +172,7 @@ func (e *Engine) registerForecastError(forecastError float64, hadPrediction bool
 		return false
 	}
 	acute := e.ForecastSamples >= minForecastSamplesForSurprise &&
+		forecastError > minAbsoluteForecastSurprise &&
 		forecastError > e.ForecastErrorEMA*forecastSurpriseFactor
 	if e.ForecastSamples == 0 {
 		e.ForecastErrorEMA = forecastError // seed the baseline to the first real error, not 0
