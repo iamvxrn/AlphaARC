@@ -18,7 +18,7 @@ const ObservationVectorDim = 20
 // whitespace-separated token is hashed to one dimension and a +1/-1 sign,
 // and tokens landing on the same dimension accumulate.
 //
-// This IS RunPredictiveCycle's stateVector (predictive_loop.go Step 1d). It
+// This IS RunPredictiveCycle's stateVector (predictive_loop.go Step 0b). It
 // replaced a pseudo-random vector derived purely from e.StepCounter's parity
 // -- which carried zero information about what was actually observed, so the
 // same observation content never produced the same vector twice and
