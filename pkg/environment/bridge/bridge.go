@@ -293,10 +293,10 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 	}
 
 	clickedLabel := labeled[chosenIndex].Label
-	// Action-condition the forward model on WHICH blob was clicked, so it
-	// learns that clicking different things from the same scene leads to
-	// different next states (branch A: p(next | state, action)).
-	engine.ConditionForecastOnAction("click-" + clickedLabel)
+	// NOTE: action-conditioning of the forward model (branch A) is done by the
+	// caller AFTER it decides the final action type (click vs a simple action),
+	// since conditioning here would wrongly condition on "click" even when the
+	// caller ends up sending a simple action instead. See cmd/protaxon-arc-play.
 	return clickAction(labeled[chosenIndex].Blob), observation, clickedLabel, res, nil
 }
 

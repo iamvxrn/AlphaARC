@@ -170,15 +170,40 @@ func main() {
 		// the agent actually tries the whole action space and can discover
 		// (via levels_completed / the forecast) what those controls do. Click
 		// (6) and undo (7) are excluded from this exploration.
+		// Goal-directed action selection (the A+B+C synergy, live): choose the
+		// action TYPE by predicted competence gain -- BestCompetenceAction picks
+		// the action the forward model is learning the most from -- with
+		// epsilon-exploration (-explore-actions) so untried actions get tried at
+		// all. "click" uses ChooseClickAction's chosen target; "act-N" sends the
+		// simple control N. The forward model is then conditioned (branch A) on
+		// the type actually taken, which is also what accrues the per-action
+		// learning progress this selection reads next time.
+		candidates := []string{"click"}
+		simpleByToken := map[string]environment.ActionID{}
+		for _, a := range availableSimpleActions(frame.AvailableActions) {
+			tok := fmt.Sprintf("act-%d", a)
+			candidates = append(candidates, tok)
+			simpleByToken[tok] = a
+		}
+		chosenTok := engine.BestCompetenceAction(candidates)
+		exploring := rand.Float64() < *exploreActions
+		if exploring || chosenTok == "" {
+			chosenTok = candidates[rand.Intn(len(candidates))]
+		}
 		exploredAction := false
-		if simple := availableSimpleActions(frame.AvailableActions); len(simple) > 0 && rand.Float64() < *exploreActions {
-			action = environment.Action{ID: simple[rand.Intn(len(simple))]}
+		if id, ok := simpleByToken[chosenTok]; ok {
+			action = environment.Action{ID: id}
 			clickedLabel = "" // not a click -- don't credit a blob label to this step
 			exploredAction = true
 		}
+		engine.ConditionForecastOnAction(chosenTok)
 
+		fmt.Printf("action %d: chose %q (%s) -- per-action learning progress: click=%.4f%s\n",
+			actionsTaken+1, chosenTok,
+			map[bool]string{true: "exploring", false: "by competence gain"}[exploring],
+			engine.ActionLearningProgress["click"], simpleActionLPString(engine, simpleByToken))
 		if exploredAction {
-			fmt.Printf("action %d: exploring simple action %v (not a click)\n", actionsTaken+1, action.ID)
+			fmt.Printf("action %d: sending simple action %v (not a click)\n", actionsTaken+1, action.ID)
 		} else if rate, attempts := memory.SuccessRate(clickedLabel); attempts > 0 {
 			fmt.Printf("action %d: clicking %q, prior record: %d/%d successful\n", actionsTaken+1, clickedLabel, int(rate*float64(attempts)+0.5), attempts)
 		} else {
@@ -250,6 +275,17 @@ func hasAction6(actions []environment.ActionID) bool {
 // undo (ACTION7) are deliberately excluded: 6 is what ChooseClickAction
 // already handles, and randomly firing undo would mostly just reverse
 // progress rather than explore a control.
+// simpleActionLPString formats the per-action learning progress of the
+// available simple actions for the live diagnostic, so a run shows the
+// competence signal the goal-directed selector is choosing on.
+func simpleActionLPString(engine *pipeline.Engine, simpleByToken map[string]environment.ActionID) string {
+	out := ""
+	for tok := range simpleByToken {
+		out += fmt.Sprintf(" %s=%.4f", tok, engine.ActionLearningProgress[tok])
+	}
+	return out
+}
+
 func availableSimpleActions(actions []environment.ActionID) []environment.ActionID {
 	simple := make([]environment.ActionID, 0, len(actions))
 	for _, a := range actions {
