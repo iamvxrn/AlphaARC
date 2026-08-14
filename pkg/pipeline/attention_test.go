@@ -60,6 +60,30 @@ func TestRegisterForecastErrorNoForecastNeverAcute(t *testing.T) {
 	}
 }
 
+// TestRegisterForecastErrorAbsoluteFloorKillsTinyOscillationFalsePositive is
+// the regression for the 1000-action live run: a dead 2-state loop whose
+// error oscillates between two tiny values (0.0011 / 0.0045) flagged "acute
+// surprise" on the high phase ~445 times, because 0.0045 > 1.5x the blended
+// norm even though both errors are microscopic. The absolute floor must
+// suppress that: an error above the relative threshold but below the floor is
+// NOT a surprise.
+func TestRegisterForecastErrorAbsoluteFloorKillsTinyOscillationFalsePositive(t *testing.T) {
+	e := NewEngine()
+	// Reproduce the loop: alternate 0.0011 / 0.0045 for a while past warmup.
+	for i := 0; i < minForecastSamplesForSurprise+2; i++ {
+		lo := e.registerForecastError(0.0011, true)
+		hi := e.registerForecastError(0.0045, true)
+		if lo || hi {
+			t.Fatalf("FAIL: a tiny 2-state oscillation (0.0011/0.0045) flagged acute surprise at iter %d -- absolute floor not applied", i)
+		}
+	}
+	// Sanity that the floor isn't just always-false: a real spike well above
+	// the floor still fires.
+	if !e.registerForecastError(1.0, true) {
+		t.Fatalf("FAIL: a genuine 1.0 spike above both the norm and the floor did not fire")
+	}
+}
+
 func TestChangedTokens(t *testing.T) {
 	cases := []struct {
 		name, cur, prev, want string
