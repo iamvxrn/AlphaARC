@@ -46,7 +46,13 @@ type CycleResult struct {
 	// narrowed seeding to the locus of change, so a live log can see the
 	// narrowing happen instead of inferring it.
 	AcuteSurprise       bool
-	SeededConcepts      int
+	// Predictable is the mirror of AcuteSurprise: the forward model predicts
+	// this cycle notably below its running norm (or absolutely tiny) -- a
+	// settled, well-understood spot. bridge.ChooseClickAction's epistemic
+	// escape reads it to stop exploiting an action there's nothing left to
+	// learn from. Relative to the norm, so a baseline shift can't disable it.
+	Predictable    bool
+	SeededConcepts int
 	DriveError          float64
 	MLPTrainLoss        float64
 	SleepTriggered      bool
@@ -158,29 +164,46 @@ const (
 	// relative test flagged "acute surprise" on ~half of a perfectly-predicted
 	// dead loop (445/1000 actions). A surprise on a 0.0045 error is not a
 	// surprise; requiring the error to also clear this floor kills that false
-	// alarm while leaving genuine spikes (observed 0.1-1.4) untouched.
+	// alarm while leaving genuine spikes (observed 0.1-1.4) untouched. It
+	// doubles as the absolute-low floor for "settled" (see below).
 	minAbsoluteForecastSurprise = 0.02
+	// forecastSettledFactor: a forecast error counts as SETTLED (the model
+	// predicts this spot notably better than its recent norm -- a well-
+	// understood place with nothing to learn) when it's below this fraction
+	// of the running norm. Relative, for the same reason acute is: a baseline
+	// shift (e.g. structural tokens raising every error) must not silently
+	// disable it -- which is exactly what an absolute threshold did to the
+	// epistemic escape once structure was wired in (87% of actions sat above
+	// the old fixed 0.05, so the escape stopped firing and the agent re-locked).
+	forecastSettledFactor = 0.6
 )
 
 // registerForecastError folds this cycle's forecast error into the running-
-// norm EMA and returns whether it is an ACUTE surprise: past warmup, and a
-// genuine spike above the recent norm (not just a large absolute error --
-// see ForecastErrorEMA's field comment for why that distinction is the
-// whole point). Returns false when there was no forecast to score yet.
-func (e *Engine) registerForecastError(forecastError float64, hadPrediction bool) bool {
+// norm EMA and returns two RELATIVE-to-norm judgments (both false until past
+// warmup / when there was no forecast to score): acute, a genuine spike above
+// the recent norm (and above an absolute floor -- see ForecastErrorEMA's
+// field comment); and settled, its mirror image -- the model predicts this
+// spot notably BELOW its norm (or absolutely tiny), a well-understood place
+// with nothing to learn, which the epistemic escape in bridge.ChooseClickAction
+// uses to stop exploiting. Both are relative so a baseline shift can't
+// silently disable either; they're mutually exclusive by construction.
+func (e *Engine) registerForecastError(forecastError float64, hadPrediction bool) (acute, settled bool) {
 	if !hadPrediction {
-		return false
+		return false, false
 	}
-	acute := e.ForecastSamples >= minForecastSamplesForSurprise &&
-		forecastError > minAbsoluteForecastSurprise &&
-		forecastError > e.ForecastErrorEMA*forecastSurpriseFactor
+	if e.ForecastSamples >= minForecastSamplesForSurprise {
+		acute = forecastError > minAbsoluteForecastSurprise &&
+			forecastError > e.ForecastErrorEMA*forecastSurpriseFactor
+		settled = forecastError < minAbsoluteForecastSurprise ||
+			forecastError < e.ForecastErrorEMA*forecastSettledFactor
+	}
 	if e.ForecastSamples == 0 {
 		e.ForecastErrorEMA = forecastError // seed the baseline to the first real error, not 0
 	} else {
 		e.ForecastErrorEMA = forecastEMAAlpha*forecastError + (1-forecastEMAAlpha)*e.ForecastErrorEMA
 	}
 	e.ForecastSamples++
-	return acute
+	return acute, settled
 }
 
 // changedTokens returns the whitespace-joined subset of cur's tokens that do
@@ -378,7 +401,7 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		// an autoencoder of the previous frame).
 		forecastError = vectorMSE(e.PendingPrediction, stateVector)
 	}
-	acuteSurprise := e.registerForecastError(forecastError, hadPendingPrediction)
+	acuteSurprise, predictable := e.registerForecastError(forecastError, hadPendingPrediction)
 
 	// 1a. Attentional narrowing (precision-weighting / Easterbrook 1959 cue-
 	// utilization: arousal narrows the range of cues attended). Under an
@@ -680,6 +703,7 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		PredictionError:  predErr,
 		ForecastError:    forecastError,
 		AcuteSurprise:    acuteSurprise,
+		Predictable:      predictable,
 		SeededConcepts:   len(seeds),
 		DriveError:       newDriveErr,
 		MLPTrainLoss:     mlpLoss,
