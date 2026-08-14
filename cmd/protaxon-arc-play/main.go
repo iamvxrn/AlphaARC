@@ -133,6 +133,20 @@ func main() {
 		changedSinceLastFrame := prevObservation == "" || observation != prevObservation
 		fmt.Printf("action %d: perceives %q (changed since last frame: %v, levels_completed_increased: %v, curiosity=%.4f)\n",
 			actionsTaken+1, observation, changedSinceLastFrame, levelsCompletedIncreased, engine.Homeostasis.Curiosity)
+		// Diagnostic: the predictive-coding signals from THIS cycle's internal
+		// forward model. forecast_error is how wrong the PREVIOUS cycle's
+		// prediction of this frame turned out to be -- a real cross-cycle
+		// surprise measured against a content-based observation embedding, NOT
+		// the "did the grid change" proxy on the perceives line above. dopamine
+		// is the global plasticity multiplier that surprise now drives (higher
+		// on surprise). What to watch for on a live run, before this signal is
+		// trusted with anything beyond plasticity: does forecast_error actually
+		// rise when the grid visibly changes (changed since last frame: true)
+		// and settle when it doesn't, and does dopamine track it? If instead it
+		// stays flat regardless of what the frame does, the forward model isn't
+		// perceiving the world and the whole predictive-coding layer is cosmetic.
+		fmt.Printf("action %d: predictive-coding: forecast_error=%.4f dopamine=%.4f\n",
+			actionsTaken+1, res.ForecastError, engine.Homeostasis.Dopamine)
 		// Diagnostic: real internal graph state for THIS cycle's candidate
 		// categories -- cluster assignment, activation, and edges between
 		// them -- so diversification in the click choice can be attributed
