@@ -185,8 +185,8 @@ func TestChooseClickActionSingleBlobTrivialWin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
-	if want := perception.DescribeGridCells(grid, 1, 2, 2); obs != want {
-		t.Fatalf("FAIL: expected returned observation %q to match DescribeGridCells, got %q", want, obs)
+	if want := perception.DescribeGridStructural(grid, 1, 2, 2); obs != want {
+		t.Fatalf("FAIL: expected returned observation %q to match DescribeGridStructural, got %q", want, obs)
 	}
 	want := environment.Action{ID: environment.Action6, X: 3, Y: 3}
 	if action != want {
@@ -496,7 +496,7 @@ func TestChooseClickActionPredictableOutcomeSuppressesProvenOverride(t *testing.
 	// Arm the forward model to predict this frame well: PendingPrediction ~=
 	// the observation's embedding, so RunPredictiveCycle reports a tiny
 	// (predictable) forecast error this cycle.
-	obs := perception.DescribeGridCells(grid, 3, 2, 2)
+	obs := perception.DescribeGridStructural(grid, 3, 2, 2) // must match what ChooseClickAction now feeds the cycle
 	pv := pipeline.ObservationVector(obs)
 	pend := append([]float64(nil), pv...)
 	pend[0] += 0.1 // MSE = 0.1^2 / 20 = 0.0005, below predictableForecastError

@@ -3,7 +3,30 @@ package perception
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
+
+// DescribeGridStructural is the observation for the live predictive cycle:
+// the per-blob surface description (DescribeGridCells) PLUS the surface-
+// agnostic structural tokens (RelationalTokens). The structural tokens are
+// not blob-shaped (no "-cell"), so they never become click targets --
+// winningBlobLabel ignores them -- they only enrich the graph and the
+// forward model with structure that can transfer across surface-different
+// domains, without changing what gets clicked. This is the wiring of the
+// representation fix the Stage-6 thermometer motivated: what the agent
+// predicts and abstracts over now carries structure, not just surface labels.
+func DescribeGridStructural(grid [][]int, maxBlobs, cols, rows int) string {
+	base := DescribeGridCells(grid, maxBlobs, cols, rows)
+	rel := RelationalTokens(grid)
+	if len(rel) == 0 {
+		return base
+	}
+	joined := strings.Join(rel, " ")
+	if base == "" {
+		return joined
+	}
+	return base + " " + joined
+}
 
 // RelationalTokens extracts surface-token-agnostic STRUCTURAL features from a
 // grid: the color-multiplicity signature -- how many blobs share each color,
