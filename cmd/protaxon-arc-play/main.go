@@ -145,11 +145,12 @@ func main() {
 		// and settle when it doesn't, and does dopamine track it? If instead it
 		// stays flat regardless of what the frame does, the forward model isn't
 		// perceiving the world and the whole predictive-coding layer is cosmetic.
-		// seeded=%d/%d shows attentional narrowing directly: normally the
-		// seeded-concept count equals the perceived-blob count, but drops to
-		// the locus of change when an acute surprise narrows the focus.
+		// seeded=%d/%d shows attentional narrowing directly: activated concepts
+		// out of what the full frame would activate. Equal normally; the first
+		// number drops below the second exactly when an acute surprise narrows
+		// activation to the locus of change.
 		fmt.Printf("action %d: predictive-coding: forecast_error=%.4f dopamine=%.4f acute_surprise=%v seeded=%d/%d cortisol=%.4f\n",
-			actionsTaken+1, res.ForecastError, engine.Homeostasis.Dopamine, res.AcuteSurprise, res.SeededConcepts, len(labels), engine.Homeostasis.Cortisol)
+			actionsTaken+1, res.ForecastError, engine.Homeostasis.Dopamine, res.AcuteSurprise, res.SeededConcepts, res.SeededConceptsFull, engine.Homeostasis.Cortisol)
 		// Diagnostic: real internal graph state for THIS cycle's candidate
 		// categories -- cluster assignment, activation, and edges between
 		// them -- so diversification in the click choice can be attributed

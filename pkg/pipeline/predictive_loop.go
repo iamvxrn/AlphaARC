@@ -51,8 +51,16 @@ type CycleResult struct {
 	// settled, well-understood spot. bridge.ChooseClickAction's epistemic
 	// escape reads it to stop exploiting an action there's nothing left to
 	// learn from. Relative to the norm, so a baseline shift can't disable it.
-	Predictable    bool
-	SeededConcepts int
+	Predictable bool
+	// SeededConcepts is how many concept nodes were ACTIVATED this cycle;
+	// SeededConceptsFull is how many the full frame would activate without
+	// narrowing. Equal normally; SeededConcepts < SeededConceptsFull exactly
+	// when an acute surprise narrowed activation to the locus of change. (The
+	// pair replaces comparing SeededConcepts against the blob count, which
+	// went wrong once structural tokens joined the observation -- seeds then
+	// exceeded the blob count and every cycle looked "narrowed".)
+	SeededConcepts     int
+	SeededConceptsFull int
 	DriveError          float64
 	MLPTrainLoss        float64
 	SleepTriggered      bool
@@ -417,29 +425,32 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	// ACUTE surprise -- a forecast error spiking above the recent running
 	// norm, deliberately NOT any large absolute error (see
 	// registerForecastError for why a cold-start model's large-but-normal
-	// errors must not trigger this) -- restrict the seed set to the locus of
-	// change, the blobs that appeared/moved since last cycle. Fewer seeds ->
-	// smaller spreading activation -> a tighter active subgraph competing for
-	// the click, and less compute over a field that's mostly unchanged. When
-	// the click just caused a local change, this locus IS the click
-	// neighborhood. Falls back to the full frame if nothing changed (can't
-	// narrow to nothing).
-	seedObservation := observation
-	if acuteSurprise {
-		if focus := changedTokens(observation, e.PrevObservation); focus != "" {
-			seedObservation = focus
-		}
-	}
+	// errors must not trigger this) -- restrict the ACTIVATED seed set to the
+	// locus of change, the blobs that appeared/moved since last cycle. Fewer
+	// active seeds -> smaller spreading activation -> a tighter active subgraph
+	// competing for the click. When the click just caused a local change, this
+	// locus IS the click neighborhood. Node CREATION always covers the full
+	// frame (below): attention narrows what the graph ATTENDS to this cycle,
+	// never what it KNOWS exists -- so a blob first seen during a narrowed
+	// cycle still gets its node.
+	prevObservation := e.PrevObservation
 	e.PrevObservation = observation
 
 	// 1. Observation -> Node Lookup-or-Create -> Spreading Activation -> Active Subgraph Extraction
-	// EnsureConceptNodes lets the graph grow from real experience: novel
-	// vocabulary in the observation becomes new concept nodes instead of
-	// being silently dropped, which is what Stage 3 compression needs to
-	// eventually act on organically-grown structure, not just hand-seeded
-	// demo nodes. Seeds from seedObservation (the full frame normally, or the
-	// narrowed locus of change under an acute surprise -- Step 1a).
-	seeds := e.Graph.EnsureConceptNodes(seedObservation, 0.5)
+	// EnsureConceptNodes always runs on the FULL observation so the graph grows
+	// from all real experience (novel vocabulary becomes nodes regardless of
+	// narrowing). allSeeds is the full seed set; under an acute surprise the
+	// ACTIVATED seeds are narrowed to the changed locus via LookupSeeds (the
+	// nodes already exist from the full EnsureConceptNodes call, so the lookup
+	// finds them). SeededConcepts vs len(allSeeds) then honestly shows whether
+	// narrowing actually fired.
+	allSeeds := e.Graph.EnsureConceptNodes(observation, 0.5)
+	seeds := allSeeds
+	if acuteSurprise {
+		if focus := changedTokens(observation, prevObservation); focus != "" {
+			seeds = e.Graph.LookupSeeds(focus)
+		}
+	}
 	activations := e.Graph.SpreadingActivation(e.Sys, seeds, 3, 0.7)
 	rawActiveNodeIDs := graph.ExtractActiveSubgraph(activations, 0.1)
 
@@ -711,9 +722,10 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		ActualOutcome:    actualOutcome,
 		PredictionError:  predErr,
 		ForecastError:    forecastError,
-		AcuteSurprise:    acuteSurprise,
-		Predictable:      predictable,
-		SeededConcepts:   len(seeds),
+		AcuteSurprise:      acuteSurprise,
+		Predictable:        predictable,
+		SeededConcepts:     len(seeds),
+		SeededConceptsFull: len(allSeeds),
 		DriveError:       newDriveErr,
 		MLPTrainLoss:     mlpLoss,
 		SleepTriggered:   sleepTriggered,
