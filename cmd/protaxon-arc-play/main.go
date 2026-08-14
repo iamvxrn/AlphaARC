@@ -186,7 +186,7 @@ func main() {
 			candidates = append(candidates, tok)
 			simpleByToken[tok] = a
 		}
-		chosenTok := engine.BestCompetenceAction(candidates)
+		chosenTok := engine.BestAction(candidates) // plan by expected free energy (preference gain + competence)
 		exploring := rand.Float64() < *exploreActions
 		if exploring || chosenTok == "" {
 			chosenTok = candidates[rand.Intn(len(candidates))]
@@ -199,10 +199,11 @@ func main() {
 		}
 		engine.ConditionForecastOnAction(chosenTok)
 
-		fmt.Printf("action %d: chose %q (%s) -- per-action learning progress: click=%.4f%s\n",
+		fmt.Printf("action %d: chose %q (%s) -- preference_gain: click=%+.4f%s | competence: click=%+.4f%s\n",
 			actionsTaken+1, chosenTok,
-			map[bool]string{true: "exploring", false: "by competence gain"}[exploring],
-			engine.ActionLearningProgress["click"], simpleActionLPString(engine, simpleByToken))
+			map[bool]string{true: "exploring", false: "by expected free energy"}[exploring],
+			engine.ActionPreferenceGain["click"], simpleActionGainString(engine.ActionPreferenceGain, simpleByToken),
+			engine.ActionLearningProgress["click"], simpleActionGainString(engine.ActionLearningProgress, simpleByToken))
 		if exploredAction {
 			fmt.Printf("action %d: sending simple action %v (not a click)\n", actionsTaken+1, action.ID)
 		} else if rate, attempts := memory.SuccessRate(clickedLabel); attempts > 0 {
@@ -233,6 +234,11 @@ func main() {
 		if preferenceIncreased && !exploredAction && clickedLabel != "" {
 			memory.Record(clickedLabel, true)
 		}
+		// Plan: credit this action's realized preference change so BestAction
+		// can steer toward the goal next time (the pragmatic half of expected
+		// free energy). Attributed to the action just taken (its token still
+		// pending from ConditionForecastOnAction above).
+		engine.AttributePreferenceGain(newPreference - prevPreference)
 		fmt.Printf("action %d: preference(structure)=%.4f delta=%+.4f%s\n",
 			actionsTaken, newPreference, newPreference-prevPreference,
 			map[bool]string{true: " <- toward goal, reinforced", false: ""}[preferenceIncreased && !exploredAction && clickedLabel != ""])
@@ -293,13 +299,13 @@ func hasAction6(actions []environment.ActionID) bool {
 // undo (ACTION7) are deliberately excluded: 6 is what ChooseClickAction
 // already handles, and randomly firing undo would mostly just reverse
 // progress rather than explore a control.
-// simpleActionLPString formats the per-action learning progress of the
-// available simple actions for the live diagnostic, so a run shows the
-// competence signal the goal-directed selector is choosing on.
-func simpleActionLPString(engine *pipeline.Engine, simpleByToken map[string]environment.ActionID) string {
+// simpleActionGainString formats a per-action gain map (preference or
+// competence) for the available simple actions in the live diagnostic, so a
+// run shows the two signals the planner chooses on.
+func simpleActionGainString(gains map[string]float64, simpleByToken map[string]environment.ActionID) string {
 	out := ""
 	for tok := range simpleByToken {
-		out += fmt.Sprintf(" %s=%.4f", tok, engine.ActionLearningProgress[tok])
+		out += fmt.Sprintf(" %s=%+.4f", tok, gains[tok])
 	}
 	return out
 }
