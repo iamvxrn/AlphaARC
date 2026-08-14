@@ -472,6 +472,49 @@ func TestChooseClickActionProvenOutcomeOverridesDefaultAndExploration(t *testing
 	}
 }
 
+// TestChooseClickActionPredictableOutcomeSuppressesProvenOverride is the
+// epistemic-escape (variant B): identical setup to the proven-override test
+// above (3 proven successes for the last-ranked blob), but the engine is
+// armed so THIS cycle's forecast error is low (the forward model already
+// predicts the scene -- PendingPrediction is set within 0.1 of the actual
+// observation embedding on one dimension, MSE ~0.0005 < predictableForecast-
+// Error). A predictable outcome makes the proven action epistemically
+// exhausted, so the override must YIELD and the WTA default (the 6-cell blob
+// at (2,1)) is clicked instead -- the fix for the 976/1000 single-point
+// lock-in a live run showed. Contrast the override-test above, where the
+// cold engine's forecast error is 0 (not predictable) so the override stands.
+func TestChooseClickActionPredictableOutcomeSuppressesProvenOverride(t *testing.T) {
+	ctx := context.Background()
+	engine := pipeline.NewEngine()
+	grid := threeRankedBlobsGrid()
+
+	memory := NewOutcomeMemory()
+	for i := 0; i < 3; i++ {
+		memory.Record("color7-cell1-1", true)
+	}
+
+	// Arm the forward model to predict this frame well: PendingPrediction ~=
+	// the observation's embedding, so RunPredictiveCycle reports a tiny
+	// (predictable) forecast error this cycle.
+	obs := perception.DescribeGridCells(grid, 3, 2, 2)
+	pv := pipeline.ObservationVector(obs)
+	pend := append([]float64(nil), pv...)
+	pend[0] += 0.1 // MSE = 0.1^2 / 20 = 0.0005, below predictableForecastError
+	engine.PendingPrediction = pend
+
+	action, _, clickedLabel, _, err := ChooseClickAction(ctx, engine, grid, "investigate the scene", 3, 2, 2, "", false, 0.1, 1.0, memory, "")
+	if err != nil {
+		t.Fatalf("FAIL: unexpected error: %v", err)
+	}
+	if clickedLabel == "color7-cell1-1" {
+		t.Fatalf("FAIL: proven action was still exploited despite a predictable (epistemically exhausted) outcome -- override not suppressed")
+	}
+	want := environment.Action{ID: environment.Action6, X: 2, Y: 1}
+	if action != want {
+		t.Fatalf("FAIL: expected the WTA default (6-cell blob at (2,1)) once the proven override yields, got %+v (clickedLabel=%q)", action, clickedLabel)
+	}
+}
+
 // TestChooseClickActionInsufficientAttemptsDoNotOverride confirms the
 // minProvenAttempts gate: only 2 recorded successes (below the threshold
 // of 3) for the last-ranked blob must NOT override the WTA default, unlike

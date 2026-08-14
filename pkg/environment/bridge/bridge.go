@@ -219,6 +219,21 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 		return environment.Action{}, observation, "", nil, fmt.Errorf("predictive cycle: %w", err)
 	}
 
+	// Epistemic drive (active inference): when the forward model already
+	// predicts the current dynamics well (low cross-cycle forecast error),
+	// the scene offers nothing new to learn -- exploiting a "proven" action
+	// here is the dead-loop trap a 1000-action live run exposed (one pixel
+	// clicked 976/1000 times, forecast error frozen at ~0.001). So when the
+	// outcome is predictable, push exploration UP (countering the proxy-driven
+	// curiosity collapse that caused the lock-in) and, below, refuse to let
+	// the proven-outcome override re-lock onto the epistemically exhausted
+	// action. forecastError is exactly 0 only on the first cycle (nothing
+	// forecast yet) -- that's not "predictable", so it's excluded.
+	predictable := res.ForecastError > 0 && res.ForecastError < predictableForecastError
+	if predictable {
+		engine.Homeostasis.Curiosity = math.Min(1.0, engine.Homeostasis.Curiosity+curiosityStep)
+	}
+
 	defaultIndex := 0
 	if winner := winningBlobLabel(engine.Graph, res.ActiveNodeIDs); winner != "" {
 		for i, lb := range labeled {
@@ -253,7 +268,13 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 			bestProvenIndex = i
 		}
 	}
-	if bestProvenIndex >= 0 {
+	// The proven-outcome override yields when the outcome is predictable: an
+	// action the forward model can already forecast has no epistemic value,
+	// and continuing to exploit it (on the grid-changed proxy, which we know
+	// is misaligned -- real progress would have fired levelsCompletedIncreased)
+	// is exactly the reward-hacking loop. Suppressing it here lets the
+	// exploration/WTA choice above stand, breaking the single-point lock-in.
+	if bestProvenIndex >= 0 && !predictable {
 		chosenIndex = bestProvenIndex
 	}
 
@@ -267,6 +288,14 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 // action budget (tens, not thousands, of actions), high enough that a
 // single lucky/unlucky outcome can't flip the decision.
 const minProvenAttempts = 3
+
+// predictableForecastError is the cross-cycle forecast error below which the
+// scene is treated as "already well predicted" -- epistemically exhausted, so
+// the proven-outcome override yields and exploration is pushed up. Set above
+// the dead-loop noise a live run showed (~0.001-0.005) and below genuine
+// learning-phase errors (0.1-1.4), so it triggers only once the model has
+// actually mastered the current dynamics.
+const predictableForecastError = 0.05
 
 // actionSucceeded reports whether the grid visibly changed since the
 // previous frame's observation -- the cheapest honestly-available proxy
