@@ -141,6 +141,13 @@ type Engine struct {
 	// then) -- the region attention narrows to under an acute surprise. See
 	// changedTokens and RunPredictiveCycle Step 1a.
 	PrevObservation string
+
+	// CompressionThreshold is the mean intra-cluster edge weight at/above
+	// which the sleep step collapses a cluster into one abstraction node
+	// (Stage 3). Configurable (was a hardcoded 0.75) so the level can be
+	// studied against the transfer thermometer -- organic co-activation edges
+	// start at 0.4, so 0.75 is rarely reached and nothing compresses.
+	CompressionThreshold float64
 }
 
 const (
@@ -271,6 +278,8 @@ func NewEngine() *Engine {
 		Associator: agent.NewAssociatorAgent("assoc-main", dim),
 
 		Goals: goals.NewStack(),
+
+		CompressionThreshold: 0.75,
 	}
 }
 
@@ -680,7 +689,7 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		// weight) into a single abstraction node. Conservative on purpose: the
 		// engine's small seed graph (chain edges at 0.6-0.7) stays below this
 		// bar and is untouched until real experience grows denser clusters.
-		compression = offline.CompressGraphAbstractions(e.Sys, e.Graph, 0.75)
+		compression = offline.CompressGraphAbstractions(e.Sys, e.Graph, e.CompressionThreshold)
 		sleepTriggered = true
 		e.Sys.Mode = core.Online
 	}
