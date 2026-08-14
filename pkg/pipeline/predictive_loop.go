@@ -173,6 +173,17 @@ type Engine struct {
 	// competence gain.
 	PrevForecastError float64
 	LearningProgress  float64
+
+	// PendingActionToken / ActionLearningProgress are the A+B SYNERGY (only
+	// reachable with both the action-conditioned model AND the learning-
+	// progress drive): per-action competence gain. ConditionForecastOnAction
+	// records which action conditioned the current forecast; when next cycle
+	// scores that forecast, the resulting learning-progress delta is
+	// attributed to that action. BestCompetenceAction then picks the action
+	// the agent is learning the most from -- goal-directed action selection
+	// toward competence, with no external reward.
+	PendingActionToken     string
+	ActionLearningProgress map[string]float64
 }
 
 const (
@@ -295,6 +306,23 @@ func (e *Engine) ConditionForecastOnAction(actionToken string) {
 	pending := make([]float64, len(out))
 	copy(pending, out)
 	e.PendingPrediction = pending // forecast now conditioned on the action
+	e.PendingActionToken = actionToken // so next cycle credits learning progress to it
+}
+
+// BestCompetenceAction returns the candidate action token the agent is
+// learning the most from -- the highest per-action LearningProgress (A+B
+// synergy). Unseen candidates score 0. Returns "" for no candidates. This is
+// goal-directed action selection toward competence gain: with no external
+// reward, do what teaches you most.
+func (e *Engine) BestCompetenceAction(candidates []string) string {
+	best, bestLP := "", math.Inf(-1)
+	for _, c := range candidates {
+		lp := e.ActionLearningProgress[c]
+		if lp > bestLP {
+			bestLP, best = lp, c
+		}
+	}
+	return best
 }
 
 func NewEngine() *Engine {
@@ -344,7 +372,8 @@ func NewEngine() *Engine {
 
 		Goals: goals.NewStack(),
 
-		CompressionThreshold: 0.75,
+		CompressionThreshold:   0.75,
+		ActionLearningProgress: make(map[string]float64),
 	}
 }
 
@@ -485,6 +514,12 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	if hadPendingPrediction && e.ForecastSamples > 1 {
 		delta := e.PrevForecastError - forecastError
 		e.LearningProgress = learningProgressAlpha*delta + (1-learningProgressAlpha)*e.LearningProgress
+		// A+B synergy: attribute this competence gain to the action that
+		// conditioned the forecast just scored -- per-action learning progress.
+		if e.PendingActionToken != "" {
+			prev := e.ActionLearningProgress[e.PendingActionToken]
+			e.ActionLearningProgress[e.PendingActionToken] = learningProgressAlpha*delta + (1-learningProgressAlpha)*prev
+		}
 	}
 	if hadPendingPrediction {
 		e.PrevForecastError = forecastError
