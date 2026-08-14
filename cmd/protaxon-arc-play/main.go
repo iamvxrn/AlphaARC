@@ -89,6 +89,7 @@ func main() {
 	prevObservation := ""
 	prevClickedLabel := ""
 	prevLevelsCompleted := frame.LevelsCompleted
+	prevPreference := perception.StructureScore(frame.Grid)
 
 	for actionsTaken < *maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -220,6 +221,23 @@ func main() {
 			break
 		}
 		frame = newFrame
+
+		// Pragmatic drive (source of meaning): did this action move the world
+		// toward the PREFERRED (more structured) state? If so, reward the click
+		// that did it -- the agent now acts toward a goal (order), not just
+		// toward "something changed". This is the first prior-preference in the
+		// system; StructureScore is a deliberately swappable guess at what
+		// "good" means (see perception.StructureScore).
+		newPreference := perception.StructureScore(frame.Grid)
+		preferenceIncreased := newPreference > prevPreference
+		if preferenceIncreased && !exploredAction && clickedLabel != "" {
+			memory.Record(clickedLabel, true)
+		}
+		fmt.Printf("action %d: preference(structure)=%.4f delta=%+.4f%s\n",
+			actionsTaken, newPreference, newPreference-prevPreference,
+			map[bool]string{true: " <- toward goal, reinforced", false: ""}[preferenceIncreased && !exploredAction && clickedLabel != ""])
+		prevPreference = newPreference
+
 		if exploredAction {
 			fmt.Printf("action %d: sent %v -> state=%s levels_completed=%d\n",
 				actionsTaken, action.ID, frame.State, frame.LevelsCompleted)
