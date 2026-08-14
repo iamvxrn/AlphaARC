@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 )
 
 type CycleResult struct {
@@ -26,7 +27,7 @@ type CycleResult struct {
 	AssociatorRecall    agent.AgentResponse
 	ActualOutcome       string
 	PredictionError     float64
-	// ForecastError is the REAL cross-cycle prediction error (Step 1e): how
+	// ForecastError is the REAL cross-cycle prediction error (Step 0b): how
 	// far the previous cycle's forecast of this cycle's stateVector was
 	// from what actually happened -- a genuine expectation-vs-reality
 	// mismatch across time. Since the forward-model fix, PredictionError
@@ -37,6 +38,15 @@ type CycleResult struct {
 	// Always 0.0 on a cold Engine's first cycle, since nothing was forecast
 	// yet to compare against.
 	ForecastError       float64
+	// AcuteSurprise is true when ForecastError spiked above its recent
+	// running norm (past warmup) -- the trigger that narrowed this cycle's
+	// attention (Step 1a) and bumped Cortisol (Step 7c). SeededConcepts is
+	// how many concept nodes were actually seeded this cycle: equal to the
+	// frame's blob count normally, but SMALLER when an acute surprise
+	// narrowed seeding to the locus of change, so a live log can see the
+	// narrowing happen instead of inferring it.
+	AcuteSurprise       bool
+	SeededConcepts      int
 	DriveError          float64
 	MLPTrainLoss        float64
 	SleepTriggered      bool
@@ -92,7 +102,7 @@ type Engine struct {
 
 	// PendingPrediction is the previous cycle's specialist's forecast of
 	// THIS cycle's stateVector -- the cross-cycle "expectation" half of a
-	// real predictive-coding comparison (see RunPredictiveCycle's Step 1e).
+	// real predictive-coding comparison (see RunPredictiveCycle's Step 0b).
 	// nil before the first cycle ever runs, since there's nothing to have
 	// predicted yet.
 	PendingPrediction []float64
@@ -107,6 +117,78 @@ type Engine struct {
 	// PendingPrediction an actual forecast rather than a reconstruction.
 	PrevStateVector []float64
 	PrevPredictor   *agent.PredictorAgent
+
+	// ForecastErrorEMA / ForecastSamples track the running norm of forecast
+	// error so an ACUTE surprise can be defined RELATIVE to what's normal
+	// lately, not as an absolute threshold. This is the fix for the cold-
+	// start trap: an untrained forward model produces large errors that ARE
+	// the norm, not anomalies -- narrowing attention on those would just
+	// tunnel-vision on startup noise. Because the EMA tracks whatever errors
+	// are typical right now, a large error during cold start doesn't exceed
+	// its own running average, so it isn't flagged; only a spike above a
+	// settled baseline is. See registerForecastError.
+	ForecastErrorEMA float64
+	ForecastSamples  int
+
+	// PrevObservation is last cycle's full observation string, kept so this
+	// cycle can compute the locus of change (tokens present now but not
+	// then) -- the region attention narrows to under an acute surprise. See
+	// changedTokens and RunPredictiveCycle Step 1a.
+	PrevObservation string
+}
+
+const (
+	// forecastEMAAlpha weights the newest forecast error in the running-norm
+	// EMA (~4-cycle memory at 0.25).
+	forecastEMAAlpha = 0.25
+	// forecastSurpriseFactor: a forecast error counts as ACUTE only when it
+	// exceeds the running norm by this multiple -- a genuine spike above
+	// what's normal lately, not merely a large absolute value.
+	forecastSurpriseFactor = 1.5
+	// minForecastSamplesForSurprise is a warmup gate: no acute surprise can
+	// fire until the EMA has seen at least this many real forecasts, so the
+	// very first (necessarily untrained, necessarily large) errors can never
+	// trigger narrowing before there's any baseline to be surprised against.
+	minForecastSamplesForSurprise = 5
+)
+
+// registerForecastError folds this cycle's forecast error into the running-
+// norm EMA and returns whether it is an ACUTE surprise: past warmup, and a
+// genuine spike above the recent norm (not just a large absolute error --
+// see ForecastErrorEMA's field comment for why that distinction is the
+// whole point). Returns false when there was no forecast to score yet.
+func (e *Engine) registerForecastError(forecastError float64, hadPrediction bool) bool {
+	if !hadPrediction {
+		return false
+	}
+	acute := e.ForecastSamples >= minForecastSamplesForSurprise &&
+		forecastError > e.ForecastErrorEMA*forecastSurpriseFactor
+	if e.ForecastSamples == 0 {
+		e.ForecastErrorEMA = forecastError // seed the baseline to the first real error, not 0
+	} else {
+		e.ForecastErrorEMA = forecastEMAAlpha*forecastError + (1-forecastEMAAlpha)*e.ForecastErrorEMA
+	}
+	e.ForecastSamples++
+	return acute
+}
+
+// changedTokens returns the whitespace-joined subset of cur's tokens that do
+// NOT appear in prev -- the locus of change since last cycle, which under an
+// acute surprise is what attention narrows the graph seeding to. Returns ""
+// when nothing is new (caller then keeps the full observation, since
+// attention can't narrow to nothing).
+func changedTokens(cur, prev string) string {
+	prevSet := make(map[string]struct{})
+	for _, t := range strings.Fields(prev) {
+		prevSet[t] = struct{}{}
+	}
+	var changed []string
+	for _, t := range strings.Fields(cur) {
+		if _, seen := prevSet[t]; !seen {
+			changed = append(changed, t)
+		}
+	}
+	return strings.Join(changed, " ")
 }
 
 func NewEngine() *Engine {
@@ -227,7 +309,7 @@ func distinctClusters(g *graph.Graph, activeNodeIDs []int) []int {
 }
 
 // vectorMSE returns the mean squared error between a and b -- the real
-// forecast-vs-actual mismatch RunPredictiveCycle's Step 1e compares
+// forecast-vs-actual mismatch RunPredictiveCycle's Step 0b compares
 // e.PendingPrediction against the current cycle's actual ObservationVector
 // with. Panics on length mismatch rather than silently truncating or
 // zero-padding: a and b are always both ObservationVectorDim-length by
@@ -265,13 +347,56 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		e.Goals.Push(goal, goals.TypeExternal, 1.0, e.StepCounter)
 	}
 
+	// 0b. Predictive-coding pre-pass. Computed BEFORE the graph is seeded
+	// because an acute surprise narrows what gets seeded (Step 1a). The
+	// content embedding stateVector is always the FULL frame regardless of
+	// narrowing: the forward model must see whole, consistent frames to learn
+	// (state_t -> state_{t+1}) transitions, so attention narrows what is
+	// ATTENDED TO / acted on (the graph), never what is PREDICTED (the MLP) --
+	// which is also the theoretically correct split (a full generative model,
+	// with precision/attention selective on top), not a shortcut.
+	stateVector := ObservationVector(observation)
+	var forecastError float64
+	hadPendingPrediction := e.PendingPrediction != nil
+	if hadPendingPrediction {
+		// Real cross-cycle prediction error: e.PendingPrediction is the
+		// PREVIOUS cycle's specialist's forecast of THIS cycle's stateVector.
+		// Comparing it against what actually arrived is a genuine
+		// expectation-vs-reality mismatch across time (Step 5 trains the
+		// forecaster on the realized transition, so it's a forward model, not
+		// an autoencoder of the previous frame).
+		forecastError = vectorMSE(e.PendingPrediction, stateVector)
+	}
+	acuteSurprise := e.registerForecastError(forecastError, hadPendingPrediction)
+
+	// 1a. Attentional narrowing (precision-weighting / Easterbrook 1959 cue-
+	// utilization: arousal narrows the range of cues attended). Under an
+	// ACUTE surprise -- a forecast error spiking above the recent running
+	// norm, deliberately NOT any large absolute error (see
+	// registerForecastError for why a cold-start model's large-but-normal
+	// errors must not trigger this) -- restrict the seed set to the locus of
+	// change, the blobs that appeared/moved since last cycle. Fewer seeds ->
+	// smaller spreading activation -> a tighter active subgraph competing for
+	// the click, and less compute over a field that's mostly unchanged. When
+	// the click just caused a local change, this locus IS the click
+	// neighborhood. Falls back to the full frame if nothing changed (can't
+	// narrow to nothing).
+	seedObservation := observation
+	if acuteSurprise {
+		if focus := changedTokens(observation, e.PrevObservation); focus != "" {
+			seedObservation = focus
+		}
+	}
+	e.PrevObservation = observation
+
 	// 1. Observation -> Node Lookup-or-Create -> Spreading Activation -> Active Subgraph Extraction
 	// EnsureConceptNodes lets the graph grow from real experience: novel
 	// vocabulary in the observation becomes new concept nodes instead of
 	// being silently dropped, which is what Stage 3 compression needs to
 	// eventually act on organically-grown structure, not just hand-seeded
-	// demo nodes.
-	seeds := e.Graph.EnsureConceptNodes(observation, 0.5)
+	// demo nodes. Seeds from seedObservation (the full frame normally, or the
+	// narrowed locus of change under an acute surprise -- Step 1a).
+	seeds := e.Graph.EnsureConceptNodes(seedObservation, 0.5)
 	activations := e.Graph.SpreadingActivation(e.Sys, seeds, 3, 0.7)
 	rawActiveNodeIDs := graph.ExtractActiveSubgraph(activations, 0.1)
 
@@ -299,34 +424,6 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	// does. Still meaningfully below threshold, so this still tests real
 	// reinforcement, not a trivially pre-cleared bar.
 	e.Graph.FormCoActivationEdges(e.Sys, activeNodeIDs, 0.4)
-
-	// 1d. Content-based observation embedding (replaces a pseudo-random
-	// placeholder derived purely from e.StepCounter's parity, which carried
-	// zero information about what was actually observed -- see
-	// ObservationVector's doc comment in observation_vector.go for why that
-	// made real forecasting impossible: the same observation never produced
-	// the same vector twice, and different observations were
-	// indistinguishable to the Predictor MLP by construction).
-	stateVector := ObservationVector(observation)
-
-	// 1e. Real, cross-cycle prediction error (Active Inference / predictive
-	// coding, CONCEPT.md's north-star framing): e.PendingPrediction is
-	// whatever the PREVIOUS cycle's specialist forecast THIS cycle's
-	// stateVector would look like (set below, after this cycle's own
-	// predictor runs). Comparing it against the actual stateVector just
-	// computed is a genuine expectation-vs-reality mismatch across time.
-	// Step 5 then trains the specialist that made that forecast on the
-	// transition that actually happened, so PendingPrediction is a real
-	// forward-model forecast rather than an autoencoded copy of the previous
-	// frame (which is what the first cut of this did -- see Step 5's comment
-	// for the autoencoder pitfall that collapsed forecastError into a mere
-	// "did the observation change" proxy). forecastError is 0 on the very
-	// first cycle (nothing was predicted yet to compare against).
-	var forecastError float64
-	hadPendingPrediction := e.PendingPrediction != nil
-	if hadPendingPrediction {
-		forecastError = vectorMSE(e.PendingPrediction, stateVector)
-	}
 
 	payload := agent.ContextPayload{
 		Observation: observation,
@@ -361,7 +458,7 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	}
 
 	// Cache this cycle's forecast for next cycle's forecastError comparison
-	// (Step 1e above). Copied defensively rather than aliasing predResp's
+	// (Step 0b above). Copied defensively rather than aliasing predResp's
 	// slice directly, since predictor.Process's Hopfield-blended output is
 	// an internal buffer this function doesn't own the lifetime of.
 	pending := make([]float64, len(predResp.ValueVector))
@@ -514,6 +611,21 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		e.Homeostasis.Dopamine = math.Min(2.0, math.Max(0.1, e.Homeostasis.Dopamine+dopamineDelta))
 	}
 
+	// 7c. Acute forecast surprise raises Cortisol -- its first real
+	// functional input (previously only drive-error moved it via
+	// UpdateHormones, and nothing read it at all). This makes Cortisol the
+	// observable "alarm from surprise" accumulator. Note the attentional
+	// narrowing in Step 1a is gated on the acute-surprise signal DIRECTLY,
+	// not on this Cortisol level, on purpose: UpdateHormones overwrites
+	// Cortisol from drive error every cycle, and this same run showed
+	// Dopamine's forecast contribution getting swamped by exactly that
+	// homeostatic baseline -- gating attention on the hormone would repeat
+	// that confound, so Cortisol reflects surprise here without being the
+	// thing attention keys off.
+	if acuteSurprise {
+		e.Homeostasis.Cortisol = math.Min(2.0, e.Homeostasis.Cortisol+0.25)
+	}
+
 	// 8. Agent Trust Score Update -- applies to the specialist that actually
 	// handled this cycle, not always the cluster-0 generalist.
 	if actualSuccess {
@@ -556,6 +668,8 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		ActualOutcome:    actualOutcome,
 		PredictionError:  predErr,
 		ForecastError:    forecastError,
+		AcuteSurprise:    acuteSurprise,
+		SeededConcepts:   len(seeds),
 		DriveError:       newDriveErr,
 		MLPTrainLoss:     mlpLoss,
 		SleepTriggered:   sleepTriggered,
