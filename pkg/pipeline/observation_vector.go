@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"hash/fnv"
+	"math"
 	"strings"
 )
 
@@ -41,6 +42,28 @@ func ObservationVector(observation string) []float64 {
 			sign = -1.0
 		}
 		vec[idx] += sign
+	}
+
+	// L2-normalize to unit length so the vector's MAGNITUDE is scale-invariant:
+	// a 3-token frame and a 300-token one (or structural tokens weighted 3x)
+	// produce vectors of the same length. This is the root fix for a whole
+	// class of scale bugs -- most acutely, an unnormalized large observation
+	// (the live game's ~27 blobs times a 3x structural weight) drove the
+	// forward-model MLP's input magnitude high enough that training diverged
+	// and forecast error hit ~1e281. With unit inputs the MLP stays bounded,
+	// and forecast error (MSE) lands in a fixed ~[0, 0.2] range regardless of
+	// observation size, which is what lets the surprise/settled thresholds be
+	// fixed numbers that hold across frames of any size. An all-zero vector
+	// (empty observation) is left as-is (nothing to normalize).
+	norm := 0.0
+	for _, v := range vec {
+		norm += v * v
+	}
+	if norm > 0 {
+		norm = math.Sqrt(norm)
+		for i := range vec {
+			vec[i] /= norm
+		}
 	}
 	return vec
 }

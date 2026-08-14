@@ -1,6 +1,9 @@
 package pipeline
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestObservationVectorLengthIsAlwaysFixed(t *testing.T) {
 	cases := []string{"", "color3-cell0-0", "color3-cell0-0 north color5-cell1-1 aligned"}
@@ -58,17 +61,40 @@ func TestObservationVectorDiffersForDifferentObservations(t *testing.T) {
 	}
 }
 
-// TestObservationVectorAccumulatesRepeatedTokens confirms a token repeated
-// in the same observation adds up on its dimension rather than being
-// deduplicated or overwritten -- e.g. two blobs sharing a category label
-// should carry more weight than a single occurrence, matching how a real
-// bag-of-tokens embedding is expected to behave.
-func TestObservationVectorAccumulatesRepeatedTokens(t *testing.T) {
-	single := ObservationVector("color3-cell0-0")
-	doubled := ObservationVector("color3-cell0-0 color3-cell0-0")
-	for i := range single {
-		if doubled[i] != 2*single[i] {
-			t.Fatalf("FAIL: expected repeating the same token to double its dimension's value at index %d: single=%v doubled=%v", i, single, doubled)
+// TestObservationVectorIsUnitNormalized confirms the scale-invariance fix:
+// any non-empty observation embeds to a unit-length vector, regardless of how
+// many tokens it has. This is what keeps the forward model's input magnitude
+// bounded and forecast error comparable across observation sizes.
+func TestObservationVectorIsUnitNormalized(t *testing.T) {
+	for _, obs := range []string{"color3-cell0-0", "a b c d e f", "color3-cell0-0 north color5-cell1-1 aligned cmult3 cmult3 cmult3"} {
+		v := ObservationVector(obs)
+		norm := 0.0
+		for _, x := range v {
+			norm += x * x
 		}
+		if math.Abs(norm-1.0) > 1e-9 {
+			t.Fatalf("FAIL [%q]: expected unit L2 norm, got squared-norm %.6f", obs, norm)
+		}
+	}
+}
+
+// TestObservationVectorRepetitionShiftsTowardToken confirms a repeated token
+// still carries more weight -- post-normalization the exact "2x" is gone, but
+// repeating a token must pull the (unit) observation vector MORE toward that
+// token's own direction, i.e. accumulation still matters for the balance
+// between distinct tokens.
+func TestObservationVectorRepetitionShiftsTowardToken(t *testing.T) {
+	dot := func(a, b []float64) float64 {
+		s := 0.0
+		for i := range a {
+			s += a[i] * b[i]
+		}
+		return s
+	}
+	va := ObservationVector("aaa")               // unit direction of token "aaa" alone
+	ab := ObservationVector("aaa bbb")           // aaa + bbb
+	aab := ObservationVector("aaa aaa aaa bbb")  // aaa weighted 3x
+	if !(dot(aab, va) > dot(ab, va)) {
+		t.Fatalf("FAIL: weighting a token did not pull the vector toward it: dot(aab,va)=%.4f not > dot(ab,va)=%.4f (hash collision on the two tokens?)", dot(aab, va), dot(ab, va))
 	}
 }
