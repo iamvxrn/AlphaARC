@@ -21,12 +21,30 @@ func DescribeGridStructural(grid [][]int, maxBlobs, cols, rows int) string {
 	if len(rel) == 0 {
 		return base
 	}
+	// Emit the structural tokens structuralWeight times: their SHARE of the
+	// observation is the transfer lever (TestExploreStructureWeightOnTransfer /
+	// TestStructureWeightImprovesTransfer measured transfer/control dropping
+	// from 0.97x at weight 1 to 0.69x at weight 3, then reversing past ~6 as
+	// structure drowns the surface detail needed to predict a frame at all).
+	// Repetition accumulates on the token's ObservationVector dimension, so the
+	// forward model weights structure more heavily and leans on the part that
+	// transfers across surface-different domains.
 	joined := strings.Join(rel, " ")
-	if base == "" {
-		return joined
+	weighted := make([]string, 0, structuralWeight+1)
+	if base != "" {
+		weighted = append(weighted, base)
 	}
-	return base + " " + joined
+	for i := 0; i < structuralWeight; i++ {
+		weighted = append(weighted, joined)
+	}
+	return strings.Join(weighted, " ")
 }
+
+// structuralWeight is how many times the structural tokens are repeated in a
+// structural observation -- their weight relative to surface tokens. 3 is the
+// measured sweet spot (see DescribeGridStructural); tunable, and a live game
+// may want re-measuring, but 3 strongly beats 1 without yet drowning surface.
+const structuralWeight = 3
 
 // RelationalTokens extracts surface-token-agnostic STRUCTURAL features from a
 // grid: the color-multiplicity signature -- how many blobs share each color,
