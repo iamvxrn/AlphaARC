@@ -61,6 +61,11 @@ type CycleResult struct {
 	// exceeded the blob count and every cycle looked "narrowed".)
 	SeededConcepts     int
 	SeededConceptsFull int
+	// LearningProgress is the intrinsic competence-gain drive (branch B):
+	// positive where the forward model is actively improving, ~0 when mastered
+	// or on noise. An intrinsic reward the agent can pursue with no external
+	// reward signal.
+	LearningProgress    float64
 	DriveError          float64
 	MLPTrainLoss        float64
 	SleepTriggered      bool
@@ -156,6 +161,18 @@ type Engine struct {
 	// studied against the transfer thermometer -- organic co-activation edges
 	// start at 0.4, so 0.75 is rarely reached and nothing compresses.
 	CompressionThreshold float64
+
+	// PrevForecastError / LearningProgress implement an intrinsic drive
+	// (branch B, Oudeyer-style intrinsic motivation): LearningProgress is a
+	// smoothed measure of how fast the forward model is GETTING BETTER
+	// (forecast error decreasing over time). Unlike surprise (high error) or
+	// settled (low error), this is the DERIVATIVE -- it's high precisely where
+	// there is something learnable being learned, and ~0 both when a spot is
+	// mastered (error flat low) and when it's unlearnable noise (error flat
+	// high). That gives the agent something to want with no external reward:
+	// competence gain.
+	PrevForecastError float64
+	LearningProgress  float64
 }
 
 const (
@@ -182,6 +199,9 @@ const (
 	// alarm while leaving genuine spikes (observed 0.1-1.4) untouched. It
 	// doubles as the absolute-low floor for "settled" (see below).
 	minAbsoluteForecastSurprise = 0.02
+	// learningProgressAlpha smooths the LearningProgress signal (branch B):
+	// the intrinsic competence-gain drive. ~4-cycle memory at 0.25.
+	learningProgressAlpha = 0.25
 	// forecastSettledFactor: a forecast error counts as SETTLED (the model
 	// predicts this spot notably better than its recent norm -- a well-
 	// understood place with nothing to learn) when it's below this fraction
@@ -457,6 +477,19 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	}
 	acuteSurprise, predictable := e.registerForecastError(forecastError, hadPendingPrediction)
 
+	// Intrinsic drive (branch B): smoothed rate at which the forward model is
+	// improving here. Positive when this cycle's error fell below last
+	// cycle's -- competence being gained -- and decays to ~0 both once a spot
+	// is mastered and on unlearnable noise, so it uniquely marks "there's
+	// something learnable here and I'm learning it".
+	if hadPendingPrediction && e.ForecastSamples > 1 {
+		delta := e.PrevForecastError - forecastError
+		e.LearningProgress = learningProgressAlpha*delta + (1-learningProgressAlpha)*e.LearningProgress
+	}
+	if hadPendingPrediction {
+		e.PrevForecastError = forecastError
+	}
+
 	// 1a. Attentional narrowing (precision-weighting / Easterbrook 1959 cue-
 	// utilization: arousal narrows the range of cues attended). Under an
 	// ACUTE surprise -- a forecast error spiking above the recent running
@@ -702,6 +735,16 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		e.Homeostasis.Dopamine = math.Min(2.0, math.Max(0.1, e.Homeostasis.Dopamine+dopamineDelta))
 	}
 
+	// 7b-ii. Intrinsic reward (branch B): competence gain -- the forward model
+	// getting better here -- is rewarding in itself, with no external signal.
+	// Positive LearningProgress raises Dopamine, giving the agent something to
+	// pursue precisely where there is something learnable being learned (not
+	// merely where it's surprised, and not where it's already mastered).
+	if e.LearningProgress > 0 {
+		lpReward := e.LearningProgress / (e.LearningProgress + 0.1) // saturates into [0,1)
+		e.Homeostasis.Dopamine = math.Min(2.0, e.Homeostasis.Dopamine+lpReward*0.1)
+	}
+
 	// 7c. Acute forecast surprise raises Cortisol -- its first real
 	// functional input (previously only drive-error moved it via
 	// UpdateHormones, and nothing read it at all). This makes Cortisol the
@@ -763,6 +806,7 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 		Predictable:        predictable,
 		SeededConcepts:     len(seeds),
 		SeededConceptsFull: len(allSeeds),
+		LearningProgress:   e.LearningProgress,
 		DriveError:       newDriveErr,
 		MLPTrainLoss:     mlpLoss,
 		SleepTriggered:   sleepTriggered,
