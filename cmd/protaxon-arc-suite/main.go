@@ -133,6 +133,7 @@ const (
 	hypWeight       = 1.0
 	graphPriorBonus = 0.03
 	pragmaticBeta   = 2.0
+	epistemicBonus  = 0.1 // value of probing an object whose click-effect is unknown (motor babbling)
 )
 
 // preferenceOf is the prior preference over a state, identical to the live
@@ -169,6 +170,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 	memory := bridge.NewOutcomeMemory()
 	tracker := perception.NewObjectTracker()
 	tester := perception.NewHypothesisTester() // goal inference by hypothesis-and-test
+	afford := perception.NewAffordanceTable()  // learned effect of clicks (Object Delta Grammar)
 	type hypStat struct{ first, max float64 }
 	hypStats := map[string]*hypStat{} // per-hypothesis first/max satisfaction, for the transfer signal
 	var o outcome
@@ -226,7 +228,11 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 				v += graphPriorBonus
 			}
 			if ob, ok := clickByTok[c]; ok {
-				v += pragmaticBeta * perception.PragmaticValue(frame.Grid, ob.Blob, curHyp.Score)
+				if dv, known := perception.LearnedPragmaticValue(frame.Grid, ob.Blob, curHyp.Score, afford); known {
+					v += pragmaticBeta * dv
+				} else {
+					v += epistemicBonus // unknown effect -> probe it (motor babbling)
+				}
 			}
 			if v > bestVal {
 				bestVal, tok = v, c
@@ -260,6 +266,9 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 		frame = newFrame
 		if frame.LevelsCompleted > o.bestLevels {
 			o.bestLevels = frame.LevelsCompleted
+		}
+		if action.ID == environment.Action6 {
+			afford.ObserveClick(preStepGrid, frame.Grid, action.X, action.Y) // learn the click's effect
 		}
 		// Goal inference: pursue the current hypothesis. On a level completion,
 		// warm-start the winning hypothesis for the next level and forget the

@@ -92,6 +92,9 @@ func main() {
 	// hypothesis's satisfaction is the goal-directed drive -- the agent acts to
 	// REALIZE the current guess; a completion confirms it, a plateau/reset rotates.
 	tester := perception.NewHypothesisTester()
+	// Object Delta Grammar: learn what clicks actually DO (from before/after), so
+	// the counterfactual uses the real effect instead of a hard-guessed one.
+	afford := perception.NewAffordanceTable()
 	// preferenceOf is the single source of truth for prior preference over a
 	// state: learned goal + how well the state satisfies the CURRENT hypothesized
 	// goal (the real goal-directed term now, replacing the hand-guessed spatial
@@ -302,13 +305,20 @@ func main() {
 			if c == graphPick {
 				prior = graphPriorBonus
 			}
-			// Counterfactual 1-step lookahead (b): for a click on this object,
-			// how much would it advance the current hypothesis? Injected straight
-			// into the score so a genuinely goal-advancing click spikes above the
-			// exploration/optimism noise instead of waiting for categorical credit.
+			// Honest counterfactual 1-step lookahead: use the LEARNED effect of
+			// clicking this object (affordance table) to predict Δsat. If the
+			// object's class has a known affordance, inject pragmaticBeta*Δsat so a
+			// genuinely goal-advancing click spikes above noise; if the effect is
+			// still UNKNOWN, give an epistemic bonus instead -- probe it to learn
+			// what it does (motor babbling). Early on everything is unknown so the
+			// agent babbles; as affordances are learned, it climbs deliberately.
 			pragmatic := 0.0
 			if ob, ok := clickByToken[c]; ok {
-				pragmatic = pragmaticBeta * perception.PragmaticValue(frame.Grid, ob.Blob, curHyp.Score)
+				if v, known := perception.LearnedPragmaticValue(frame.Grid, ob.Blob, curHyp.Score, afford); known {
+					pragmatic = pragmaticBeta * v
+				} else {
+					pragmatic = epistemicBonus
+				}
 			}
 			if v := efe + optimism - taboo + prior + pragmatic; v > bestVal {
 				bestVal, chosenTok = v, c
@@ -362,6 +372,13 @@ func main() {
 		}
 		frame = newFrame
 
+		// Efference-copy learning: diff the clicked object before vs after to learn
+		// what this click actually did, updating the affordance table. Only for a
+		// real click (ACTION6); simple/undo actions aren't object-targeted.
+		if !exploredAction && action.ID == environment.Action6 {
+			afford.ObserveClick(preStepGrid, frame.Grid, action.X, action.Y)
+		}
+
 		// Pragmatic drive (source of meaning). LEARNED, not guessed (the dream):
 		// if this action completed a level, remember the winning state as the
 		// goal; thereafter preference = how much a state resembles a winning one
@@ -409,9 +426,9 @@ func main() {
 			// free energy). Attributed to the action just taken.
 			engine.AttributePreferenceGain(preferenceDelta)
 		}
-		fmt.Printf("action %d: preference=%.4f delta=%+.4f hyp=%q sat=%.3f (wins=%d)%s\n",
+		fmt.Printf("action %d: preference=%.4f delta=%+.4f hyp=%q sat=%.3f (wins=%d affordances=%d)%s\n",
 			actionsTaken, newPreference, newPreference-prevPreference, tester.Current().Name, tester.Satisfaction(frame.Grid),
-			tester.Wins(),
+			tester.Wins(), afford.KnownCount(),
 			map[bool]string{true: " <- toward goal, reinforced", false: ""}[preferenceIncreased && !exploredAction && clickedLabel != ""])
 		prevPreference = newPreference
 
@@ -562,6 +579,11 @@ const (
 	// a genuinely goal-advancing click (a real positive Δsat) outweighs the
 	// optimism/exploration noise (~0.05); a guess, tunable against a live run.
 	pragmaticBeta = 2.0
+	// epistemicBonus is the value of clicking an object whose EFFECT is not yet
+	// learned -- the motor-babbling drive. Set above the optimism noise (~0.05)
+	// so unknown-affordance objects are probed early to build the physics map,
+	// then naturally yields to pragmatic Δsat once effects are known.
+	epistemicBonus = 0.1
 )
 
 // availableSimpleActions returns every offered non-click action (ACTION1-5 and
