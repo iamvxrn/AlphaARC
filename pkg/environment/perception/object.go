@@ -68,3 +68,63 @@ func ObjectTokens(grid [][]int) []string {
 	}
 	return out
 }
+
+// ObjectMotions is Core-Knowledge brick 2: MOTION. It matches each object in
+// cur to the same-identity object in prev (nearest one if several share a
+// shape) and emits a token for how it moved -- e.g. "obj-color3-shapeXXXX-up".
+// This turns a pixel-by-pixel position change into an explicit, stable motion
+// concept the forward model can learn a causal rule over ("act-5 -> that body
+// moves up"), instead of re-deriving it from churning position labels every
+// frame. Objects with no match in prev are "-new" (appeared); unmoved objects
+// emit nothing.
+func ObjectMotions(prev, cur [][]int) []string {
+	prevBySig := make(map[string][]Point)
+	for _, b := range FindBlobs(prev, BackgroundColor(prev)) {
+		s := ObjectSignature(b)
+		prevBySig[s] = append(prevBySig[s], b.Centroid)
+	}
+	var out []string
+	for _, b := range FindBlobs(cur, BackgroundColor(cur)) {
+		sig := ObjectSignature(b)
+		cands := prevBySig[sig]
+		if len(cands) == 0 {
+			out = append(out, sig+"-new")
+			continue
+		}
+		best, bestD := cands[0], dist2(b.Centroid, cands[0])
+		for _, p := range cands[1:] {
+			if d := dist2(b.Centroid, p); d < bestD {
+				best, bestD = p, d
+			}
+		}
+		dx, dy := b.Centroid.X-best.X, b.Centroid.Y-best.Y
+		if dx == 0 && dy == 0 {
+			continue
+		}
+		out = append(out, sig+"-"+moveDirection(dx, dy))
+	}
+	return out
+}
+
+func dist2(a, b Point) int { return (a.X-b.X)*(a.X-b.X) + (a.Y-b.Y)*(a.Y-b.Y) }
+
+// direction names the dominant axis of a move (rows are y; up = smaller y).
+func moveDirection(dx, dy int) string {
+	if abs(dy) >= abs(dx) {
+		if dy < 0 {
+			return "up"
+		}
+		return "down"
+	}
+	if dx < 0 {
+		return "left"
+	}
+	return "right"
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}

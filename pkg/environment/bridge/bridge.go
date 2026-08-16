@@ -190,7 +190,7 @@ func labelForNode(g *graph.Graph, nodeID int) string {
 // won't trigger one even when making real progress), so the grid-changed
 // proxy still has to carry most cycles -- this only means "if the game
 // itself just confirmed real progress, believe that over anything else."
-func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string, levelsCompletedIncreased bool, curiosityStep, explorationRoll float64, memory *OutcomeMemory, previousClickedLabel string) (environment.Action, string, string, *pipeline.CycleResult, error) {
+func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string, levelsCompletedIncreased bool, curiosityStep, explorationRoll float64, memory *OutcomeMemory, previousClickedLabel, extraObs string) (environment.Action, string, string, *pipeline.CycleResult, error) {
 	if memory == nil {
 		// A caller that forgot to construct one loses cross-call persistence
 		// (this fresh instance dies with the call), but that's a silent
@@ -209,6 +209,12 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 	// see structure that can transfer across surface-different domains; the
 	// structural tokens aren't blob-shaped so they never become click targets.
 	observation := perception.DescribeGridStructural(grid, maxBlobs, cols, rows)
+	// extraObs carries cross-frame tokens the single-frame grid can't produce --
+	// object MOTION (Core Knowledge brick 2), e.g. "obj-...-up" -- so the forward
+	// model and graph perceive that a body moved, not just that positions churned.
+	if extraObs != "" {
+		observation += " " + extraObs
+	}
 	actualSuccess := levelsCompletedIncreased || actionSucceeded(previousObservation, observation)
 	memory.Record(previousClickedLabel, actualSuccess)
 	// Branch C: a real level completion is the only ground-truth reward. When
