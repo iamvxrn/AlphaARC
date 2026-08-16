@@ -87,13 +87,19 @@ func main() {
 
 	engine := pipeline.NewEngine()
 	memory := bridge.NewOutcomeMemory()
+	// Goal inference by hypothesis-and-test: the agent pursues one candidate goal
+	// (all-one-color, symmetry, halves-match, ...) at a time. The PURSUED
+	// hypothesis's satisfaction is the goal-directed drive -- the agent acts to
+	// REALIZE the current guess; a completion confirms it, a plateau/reset rotates.
+	tester := perception.NewHypothesisTester()
 	// preferenceOf is the single source of truth for prior preference over a
-	// state: learned goal + weak structural prior + spatial approach to the key,
-	// MINUS a self-preservation term (resemblance to a state that got the agent
-	// killed). One place so the in-loop, init, and post-reset values can't drift.
+	// state: learned goal + how well the state satisfies the CURRENT hypothesized
+	// goal (the real goal-directed term now, replacing the hand-guessed spatial
+	// approach), MINUS a self-preservation term (resemblance to a state that got
+	// the agent killed). One place so in-loop, init, and post-reset can't drift.
 	preferenceOf := func(grid [][]int) float64 {
 		vec := pipeline.ObservationVector(perception.DescribeGridStructural(grid, *maxBlobs, *cols, *rows))
-		return engine.LearnedPreference(vec) + 0.1*perception.StructureScore(grid) + perception.ApproachPreference(grid) - dangerAvoidWeight*engine.DangerProximity(vec)
+		return engine.LearnedPreference(vec) + hypWeight*tester.Satisfaction(grid) - dangerAvoidWeight*engine.DangerProximity(vec)
 	}
 	actionsTaken := 0
 	prevObservation := ""
@@ -356,25 +362,37 @@ func main() {
 		// jump -- exactly the reward that teaches which action mattered.
 		frameVec := pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, *maxBlobs, *cols, *rows))
 		if frame.LevelsCompleted > prevLevelsCompleted {
+			// The current hypothesis just won a level -- it was RIGHT. Confirm it
+			// (stop rotating) and remember the winning state so LearnedPreference
+			// bootstraps from real ground truth, not a guess.
 			engine.RememberGoalState(frameVec)
+			tester.Confirm()
+			fmt.Printf("action %d: LEVEL COMPLETED while pursuing hypothesis %q -- confirmed\n", actionsTaken, tester.Current().Name)
 		}
-		// Composer + self-preservation: the spatial approach term makes preference
-		// RISE as a body nears the salient target (so BestAction learns to navigate
-		// toward the key before any level is completed), while the danger term (via
-		// preferenceOf) LOWERS it near death-like states, so the same credit
-		// machinery also steers away from what killed the agent.
+		// Fold this frame into hypothesis tracking; a plateau rotates to the next
+		// candidate goal. When it rotates, the preference target changes, so the
+		// step's delta spans two different goals and must NOT be credited to the
+		// action (it isn't that action's doing) -- recompute the baseline instead.
+		rotated := tester.Observe(frame.Grid)
+		// Goal-directed preference: how well the frame satisfies the CURRENT
+		// hypothesized goal, plus learned preference, minus self-preservation.
 		newPreference := preferenceOf(frame.Grid)
 		preferenceDelta := newPreference - prevPreference
-		preferenceIncreased := newPreference > prevPreference
+		preferenceIncreased := !rotated && newPreference > prevPreference
 		if preferenceIncreased && !exploredAction && clickedLabel != "" {
 			memory.Record(clickedLabel, true)
 		}
-		// Plan: credit this action's realized preference change so BestAction
-		// can steer toward the goal next time (the pragmatic half of expected
-		// free energy). Attributed to the action just taken.
-		engine.AttributePreferenceGain(preferenceDelta)
-		fmt.Printf("action %d: preference=%.4f delta=%+.4f (learned_goal=%v)%s\n",
-			actionsTaken, newPreference, newPreference-prevPreference, engine.HasLearnedGoal(),
+		if rotated {
+			fmt.Printf("action %d: hypothesis plateaued -> now pursuing %q\n", actionsTaken, tester.Current().Name)
+		} else {
+			// Plan: credit this action's realized preference change so BestAction
+			// can steer toward the goal next time (the pragmatic half of expected
+			// free energy). Attributed to the action just taken.
+			engine.AttributePreferenceGain(preferenceDelta)
+		}
+		fmt.Printf("action %d: preference=%.4f delta=%+.4f hyp=%q sat=%.3f (learned_goal=%v confirmed=%v)%s\n",
+			actionsTaken, newPreference, newPreference-prevPreference, tester.Current().Name, tester.Satisfaction(frame.Grid),
+			engine.HasLearnedGoal(), tester.Confirmed(),
 			map[bool]string{true: " <- toward goal, reinforced", false: ""}[preferenceIncreased && !exploredAction && clickedLabel != ""])
 		prevPreference = newPreference
 
@@ -440,6 +458,11 @@ func main() {
 				break
 			}
 			frame = resetFrame
+			// The attempt ended without a win -- the hypothesis we were pursuing
+			// wasn't (or wasn't reachably) the goal, so try the next candidate on
+			// the fresh attempt. No-op if a hypothesis was already confirmed.
+			tester.Refute()
+			fmt.Printf("reset: testing next hypothesis %q (confirmed=%v)\n", tester.Current().Name, tester.Confirmed())
 			prevObservation, prevClickedLabel, lastActionTok, prevNumeric = "", "", "", ""
 			tracker = perception.NewObjectTracker()
 			prevTopology = ""
@@ -510,6 +533,11 @@ const (
 	// enough that a real learned per-object preference/competence signal overrides
 	// it once accrued. A guess, tunable against a live run.
 	graphPriorBonus = 0.03
+	// hypWeight scales the pursued hypothesis's satisfaction as the goal-directed
+	// preference term -- 1.0 so it's the dominant drive (on par with a fully
+	// matched LearnedPreference), giving a real gradient to climb toward the
+	// current hypothesized goal.
+	hypWeight = 1.0
 )
 
 // availableSimpleActions returns every offered non-click action (ACTION1-5 and
