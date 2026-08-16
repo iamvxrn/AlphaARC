@@ -82,3 +82,23 @@ func TestReinforceLevelCompletionCreditsRecentSequenceMostAndProves(t *testing.T
 		}
 	}
 }
+
+// TestPenalizeSequenceDropsRecentSequenceRateMost: a loss must lower the recent
+// clicks' success rate, most for the last click (recency-weighted), so the
+// fatal path is avoided next time.
+func TestPenalizeSequenceDropsRecentSequenceRateMost(t *testing.T) {
+	m := NewOutcomeMemory()
+	// Each click "succeeded" by the grid-changed proxy first, so rates start high.
+	for _, l := range []string{"L1", "L2", "L3"} {
+		m.Record(l, true)
+	}
+	m.PenalizeSequence(5.0) // then the game was lost
+
+	r1, _ := m.SuccessRate("L1")
+	r2, _ := m.SuccessRate("L2")
+	r3, _ := m.SuccessRate("L3")
+	// L3 (last, most eligible) must be punished hardest -> lowest rate.
+	if !(r3 < r2 && r2 < r1) {
+		t.Fatalf("FAIL: loss penalty not recency-weighted: L1=%.2f L2=%.2f L3=%.2f (want L3<L2<L1)", r1, r2, r3)
+	}
+}
