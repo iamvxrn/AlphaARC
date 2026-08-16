@@ -134,6 +134,7 @@ const (
 	graphPriorBonus = 0.03
 	pragmaticBeta   = 2.0
 	epistemicBonus  = 0.1 // value of probing an object whose click-effect is unknown (motor babbling)
+	rolloutDepth    = 2   // clicks the learned-model lookahead searches ahead (step over non-monotonic valleys)
 )
 
 // preferenceOf is the prior preference over a state, identical to the live
@@ -217,10 +218,14 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			candidates = append(candidates, t)
 			simpleByTok[t] = a
 		}
-		// Per-object expected free energy + counterfactual 1-step lookahead: prefer
-		// the object whose click most advances the current hypothesis (Δsat),
-		// injected directly so it spikes over exploration noise.
+		// Per-object EFE + short-horizon rollout in the learned relational model:
+		// prefer the object whose 2-click chain most advances the hypothesis.
 		curHyp := tester.Current()
+		curSat := tester.Satisfaction(frame.Grid)
+		candidateBlobs := make([]perception.Blob, 0, len(objCandidates))
+		for _, ob := range objCandidates {
+			candidateBlobs = append(candidateBlobs, ob.Blob)
+		}
 		tok, bestVal := "", -1e18
 		for _, c := range candidates {
 			v := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
@@ -228,8 +233,8 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 				v += graphPriorBonus
 			}
 			if ob, ok := clickByTok[c]; ok {
-				if dv, known := perception.LearnedPragmaticValue(frame.Grid, ob.Blob, curHyp.Score, afford); known {
-					v += pragmaticBeta * dv
+				if dv, known := afford.LookaheadValue(frame.Grid, ob.Blob, candidateBlobs, curHyp.Score, rolloutDepth); known {
+					v += pragmaticBeta * (dv - curSat)
 				} else {
 					v += epistemicBonus // unknown effect -> probe it (motor babbling)
 				}
