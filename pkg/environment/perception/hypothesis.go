@@ -292,6 +292,15 @@ var neighbors4 = [4][2]int{{0, 1}, {0, -1}, {1, 0}, {-1, 0}}
 // (tens) so a single attempt can try several hypotheses.
 const hypRotatePatience = 12
 
+// hypMaxPursue caps how many steps a SINGLE hypothesis may be pursued before
+// rotating regardless of whether it's still climbing. Without it, a hypothesis
+// that slowly climbs toward a low ceiling (all-one-color reaching 0.44 on s5i5
+// but never completing) never plateaus, so the tester stays glued to that one
+// "wrong hill" and never samples the others. This forces the agent to try the
+// whole invariant vocabulary within an attempt -- realizing a wrong invariant
+// to its ceiling without a win IS evidence it's the wrong goal.
+const hypMaxPursue = 12
+
 // HypothesisTester pursues one candidate goal at a time and rotates when it
 // stalls. The pursued hypothesis's Satisfaction is what the pragmatic loop uses
 // as prior preference (so the agent acts to REALIZE the current guess); Observe
@@ -302,6 +311,7 @@ type HypothesisTester struct {
 	idx      int
 	best     float64 // best satisfaction seen for the current hypothesis this attempt
 	stale    int     // steps since best improved
+	pursued  int     // steps spent on the current hypothesis this attempt
 	patience int
 	wins     int // levels completed while a hypothesis was being pursued
 }
@@ -327,6 +337,13 @@ func (t *HypothesisTester) Satisfaction(grid [][]int) float64 {
 // Observe folds this frame into plateau tracking and returns true if it JUST
 // rotated to a new hypothesis (the current one stalled without improving).
 func (t *HypothesisTester) Observe(grid [][]int) bool {
+	t.pursued++
+	// Rotate if the hypothesis has plateaued OR if it's been pursued too long
+	// without a win (a slowly-climbing wrong hill would otherwise never plateau).
+	if t.pursued >= hypMaxPursue {
+		t.rotate()
+		return true
+	}
 	s := t.Satisfaction(grid)
 	if s > t.best+1e-9 {
 		t.best = s
@@ -365,12 +382,14 @@ func (t *HypothesisTester) WarmStart() {
 	t.idx = 0
 	t.best = 0
 	t.stale = 0
+	t.pursued = 0
 }
 
 func (t *HypothesisTester) rotate() {
 	t.idx = (t.idx + 1) % len(t.hyps)
 	t.best = 0
 	t.stale = 0
+	t.pursued = 0
 }
 
 // ForegroundBBox is the ActiveMask: the inclusive bounding box of all non-
