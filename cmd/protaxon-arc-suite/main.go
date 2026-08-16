@@ -118,6 +118,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 	var o outcome
 	prevObs, prevClicked, prevTopology := "", "", ""
 	prevLevels := frame.LevelsCompleted
+	prevPref := perception.ApproachPreference(frame.Grid)
 
 	for o.actions < maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -127,7 +128,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 		if frame.LevelsCompleted > o.bestLevels {
 			o.bestLevels = frame.LevelsCompleted
 		}
-		motion := strings.Join(tracker.Track(frame.Grid), " ")
+		motion := strings.Join(append(tracker.Track(frame.Grid), perception.NumericTokens(frame.Grid)...), " ")
 		if topo := tracker.TopologySignature(); topo != prevTopology {
 			if prevTopology != "" {
 				o.topo++
@@ -170,6 +171,15 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 		if frame.LevelsCompleted > o.bestLevels {
 			o.bestLevels = frame.LevelsCompleted
 		}
+		// Composer: credit the spatial approach (+ any learned goal) so BestAction
+		// steers toward the salient target -- the same drive the live player uses.
+		frameVec := pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, maxBlobs, cols, rows))
+		if frame.LevelsCompleted > prevLevels {
+			engine.RememberGoalState(frameVec)
+		}
+		newPref := engine.LearnedPreference(frameVec) + 0.1*perception.StructureScore(frame.Grid) + perception.ApproachPreference(frame.Grid)
+		engine.AttributePreferenceGain(newPref - prevPref)
+		prevPref = newPref
 		if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
 			if frame.State == environment.StateGameOver {
 				o.gameOvers++
@@ -184,6 +194,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			tracker = perception.NewObjectTracker()
 			prevObs, prevClicked, prevTopology = "", "", ""
 			prevLevels = frame.LevelsCompleted
+			prevPref = perception.ApproachPreference(frame.Grid)
 		}
 	}
 	return o
