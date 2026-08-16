@@ -87,11 +87,19 @@ func main() {
 
 	engine := pipeline.NewEngine()
 	memory := bridge.NewOutcomeMemory()
+	// preferenceOf is the single source of truth for prior preference over a
+	// state: learned goal + weak structural prior + spatial approach to the key,
+	// MINUS a self-preservation term (resemblance to a state that got the agent
+	// killed). One place so the in-loop, init, and post-reset values can't drift.
+	preferenceOf := func(grid [][]int) float64 {
+		vec := pipeline.ObservationVector(perception.DescribeGridStructural(grid, *maxBlobs, *cols, *rows))
+		return engine.LearnedPreference(vec) + 0.1*perception.StructureScore(grid) + perception.ApproachPreference(grid) - dangerAvoidWeight*engine.DangerProximity(vec)
+	}
 	actionsTaken := 0
 	prevObservation := ""
 	prevClickedLabel := ""
 	prevLevelsCompleted := frame.LevelsCompleted
-	prevPreference := 0.1*perception.StructureScore(frame.Grid) + perception.ApproachPreference(frame.Grid) // matches the in-loop formula before any goal is learned
+	prevPreference := preferenceOf(frame.Grid)
 	deadCount := map[string]float64{}                             // per action type: decaying count of "did nothing" (inhibition of return / taboo)
 	tries := map[string]int{}                                     // per action type: how many times chosen (optimism for the under-tried)
 	stagnation := 0                                               // consecutive actions with no frame change and no level progress
@@ -277,6 +285,10 @@ func main() {
 		prevClickedLabel = clickedLabel
 		prevLevelsCompleted = frame.LevelsCompleted
 
+		// The state this action is about to be taken FROM -- captured before the
+		// grid is reassigned, so if the action turns out fatal we can remember
+		// this "about to die" configuration as a danger exemplar.
+		preStepGrid := frame.Grid
 		newFrame, stepErr := sess.Step(action)
 		actionsTaken++
 		if stepErr != nil {
@@ -296,11 +308,12 @@ func main() {
 		if frame.LevelsCompleted > prevLevelsCompleted {
 			engine.RememberGoalState(frameVec)
 		}
-		// Composer: the spatial approach term makes preference RISE as a body
-		// nears the salient target, so AttributePreferenceGain credits the action
-		// that closed the distance and BestAction learns to navigate toward the
-		// key -- BEFORE any level is ever completed (LearnedPreference is still 0).
-		newPreference := engine.LearnedPreference(frameVec) + 0.1*perception.StructureScore(frame.Grid) + perception.ApproachPreference(frame.Grid)
+		// Composer + self-preservation: the spatial approach term makes preference
+		// RISE as a body nears the salient target (so BestAction learns to navigate
+		// toward the key before any level is completed), while the danger term (via
+		// preferenceOf) LOWERS it near death-like states, so the same credit
+		// machinery also steers away from what killed the agent.
+		newPreference := preferenceOf(frame.Grid)
 		preferenceIncreased := newPreference > prevPreference
 		if preferenceIncreased && !exploredAction && clickedLabel != "" {
 			memory.Record(clickedLabel, true)
@@ -352,7 +365,13 @@ func main() {
 			if frame.State == environment.StateGameOver {
 				engine.PenalizeLastAction(lossActionPenalty)
 				memory.PenalizeSequence(lossSequenceStrength)
-				fmt.Printf("GAME_OVER: penalized fatal action %q + recent sequence, resetting to retry\n", lastActionTok)
+				// Self-preservation: remember the state the fatal action was taken
+				// FROM, so DangerProximity lowers preference near it next time and
+				// the planner learns to avoid re-entering it -- learned aversion, a
+				// mirror of RememberGoalState, not a hard block (death stays possible
+				// and informative).
+				engine.RememberDangerState(pipeline.ObservationVector(perception.DescribeGridStructural(preStepGrid, *maxBlobs, *cols, *rows)))
+				fmt.Printf("GAME_OVER: penalized fatal action %q + recent sequence, remembered danger state, resetting to retry\n", lastActionTok)
 			}
 			resetFrame, resetErr := sess.Reset()
 			if resetErr != nil {
@@ -364,7 +383,7 @@ func main() {
 			tracker = perception.NewObjectTracker()
 			prevTopology = ""
 			prevLevelsCompleted = frame.LevelsCompleted
-			prevPreference = 0.1*perception.StructureScore(frame.Grid) + perception.ApproachPreference(frame.Grid)
+			prevPreference = preferenceOf(frame.Grid)
 			stagnation = 0
 			continue
 		}
@@ -411,6 +430,14 @@ func simpleActionGainString(gains map[string]float64, simpleByToken map[string]e
 const (
 	lossActionPenalty    = 0.05
 	lossSequenceStrength = 3.0
+	// dangerAvoidWeight scales how strongly resemblance to a death state lowers a
+	// state's preference (DangerProximity is a cosine in [0,1]). Set ABOVE
+	// spatialApproachWeight (0.15) so self-preservation overrides the pull toward
+	// a hazardous key -- don't rush into death to reach the goal -- but well below
+	// a learned goal's full weight so it deters without freezing the agent into
+	// the dark-room "never act" corner (the anti-stagnation drive is the other
+	// counterweight). A guess, tunable against a live run.
+	dangerAvoidWeight = 0.3
 )
 
 // availableSimpleActions returns every offered non-click action (ACTION1-5 and

@@ -91,6 +91,22 @@ type outcome struct {
 	bestLevels, changed, topo, gameOvers, actions int
 }
 
+// dangerAvoidWeight scales how strongly resemblance to a death state lowers a
+// state's preference -- the self-preservation instinct. Above spatialApproach
+// (0.15) so it overrides rushing into a hazardous key, below a learned goal's
+// full weight so it deters without freezing the agent (dark-room trap). Kept in
+// sync with the live player's constant of the same name.
+const dangerAvoidWeight = 0.3
+
+// preferenceOf is the prior preference over a state, identical to the live
+// player's: learned goal + weak structural prior + spatial approach to the key,
+// MINUS the self-preservation term (resemblance to a state that got the agent
+// killed). Single source of truth so init, loop, and post-reset can't drift.
+func preferenceOf(engine *pipeline.Engine, grid [][]int, maxBlobs, cols, rows int) float64 {
+	vec := pipeline.ObservationVector(perception.DescribeGridStructural(grid, maxBlobs, cols, rows))
+	return engine.LearnedPreference(vec) + 0.1*perception.StructureScore(grid) + perception.ApproachPreference(grid) - dangerAvoidWeight*engine.DangerProximity(vec)
+}
+
 func classify(o outcome) string {
 	if o.actions == 0 {
 		return "UNPLAYABLE" // never offered ACTION6 -- the agent couldn't act at all
@@ -118,7 +134,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 	var o outcome
 	prevObs, prevClicked, prevTopology := "", "", ""
 	prevLevels := frame.LevelsCompleted
-	prevPref := perception.ApproachPreference(frame.Grid)
+	prevPref := preferenceOf(engine, frame.Grid, maxBlobs, cols, rows)
 
 	for o.actions < maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -162,6 +178,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 		}
 		prevObs, prevClicked, prevLevels = obs, clicked, frame.LevelsCompleted
 
+		preStepGrid := frame.Grid // state the action is taken from, for danger memory
 		newFrame, serr := sess.Step(action)
 		o.actions++
 		if serr != nil {
@@ -177,7 +194,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 		if frame.LevelsCompleted > prevLevels {
 			engine.RememberGoalState(frameVec)
 		}
-		newPref := engine.LearnedPreference(frameVec) + 0.1*perception.StructureScore(frame.Grid) + perception.ApproachPreference(frame.Grid)
+		newPref := preferenceOf(engine, frame.Grid, maxBlobs, cols, rows)
 		engine.AttributePreferenceGain(newPref - prevPref)
 		prevPref = newPref
 		if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
@@ -185,6 +202,9 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 				o.gameOvers++
 				engine.PenalizeLastAction(0.05)
 				memory.PenalizeSequence(3.0)
+				// Self-preservation: learn the "about to die" state (mirror of the
+				// goal machinery), so DangerProximity steers the planner away from it.
+				engine.RememberDangerState(pipeline.ObservationVector(perception.DescribeGridStructural(preStepGrid, maxBlobs, cols, rows)))
 			}
 			rf, rerr := sess.Reset()
 			if rerr != nil {
@@ -194,7 +214,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			tracker = perception.NewObjectTracker()
 			prevObs, prevClicked, prevTopology = "", "", ""
 			prevLevels = frame.LevelsCompleted
-			prevPref = perception.ApproachPreference(frame.Grid)
+			prevPref = preferenceOf(engine, frame.Grid, maxBlobs, cols, rows)
 		}
 	}
 	return o

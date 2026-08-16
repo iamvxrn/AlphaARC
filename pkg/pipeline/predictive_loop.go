@@ -194,6 +194,18 @@ type Engine struct {
 	// This is the dream's "complete it once -> learn what was wanted".
 	GoalExemplars [][]float64
 
+	// DangerExemplars are the MIRROR of GoalExemplars: observation vectors of
+	// states from which an action led to GAME_OVER -- a learned self-preservation
+	// instinct (Friston's C has DISpreferred states too, not only preferred).
+	// DangerProximity scores how much a state resembles one that got the agent
+	// killed, and the pragmatic loop SUBTRACTS it, so the agent avoids re-entering
+	// death-like configurations. Deliberately aversive, not a hard block: death
+	// stays possible (and informative), just dispreferred -- otherwise the safest
+	// policy is inaction (the dark-room trap), which the anti-stagnation drive is
+	// the counterweight to. Empty until the first death, so it has no effect on a
+	// game the agent hasn't died in.
+	DangerExemplars [][]float64
+
 	// ActionPreferenceGain is the PRAGMATIC half of expected free energy: the
 	// learned expected increase in PRIOR PREFERENCE (source of meaning, e.g.
 	// perception.StructureScore) from taking each action. The caller feeds the
@@ -425,6 +437,38 @@ func (e *Engine) HasLearnedGoal() bool { return len(e.GoalExemplars) > 0 }
 func (e *Engine) LearnedPreference(vec []float64) float64 {
 	best := 0.0
 	for _, ex := range e.GoalExemplars {
+		if len(ex) != len(vec) {
+			continue
+		}
+		dot := 0.0
+		for i := range vec {
+			dot += vec[i] * ex[i]
+		}
+		if dot > best {
+			best = dot
+		}
+	}
+	return best
+}
+
+// RememberDangerState stores an observation vector of a state FROM which an
+// action led to GAME_OVER -- learning what "about to die" looks like, the
+// mirror of RememberGoalState. Copied defensively.
+func (e *Engine) RememberDangerState(vec []float64) {
+	if len(vec) == 0 {
+		return
+	}
+	e.DangerExemplars = append(e.DangerExemplars, append([]float64(nil), vec...))
+}
+
+// DangerProximity scores a state by how much it resembles one from which the
+// agent got killed: the max cosine similarity to any stored danger exemplar
+// (mirror of LearnedPreference). 0 when nothing has killed the agent yet. The
+// pragmatic loop subtracts a weighted amount of this, so the planner steers
+// away from death-like configurations -- the self-preservation instinct.
+func (e *Engine) DangerProximity(vec []float64) float64 {
+	best := 0.0
+	for _, ex := range e.DangerExemplars {
 		if len(ex) != len(vec) {
 			continue
 		}
