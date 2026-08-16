@@ -185,6 +185,15 @@ type Engine struct {
 	PendingActionToken     string
 	ActionLearningProgress map[string]float64
 
+	// GoalExemplars are observation vectors of states in which a level was
+	// actually completed -- the source of meaning LEARNED from experience
+	// rather than hand-guessed. Before the first success it's empty and the
+	// agent has no learned goal (curiosity toward the unusual does the work of
+	// stumbling into one); after, LearnedPreference scores states by how much
+	// they resemble a winning state, and the pragmatic loop steers toward that.
+	// This is the dream's "complete it once -> learn what was wanted".
+	GoalExemplars [][]float64
+
 	// ActionPreferenceGain is the PRAGMATIC half of expected free energy: the
 	// learned expected increase in PRIOR PREFERENCE (source of meaning, e.g.
 	// perception.StructureScore) from taking each action. The caller feeds the
@@ -395,6 +404,40 @@ const preferenceGainAlpha = 0.25
 // Pragmatic dominates -- the agent chiefly seeks the goal -- but a little
 // epistemic weight keeps it drawn toward actions it can still learn from.
 const expectedFreeEnergyEpiWeight = 0.3
+
+// RememberGoalState stores an observation vector of a state where a level was
+// completed -- learning the goal from the success itself. Copied defensively.
+func (e *Engine) RememberGoalState(vec []float64) {
+	if len(vec) == 0 {
+		return
+	}
+	e.GoalExemplars = append(e.GoalExemplars, append([]float64(nil), vec...))
+}
+
+// HasLearnedGoal reports whether any winning state has been seen yet.
+func (e *Engine) HasLearnedGoal() bool { return len(e.GoalExemplars) > 0 }
+
+// LearnedPreference scores a state by how much it resembles a state where a
+// level was actually completed: the max cosine similarity (= dot product, both
+// unit vectors) to any stored goal exemplar. 0 when no goal has been learned
+// yet. This is the LEARNED source of meaning -- the agent's own answer to
+// "what does a good state look like", formed from experience, not guessed.
+func (e *Engine) LearnedPreference(vec []float64) float64 {
+	best := 0.0
+	for _, ex := range e.GoalExemplars {
+		if len(ex) != len(vec) {
+			continue
+		}
+		dot := 0.0
+		for i := range vec {
+			dot += vec[i] * ex[i]
+		}
+		if dot > best {
+			best = dot
+		}
+	}
+	return best
+}
 
 // AttributePreferenceGain credits a realized change in prior preference (the
 // source of meaning) to the action that conditioned the current forecast, as
