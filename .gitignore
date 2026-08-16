@@ -24,4 +24,5 @@ CONCEPT.md
 !.env.example
 *.key
 
-*.logprotaxon-arc-play
+*.log
+protaxon-arc-play
