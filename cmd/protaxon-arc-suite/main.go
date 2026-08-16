@@ -79,7 +79,7 @@ func main() {
 	}
 
 	fmt.Printf("\n=== MATRIX ===\n")
-	fmt.Printf("SOLVED=%d  INTERACTIVE=%d  DEAD-END=%d  (of %d)\n", counts["SOLVED"], counts["INTERACTIVE"], counts["DEAD-END"], n)
+	fmt.Printf("SOLVED=%d  INTERACTIVE=%d  DEAD-END=%d  UNPLAYABLE=%d  (of %d)\n", counts["SOLVED"], counts["INTERACTIVE"], counts["DEAD-END"], counts["UNPLAYABLE"], n)
 	if summary, err := client.CloseScorecard(ctx, cardID); err != nil {
 		log.Printf("close scorecard: %v", err)
 	} else {
@@ -92,11 +92,14 @@ type outcome struct {
 }
 
 func classify(o outcome) string {
+	if o.actions == 0 {
+		return "UNPLAYABLE" // never offered ACTION6 -- the agent couldn't act at all
+	}
 	if o.bestLevels > 0 {
 		return "SOLVED"
 	}
-	// The world responded structurally, or changed on a meaningful fraction of
-	// actions -- there's something to work with.
+	// The world responded structurally (a body appeared/vanished) or changed on
+	// a meaningful fraction of actions -- there's something to work with.
 	if o.topo > 0 || o.changed*3 >= o.actions {
 		return "INTERACTIVE"
 	}
