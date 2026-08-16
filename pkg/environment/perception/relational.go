@@ -28,6 +28,7 @@ func DescribeGridStructural(grid [][]int, maxBlobs, cols, rows int) string {
 	_ = cols
 	_ = rows
 	rel := RelationalTokens(grid)
+	rel = append(rel, SpatialRelationTokens(grid)...)
 	if len(rel) == 0 {
 		return ""
 	}
