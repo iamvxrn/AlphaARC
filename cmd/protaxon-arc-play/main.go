@@ -296,6 +296,11 @@ func main() {
 		// takes over as it accrues.
 		graphPick := "click-" + clickedLabel
 		curHyp := tester.Current()
+		curSat := tester.Satisfaction(frame.Grid)
+		candidateBlobs := make([]perception.Blob, 0, len(objCandidates))
+		for _, ob := range objCandidates {
+			candidateBlobs = append(candidateBlobs, ob.Blob)
+		}
 		chosenTok, bestVal := "", math.Inf(-1)
 		for _, c := range candidates {
 			efe := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
@@ -314,8 +319,12 @@ func main() {
 			// agent babbles; as affordances are learned, it climbs deliberately.
 			pragmatic := 0.0
 			if ob, ok := clickByToken[c]; ok {
-				if v, known := perception.LearnedPragmaticValue(frame.Grid, ob.Blob, curHyp.Score, afford); known {
-					pragmatic = pragmaticBeta * v
+				// Short-horizon rollout in the LEARNED relational model: the best
+				// sat reachable within rolloutDepth clicks that start with this one,
+				// so a preparatory move (Δsat<=0 now) still scores if a follow-up
+				// then closes the invariant -- stepping over non-monotonic valleys.
+				if v, known := afford.LookaheadValue(frame.Grid, ob.Blob, candidateBlobs, curHyp.Score, rolloutDepth); known {
+					pragmatic = pragmaticBeta * (v - curSat)
 				} else {
 					pragmatic = epistemicBonus
 				}
@@ -584,6 +593,10 @@ const (
 	// so unknown-affordance objects are probed early to build the physics map,
 	// then naturally yields to pragmatic Δsat once effects are known.
 	epistemicBonus = 0.1
+	// rolloutDepth is how many clicks the learned-model lookahead searches ahead
+	// (2 = try chains of two clicks) so a preparatory move can be credited for the
+	// invariant a follow-up closes -- the fix for the non-monotonic landscape.
+	rolloutDepth = 2
 )
 
 // availableSimpleActions returns every offered non-click action (ACTION1-5 and
