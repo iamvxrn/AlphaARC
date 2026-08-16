@@ -515,65 +515,7 @@ func scopedScore(grid [][]int, score func([][]int) float64) float64 {
 	return score(grid)
 }
 
-// PragmaticValue is the COUNTERFACTUAL 1-step lookahead that closes sat onto the
-// click choice. For a candidate object it emulates a small set of plausible
-// local mutations (remove it; recolor it to the majority foreground color) and
-// returns the best resulting Δ(scoped satisfaction) -- an estimate of how much
-// clicking this object could advance the CURRENT hypothesis, injected straight
-// into the object's action score so a genuinely goal-advancing click spikes
-// above exploration noise instead of waiting for slow categorical credit to
-// accrue. Both base and counterfactual are scored in the SAME fixed window (the
-// current grid's foreground bbox) so they compare like-for-like. 0 when no
-// mutation helps (or there is no foreground).
-func PragmaticValue(grid [][]int, obj Blob, score func([][]int) float64) float64 {
-	minR, minC, maxR, maxC, ok := ForegroundBBox(grid)
-	if !ok {
-		return 0
-	}
-	base := score(cropTo(grid, minR, minC, maxR, maxC))
-	bg := BackgroundColor(grid)
-	best := 0.0
-	for _, color := range []int{bg, majorityForeground(grid, bg)} {
-		m := mutateCells(grid, obj.Cells, color)
-		if d := score(cropTo(m, minR, minC, maxR, maxC)) - base; d > best {
-			best = d
-		}
-	}
-	return best
-}
-
-// majorityForeground returns the most common non-background color (bg itself if
-// there is no foreground). Deterministic tie-break toward the lower color value.
-func majorityForeground(grid [][]int, bg int) int {
-	counts := map[int]int{}
-	for _, row := range grid {
-		for _, c := range row {
-			if c != bg {
-				counts[c]++
-			}
-		}
-	}
-	best, bestN := bg, 0
-	for c, n := range counts {
-		if n > bestN || (n == bestN && c < best) {
-			best, bestN = c, n
-		}
-	}
-	return best
-}
-
-// mutateCells returns a deep copy of grid with the given cells set to color.
-func mutateCells(grid [][]int, cells []Point, color int) [][]int {
-	out := make([][]int, len(grid))
-	for r := range grid {
-		row := make([]int, len(grid[r]))
-		copy(row, grid[r])
-		out[r] = row
-	}
-	for _, p := range cells {
-		if p.Y >= 0 && p.Y < len(out) && p.X >= 0 && p.X < len(out[p.Y]) {
-			out[p.Y][p.X] = color
-		}
-	}
-	return out
-}
+// (PragmaticValue -- the old guessed remove/recolor 1-step counterfactual -- and
+// its helpers were removed in the consolidation pass: they were superseded by
+// AffordanceTable.LookaheadValue, which uses the LEARNED relational effect of a
+// click instead of a hand-guessed mutation.)

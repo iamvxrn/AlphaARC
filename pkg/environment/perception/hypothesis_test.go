@@ -71,39 +71,6 @@ func TestHypothesisTesterRotatesAndWarmStarts(t *testing.T) {
 	}
 }
 
-// TestPragmaticValueRewardsGoalAdvancingClicks: the counterfactual lookahead
-// gives a POSITIVE value to acting on an object whose recolor/removal advances
-// the current hypothesis, and ~0 when the goal is already met (nothing helps).
-func TestPragmaticValueRewardsGoalAdvancingClicks(t *testing.T) {
-	// background 0; foreground is mostly color 3 with one stray color 7. Fixing
-	// the stray advances all-one-color.
-	grid := [][]int{
-		{0, 3, 3, 0, 7, 0},
-		{0, 3, 3, 0, 0, 0},
-	}
-	var stray Blob
-	for _, b := range FindBlobs(grid, BackgroundColor(grid)) {
-		if b.Color == 7 {
-			stray = b
-		}
-	}
-	if v := PragmaticValue(grid, stray, hypAllOneColor); !(v > 0) {
-		t.Fatalf("acting on the stray off-color object should have positive pragmatic value, got %.4f", v)
-	}
-
-	// An already-uniform foreground: no mutation can improve all-one-color, so
-	// every object's pragmatic value is ~0.
-	uniform := [][]int{
-		{0, 3, 3, 0},
-		{0, 3, 3, 0},
-	}
-	for _, b := range FindBlobs(uniform, BackgroundColor(uniform)) {
-		if v := PragmaticValue(uniform, b, hypAllOneColor); v != 0 {
-			t.Fatalf("a uniform grid should give 0 pragmatic value, got %.4f", v)
-		}
-	}
-}
-
 // TestTopologyInvariants: connectivity, enclosure, and gravity each peak when
 // their goal is met and score lower when violated -- new Core-Knowledge gradients.
 func TestTopologyInvariants(t *testing.T) {
