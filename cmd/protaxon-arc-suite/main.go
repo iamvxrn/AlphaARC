@@ -119,13 +119,18 @@ type outcome struct {
 // sync with the live player's constant of the same name.
 const dangerAvoidWeight = 0.3
 
+// hypWeight scales the pursued hypothesis's satisfaction as the goal-directed
+// preference term -- kept in sync with the live player's constant of the same
+// name.
+const hypWeight = 1.0
+
 // preferenceOf is the prior preference over a state, identical to the live
 // player's: learned goal + weak structural prior + spatial approach to the key,
 // MINUS the self-preservation term (resemblance to a state that got the agent
 // killed). Single source of truth so init, loop, and post-reset can't drift.
-func preferenceOf(engine *pipeline.Engine, grid [][]int, maxBlobs, cols, rows int) float64 {
+func preferenceOf(engine *pipeline.Engine, tester *perception.HypothesisTester, grid [][]int, maxBlobs, cols, rows int) float64 {
 	vec := pipeline.ObservationVector(perception.DescribeGridStructural(grid, maxBlobs, cols, rows))
-	return engine.LearnedPreference(vec) + 0.1*perception.StructureScore(grid) + perception.ApproachPreference(grid) - dangerAvoidWeight*engine.DangerProximity(vec)
+	return engine.LearnedPreference(vec) + hypWeight*tester.Satisfaction(grid) - dangerAvoidWeight*engine.DangerProximity(vec)
 }
 
 func classify(o outcome) string {
@@ -152,10 +157,11 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 	engine := pipeline.NewEngine()
 	memory := bridge.NewOutcomeMemory()
 	tracker := perception.NewObjectTracker()
+	tester := perception.NewHypothesisTester() // goal inference by hypothesis-and-test
 	var o outcome
 	prevObs, prevClicked, prevTopology := "", "", ""
 	prevLevels := frame.LevelsCompleted
-	prevPref := preferenceOf(engine, frame.Grid, maxBlobs, cols, rows)
+	prevPref := preferenceOf(engine, tester, frame.Grid, maxBlobs, cols, rows)
 
 	for o.actions < maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -226,14 +232,18 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 		if frame.LevelsCompleted > o.bestLevels {
 			o.bestLevels = frame.LevelsCompleted
 		}
-		// Composer: credit the spatial approach (+ any learned goal) so BestAction
-		// steers toward the salient target -- the same drive the live player uses.
+		// Goal inference: pursue the current hypothesis; a completion confirms it,
+		// a plateau rotates. Same drive the live player uses.
 		frameVec := pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, maxBlobs, cols, rows))
 		if frame.LevelsCompleted > prevLevels {
 			engine.RememberGoalState(frameVec)
+			tester.Confirm()
 		}
-		newPref := preferenceOf(engine, frame.Grid, maxBlobs, cols, rows)
-		engine.AttributePreferenceGain(newPref - prevPref)
+		rotated := tester.Observe(frame.Grid)
+		newPref := preferenceOf(engine, tester, frame.Grid, maxBlobs, cols, rows)
+		if !rotated {
+			engine.AttributePreferenceGain(newPref - prevPref)
+		}
 		prevPref = newPref
 		if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
 			if frame.State == environment.StateGameOver {
@@ -249,10 +259,11 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 				break
 			}
 			frame = rf
+			tester.Refute() // attempt ended without a win -> test the next hypothesis
 			tracker = perception.NewObjectTracker()
 			prevObs, prevClicked, prevTopology = "", "", ""
 			prevLevels = frame.LevelsCompleted
-			prevPref = preferenceOf(engine, frame.Grid, maxBlobs, cols, rows)
+			prevPref = preferenceOf(engine, tester, frame.Grid, maxBlobs, cols, rows)
 		}
 	}
 	return o
