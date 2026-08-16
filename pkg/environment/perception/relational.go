@@ -16,10 +16,20 @@ import (
 // representation fix the Stage-6 thermometer motivated: what the agent
 // predicts and abstracts over now carries structure, not just surface labels.
 func DescribeGridStructural(grid [][]int, maxBlobs, cols, rows int) string {
-	base := DescribeGridCells(grid, maxBlobs, cols, rows)
+	// Object-level observation (Core Knowledge #3): the raw per-cell position
+	// labels (DescribeGridCells) are DROPPED. They created a graph node per
+	// (color, cell) and exploded the graph (~2900 edges, 77 clusters live),
+	// and baked identity into position so a moving body fragmented. The graph
+	// now sees only structural tokens here plus the stable object-id + motion
+	// tokens the caller adds via extraObs -- vertices are objects, not cells.
+	// (maxBlobs/cols/rows kept for signature stability; RelationalTokens and
+	// the object tokens don't need a lattice.)
+	_ = maxBlobs
+	_ = cols
+	_ = rows
 	rel := RelationalTokens(grid)
 	if len(rel) == 0 {
-		return base
+		return ""
 	}
 	// Emit the structural tokens structuralWeight times: their SHARE of the
 	// observation is the transfer lever (TestExploreStructureWeightOnTransfer /
@@ -30,18 +40,12 @@ func DescribeGridStructural(grid [][]int, maxBlobs, cols, rows int) string {
 	// forward model weights structure more heavily and leans on the part that
 	// transfers across surface-different domains.
 	joined := strings.Join(rel, " ")
-	weighted := make([]string, 0, structuralWeight+1)
-	if base != "" {
-		weighted = append(weighted, base)
-	}
+	weighted := make([]string, 0, structuralWeight)
 	for i := 0; i < structuralWeight; i++ {
 		weighted = append(weighted, joined)
 	}
-	// NOTE: object identity used to be appended here as ObjectSignature tokens,
-	// but the exact-pixel-shape hash proved too brittle live (a one-pixel
-	// deformation = a whole new identity = fragmentation). Stable object
-	// identity now comes from ObjectTracker (continuity-based), fed in by the
-	// caller via ChooseClickAction's extraObs, not from a single-frame hash.
+	// Stable object identity + motion are added by the caller via extraObs
+	// (ObjectTracker), not here -- see ChooseClickAction.
 	return strings.Join(weighted, " ")
 }
 
