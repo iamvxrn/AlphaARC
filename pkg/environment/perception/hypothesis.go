@@ -154,12 +154,12 @@ const hypRotatePatience = 12
 // tracks plateau and rotates on a stall, Refute rotates on a reset/loss, and
 // Confirm locks the current hypothesis once a real completion validates it.
 type HypothesisTester struct {
-	hyps      []Hypothesis
-	idx       int
-	best      float64 // best satisfaction seen for the current hypothesis this attempt
-	stale     int     // steps since best improved
-	patience  int
-	confirmed bool
+	hyps     []Hypothesis
+	idx      int
+	best     float64 // best satisfaction seen for the current hypothesis this attempt
+	stale    int     // steps since best improved
+	patience int
+	wins     int // levels completed while a hypothesis was being pursued
 }
 
 // NewHypothesisTester starts on the first candidate goal.
@@ -170,18 +170,19 @@ func NewHypothesisTester() *HypothesisTester {
 // Current is the hypothesis being pursued right now.
 func (t *HypothesisTester) Current() Hypothesis { return t.hyps[t.idx] }
 
-// Satisfaction is how well grid meets the current hypothesis, in [0,1].
+// Wins is how many levels completed so far under this tester.
+func (t *HypothesisTester) Wins() int { return t.wins }
+
+// Satisfaction is how well grid meets the current hypothesis, in [0,1], scored
+// within the foreground bounding box (the ActiveMask) so the symmetry axis is
+// centered on the actual objects rather than the whole canvas.
 func (t *HypothesisTester) Satisfaction(grid [][]int) float64 {
-	return t.hyps[t.idx].Score(grid)
+	return scopedScore(grid, t.hyps[t.idx].Score)
 }
 
 // Observe folds this frame into plateau tracking and returns true if it JUST
-// rotated to a new hypothesis (the current one stalled without being met). A
-// no-op once a hypothesis has been confirmed.
+// rotated to a new hypothesis (the current one stalled without improving).
 func (t *HypothesisTester) Observe(grid [][]int) bool {
-	if t.confirmed {
-		return false
-	}
 	s := t.Satisfaction(grid)
 	if s > t.best+1e-9 {
 		t.best = s
@@ -197,24 +198,145 @@ func (t *HypothesisTester) Observe(grid [][]int) bool {
 }
 
 // Refute abandons the current hypothesis (e.g. after a reset or GAME_OVER with
-// no completion) and moves to the next -- so a fresh attempt tests a fresh
-// guess. A no-op once confirmed.
-func (t *HypothesisTester) Refute() {
-	if t.confirmed {
-		return
+// no completion) and moves to the next -- so a fresh attempt tests a fresh guess.
+func (t *HypothesisTester) Refute() { t.rotate() }
+
+// WarmStart is called on a LEVEL COMPLETION: the current hypothesis just won, so
+// move it to the head of the queue (Bayesian warm start -- the mechanic may
+// carry over even though the level's geometry changed) and reset plateau
+// tracking so it gets a fresh full patience window on the new level. Rotation
+// stays OPEN, unlike a permanent lock: each level may have a different goal, so
+// if the warm-started hypothesis stalls on the new level it rotates onward.
+func (t *HypothesisTester) WarmStart() {
+	t.wins++
+	win := t.hyps[t.idx]
+	reordered := make([]Hypothesis, 0, len(t.hyps))
+	reordered = append(reordered, win)
+	for i, h := range t.hyps {
+		if i != t.idx {
+			reordered = append(reordered, h)
+		}
 	}
-	t.rotate()
+	t.hyps = reordered
+	t.idx = 0
+	t.best = 0
+	t.stale = 0
 }
-
-// Confirm locks the current hypothesis as validated (a level completed while
-// pursuing it), so it stops rotating and keeps pursuing what actually worked.
-func (t *HypothesisTester) Confirm() { t.confirmed = true }
-
-// Confirmed reports whether a hypothesis has been validated by a real completion.
-func (t *HypothesisTester) Confirmed() bool { return t.confirmed }
 
 func (t *HypothesisTester) rotate() {
 	t.idx = (t.idx + 1) % len(t.hyps)
 	t.best = 0
 	t.stale = 0
+}
+
+// ForegroundBBox is the ActiveMask: the inclusive bounding box of all non-
+// background cells. Scoring a hypothesis within it (rather than the whole
+// canvas) centers the symmetry axis on the actual objects and stops a mostly-
+// empty canvas from diluting the measure. ok=false when there is no foreground.
+func ForegroundBBox(grid [][]int) (minR, minC, maxR, maxC int, ok bool) {
+	bg := BackgroundColor(grid)
+	for r := range grid {
+		for c := range grid[r] {
+			if grid[r][c] == bg {
+				continue
+			}
+			if !ok {
+				minR, maxR, minC, maxC, ok = r, r, c, c, true
+				continue
+			}
+			if r < minR {
+				minR = r
+			}
+			if r > maxR {
+				maxR = r
+			}
+			if c < minC {
+				minC = c
+			}
+			if c > maxC {
+				maxC = c
+			}
+		}
+	}
+	return minR, minC, maxR, maxC, ok
+}
+
+// cropTo returns the [minR..maxR]x[minC..maxC] sub-grid (rows shared, read-only).
+func cropTo(grid [][]int, minR, minC, maxR, maxC int) [][]int {
+	out := make([][]int, 0, maxR-minR+1)
+	for r := minR; r <= maxR; r++ {
+		out = append(out, grid[r][minC:maxC+1])
+	}
+	return out
+}
+
+// scopedScore evaluates a hypothesis within the foreground bounding box.
+func scopedScore(grid [][]int, score func([][]int) float64) float64 {
+	if minR, minC, maxR, maxC, ok := ForegroundBBox(grid); ok {
+		return score(cropTo(grid, minR, minC, maxR, maxC))
+	}
+	return score(grid)
+}
+
+// PragmaticValue is the COUNTERFACTUAL 1-step lookahead that closes sat onto the
+// click choice. For a candidate object it emulates a small set of plausible
+// local mutations (remove it; recolor it to the majority foreground color) and
+// returns the best resulting Δ(scoped satisfaction) -- an estimate of how much
+// clicking this object could advance the CURRENT hypothesis, injected straight
+// into the object's action score so a genuinely goal-advancing click spikes
+// above exploration noise instead of waiting for slow categorical credit to
+// accrue. Both base and counterfactual are scored in the SAME fixed window (the
+// current grid's foreground bbox) so they compare like-for-like. 0 when no
+// mutation helps (or there is no foreground).
+func PragmaticValue(grid [][]int, obj Blob, score func([][]int) float64) float64 {
+	minR, minC, maxR, maxC, ok := ForegroundBBox(grid)
+	if !ok {
+		return 0
+	}
+	base := score(cropTo(grid, minR, minC, maxR, maxC))
+	bg := BackgroundColor(grid)
+	best := 0.0
+	for _, color := range []int{bg, majorityForeground(grid, bg)} {
+		m := mutateCells(grid, obj.Cells, color)
+		if d := score(cropTo(m, minR, minC, maxR, maxC)) - base; d > best {
+			best = d
+		}
+	}
+	return best
+}
+
+// majorityForeground returns the most common non-background color (bg itself if
+// there is no foreground). Deterministic tie-break toward the lower color value.
+func majorityForeground(grid [][]int, bg int) int {
+	counts := map[int]int{}
+	for _, row := range grid {
+		for _, c := range row {
+			if c != bg {
+				counts[c]++
+			}
+		}
+	}
+	best, bestN := bg, 0
+	for c, n := range counts {
+		if n > bestN || (n == bestN && c < best) {
+			best, bestN = c, n
+		}
+	}
+	return best
+}
+
+// mutateCells returns a deep copy of grid with the given cells set to color.
+func mutateCells(grid [][]int, cells []Point, color int) [][]int {
+	out := make([][]int, len(grid))
+	for r := range grid {
+		row := make([]int, len(grid[r]))
+		copy(row, grid[r])
+		out[r] = row
+	}
+	for _, p := range cells {
+		if p.Y >= 0 && p.Y < len(out) && p.X >= 0 && p.X < len(out[p.Y]) {
+			out[p.Y][p.X] = color
+		}
+	}
+	return out
 }

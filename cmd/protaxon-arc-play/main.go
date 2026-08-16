@@ -292,6 +292,7 @@ func main() {
 		// per-object gains ~0) the graph decides, and the learned per-object signal
 		// takes over as it accrues.
 		graphPick := "click-" + clickedLabel
+		curHyp := tester.Current()
 		chosenTok, bestVal := "", math.Inf(-1)
 		for _, c := range candidates {
 			efe := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
@@ -301,7 +302,15 @@ func main() {
 			if c == graphPick {
 				prior = graphPriorBonus
 			}
-			if v := efe + optimism - taboo + prior; v > bestVal {
+			// Counterfactual 1-step lookahead (b): for a click on this object,
+			// how much would it advance the current hypothesis? Injected straight
+			// into the score so a genuinely goal-advancing click spikes above the
+			// exploration/optimism noise instead of waiting for categorical credit.
+			pragmatic := 0.0
+			if ob, ok := clickByToken[c]; ok {
+				pragmatic = pragmaticBeta * perception.PragmaticValue(frame.Grid, ob.Blob, curHyp.Score)
+			}
+			if v := efe + optimism - taboo + prior + pragmatic; v > bestVal {
 				bestVal, chosenTok = v, c
 			}
 		}
@@ -360,14 +369,21 @@ func main() {
 		// gradient BEFORE the first win (until then, curiosity toward the unusual
 		// does the finding). The winning cycle itself yields a big preference
 		// jump -- exactly the reward that teaches which action mattered.
-		frameVec := pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, *maxBlobs, *cols, *rows))
-		if frame.LevelsCompleted > prevLevelsCompleted {
-			// The current hypothesis just won a level -- it was RIGHT. Confirm it
-			// (stop rotating) and remember the winning state so LearnedPreference
-			// bootstraps from real ground truth, not a guess.
-			engine.RememberGoalState(frameVec)
-			tester.Confirm()
-			fmt.Printf("action %d: LEVEL COMPLETED while pursuing hypothesis %q -- confirmed\n", actionsTaken, tester.Current().Name)
+		leveledUp := frame.LevelsCompleted > prevLevelsCompleted
+		if leveledUp {
+			// SCOPED confirmation + Bayesian warm-start (fix a): the pursued
+			// hypothesis just won, so keep it at the head of the queue for the next
+			// level (the mechanic may carry over even though the geometry changed) --
+			// but re-open rotation (each level can have a different goal) and FORGET
+			// the level-specific learned goal. Reset the perceptual baselines too:
+			// a new level is new objects, so old identity/topology/IoR state is stale.
+			tester.WarmStart()
+			engine.ForgetGoal()
+			tracker = perception.NewObjectTracker()
+			prevTopology, prevNumeric = "", ""
+			stagnation = 0
+			fmt.Printf("action %d: LEVEL %d COMPLETED pursuing %q -- warm-starting it, forgetting stale goal, fresh perceptual baseline\n",
+				actionsTaken, frame.LevelsCompleted, tester.Current().Name)
 		}
 		// Fold this frame into hypothesis tracking; a plateau rotates to the next
 		// candidate goal. When it rotates, the preference target changes, so the
@@ -378,21 +394,24 @@ func main() {
 		// hypothesized goal, plus learned preference, minus self-preservation.
 		newPreference := preferenceOf(frame.Grid)
 		preferenceDelta := newPreference - prevPreference
-		preferenceIncreased := !rotated && newPreference > prevPreference
+		// A rotation OR a level change moves the preference target, so the step's
+		// delta spans two different goals and must NOT be credited to the action.
+		discontinuity := rotated || leveledUp
+		preferenceIncreased := !discontinuity && newPreference > prevPreference
 		if preferenceIncreased && !exploredAction && clickedLabel != "" {
 			memory.Record(clickedLabel, true)
 		}
-		if rotated {
-			fmt.Printf("action %d: hypothesis plateaued -> now pursuing %q\n", actionsTaken, tester.Current().Name)
+		if discontinuity {
+			fmt.Printf("action %d: goal changed -> now pursuing %q\n", actionsTaken, tester.Current().Name)
 		} else {
 			// Plan: credit this action's realized preference change so BestAction
 			// can steer toward the goal next time (the pragmatic half of expected
 			// free energy). Attributed to the action just taken.
 			engine.AttributePreferenceGain(preferenceDelta)
 		}
-		fmt.Printf("action %d: preference=%.4f delta=%+.4f hyp=%q sat=%.3f (learned_goal=%v confirmed=%v)%s\n",
+		fmt.Printf("action %d: preference=%.4f delta=%+.4f hyp=%q sat=%.3f (wins=%d)%s\n",
 			actionsTaken, newPreference, newPreference-prevPreference, tester.Current().Name, tester.Satisfaction(frame.Grid),
-			engine.HasLearnedGoal(), tester.Confirmed(),
+			tester.Wins(),
 			map[bool]string{true: " <- toward goal, reinforced", false: ""}[preferenceIncreased && !exploredAction && clickedLabel != ""])
 		prevPreference = newPreference
 
@@ -460,9 +479,9 @@ func main() {
 			frame = resetFrame
 			// The attempt ended without a win -- the hypothesis we were pursuing
 			// wasn't (or wasn't reachably) the goal, so try the next candidate on
-			// the fresh attempt. No-op if a hypothesis was already confirmed.
+			// the fresh attempt.
 			tester.Refute()
-			fmt.Printf("reset: testing next hypothesis %q (confirmed=%v)\n", tester.Current().Name, tester.Confirmed())
+			fmt.Printf("reset: testing next hypothesis %q (wins=%d)\n", tester.Current().Name, tester.Wins())
 			prevObservation, prevClickedLabel, lastActionTok, prevNumeric = "", "", "", ""
 			tracker = perception.NewObjectTracker()
 			prevTopology = ""
@@ -538,6 +557,11 @@ const (
 	// matched LearnedPreference), giving a real gradient to climb toward the
 	// current hypothesized goal.
 	hypWeight = 1.0
+	// pragmaticBeta scales the counterfactual 1-step lookahead (Δsat from acting
+	// on an object) injected into that object's click score. >0 large enough that
+	// a genuinely goal-advancing click (a real positive Δsat) outweighs the
+	// optimism/exploration noise (~0.05); a guess, tunable against a live run.
+	pragmaticBeta = 2.0
 )
 
 // availableSimpleActions returns every offered non-click action (ACTION1-5 and

@@ -27,9 +27,10 @@ func TestHypothesisScorersMeasureTheirGoal(t *testing.T) {
 	}
 }
 
-// TestHypothesisTesterRotatesAndConfirms: the tester rotates off a stalled
-// hypothesis, cycles through all candidates, and once confirmed stops rotating.
-func TestHypothesisTesterRotatesAndConfirms(t *testing.T) {
+// TestHypothesisTesterRotatesAndWarmStarts: the tester rotates off a stalled
+// hypothesis, and a WarmStart brings the winning hypothesis to the head while
+// KEEPING rotation open (each level may differ) and counting the win.
+func TestHypothesisTesterRotatesAndWarmStarts(t *testing.T) {
 	tr := NewHypothesisTester()
 	first := tr.Current().Name
 	flat := [][]int{{0, 0}, {0, 0}} // scores 0 on every hypothesis -> always stale
@@ -48,18 +49,57 @@ func TestHypothesisTesterRotatesAndConfirms(t *testing.T) {
 		t.Fatalf("hypothesis should have changed after rotation, still %q", first)
 	}
 
-	// Refute keeps moving; Confirm freezes.
-	tr.Refute()
-	locked := tr.Current().Name
-	tr.Confirm()
-	tr.Refute() // must be a no-op now
-	for i := 0; i < hypRotatePatience+2; i++ {
-		tr.Observe(flat) // must not rotate once confirmed
+	// WarmStart: the current (won) hypothesis goes to the head, wins increments,
+	// and it gets a fresh patience window -- but rotation is NOT permanently locked.
+	won := tr.Current().Name
+	tr.WarmStart()
+	if tr.Current().Name != won {
+		t.Fatalf("warm-start should keep the won hypothesis %q at the head, got %q", won, tr.Current().Name)
 	}
-	if tr.Current().Name != locked {
-		t.Fatalf("a confirmed hypothesis must not rotate: was %q, now %q", locked, tr.Current().Name)
+	if tr.Wins() != 1 {
+		t.Fatalf("Wins() should be 1 after one WarmStart, got %d", tr.Wins())
 	}
-	if !tr.Confirmed() {
-		t.Fatal("Confirmed() should be true after Confirm()")
+	// still rotates if the warm-started hypothesis then stalls on the new level.
+	rotatedAgain := false
+	for i := 0; i < hypRotatePatience; i++ {
+		if tr.Observe(flat) {
+			rotatedAgain = true
+		}
+	}
+	if !rotatedAgain {
+		t.Fatal("warm-started hypothesis must still rotate when it stalls (rotation stays open)")
+	}
+}
+
+// TestPragmaticValueRewardsGoalAdvancingClicks: the counterfactual lookahead
+// gives a POSITIVE value to acting on an object whose recolor/removal advances
+// the current hypothesis, and ~0 when the goal is already met (nothing helps).
+func TestPragmaticValueRewardsGoalAdvancingClicks(t *testing.T) {
+	// background 0; foreground is mostly color 3 with one stray color 7. Fixing
+	// the stray advances all-one-color.
+	grid := [][]int{
+		{0, 3, 3, 0, 7, 0},
+		{0, 3, 3, 0, 0, 0},
+	}
+	var stray Blob
+	for _, b := range FindBlobs(grid, BackgroundColor(grid)) {
+		if b.Color == 7 {
+			stray = b
+		}
+	}
+	if v := PragmaticValue(grid, stray, hypAllOneColor); !(v > 0) {
+		t.Fatalf("acting on the stray off-color object should have positive pragmatic value, got %.4f", v)
+	}
+
+	// An already-uniform foreground: no mutation can improve all-one-color, so
+	// every object's pragmatic value is ~0.
+	uniform := [][]int{
+		{0, 3, 3, 0},
+		{0, 3, 3, 0},
+	}
+	for _, b := range FindBlobs(uniform, BackgroundColor(uniform)) {
+		if v := PragmaticValue(uniform, b, hypAllOneColor); v != 0 {
+			t.Fatalf("a uniform grid should give 0 pragmatic value, got %.4f", v)
+		}
 	}
 }

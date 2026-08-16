@@ -429,6 +429,11 @@ func (e *Engine) RememberGoalState(vec []float64) {
 // HasLearnedGoal reports whether any winning state has been seen yet.
 func (e *Engine) HasLearnedGoal() bool { return len(e.GoalExemplars) > 0 }
 
+// ForgetGoal clears the learned goal exemplars. Used on a level change: a
+// completed level's winning state is specific to that level's geometry and is
+// stale for the next one, so LearnedPreference must not carry it forward.
+func (e *Engine) ForgetGoal() { e.GoalExemplars = nil }
+
 // LearnedPreference scores a state by how much it resembles a state where a
 // level was actually completed: the max cosine similarity (= dot product, both
 // unit vectors) to any stored goal exemplar. 0 when no goal has been learned
