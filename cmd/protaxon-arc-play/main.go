@@ -96,7 +96,8 @@ func main() {
 	tries := map[string]int{}                                     // per action type: how many times chosen (optimism for the under-tried)
 	stagnation := 0                                               // consecutive actions with no frame change and no level progress
 	lastActionTok := ""
-	var prevGrid [][]int // previous decision frame's grid, for object-motion detection (nil on a fresh episode)
+	tracker := perception.NewObjectTracker() // stable object identity + motion across frames (Core Knowledge)
+	prevTopology := ""                       // last frame's object-topology signature, for conveyor-belt-aware stagnation
 
 	for actionsTaken < *maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -131,11 +132,15 @@ func main() {
 		// Core Knowledge brick 2: object MOTION since the previous frame -- a
 		// cross-frame fact the single-frame grid can't express -- fed into the
 		// observation so the forward model perceives that bodies moved.
-		motionObs := ""
-		if prevGrid != nil {
-			motionObs = strings.Join(perception.ObjectMotions(prevGrid, frame.Grid), " ")
-		}
-		prevGrid = frame.Grid
+		// Core Knowledge: stable object identity + motion via the tracker
+		// (continuity-based, robust to pixel deformation -- unlike the brittle
+		// shape hash). These tokens feed the observation so the graph gets one
+		// persistent node per body. topo is the frame's object-level fingerprint
+		// (which bodies exist), used below for conveyor-belt-aware stagnation.
+		motionObs := strings.Join(tracker.Track(frame.Grid), " ")
+		topo := tracker.TopologySignature()
+		topologyChanged := topo != prevTopology
+		prevTopology = topo
 
 		action, observation, clickedLabel, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, levelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel, motionObs)
 		if err != nil {
@@ -150,14 +155,17 @@ func main() {
 		// an exploration override or the default WTA/fallback choice.
 		changedSinceLastFrame := prevObservation == "" || observation != prevObservation
 
-		// Inhibition of return + stagnation (this frame reflects the PREVIOUS
-		// action's effect): if the last action changed nothing and made no
-		// level progress, grow its taboo and the stagnation counter; otherwise
-		// forgive it and reset stagnation. When stagnation is sharp, DON'T let a
-		// stable, well-predicted scene quench curiosity -- spike it to force the
-		// agent out of the dead corner.
+		// Inhibition of return + stagnation, judged on OBJECT TOPOLOGY, not raw
+		// pixels (conveyor-belt fix): a body sliding under act-5 changes pixels
+		// every step (changedSinceLastFrame stays true) but the set of bodies is
+		// unchanged -- trivial simulation ticking, not progress. So "meaningful
+		// progress" is a topology change (a body created/destroyed) OR a level
+		// gain; otherwise the last action gets taboo'd and stagnation grows even
+		// while pixels churn. When stagnation is sharp, spike curiosity rather
+		// than let a predictable conveyor quench it.
+		meaningfulProgress := topologyChanged || levelsCompletedIncreased
 		if lastActionTok != "" {
-			if !changedSinceLastFrame && !levelsCompletedIncreased {
+			if !meaningfulProgress {
 				deadCount[lastActionTok] = deadCount[lastActionTok]*0.9 + 1
 				stagnation++
 			} else {
@@ -346,7 +354,8 @@ func main() {
 			}
 			frame = resetFrame
 			prevObservation, prevClickedLabel, lastActionTok = "", "", ""
-			prevGrid = nil
+			tracker = perception.NewObjectTracker()
+			prevTopology = ""
 			prevLevelsCompleted = frame.LevelsCompleted
 			prevPreference = 0.1 * perception.StructureScore(frame.Grid)
 			stagnation = 0
