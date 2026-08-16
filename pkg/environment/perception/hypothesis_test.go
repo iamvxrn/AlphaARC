@@ -152,3 +152,44 @@ func TestTopologyInvariants(t *testing.T) {
 		t.Fatalf("gravity should score the settled body higher: %.3f vs %.3f", a, b)
 	}
 }
+
+// TestCompressionRewardsRegularity: compression-as-goal scores a regular
+// (uniform/repetitive) grid far above a scrambled one -- a general, non-
+// enumerative regularity gradient the climb machinery can pursue.
+func TestCompressionRewardsRegularity(t *testing.T) {
+	// uniform region: maximally compressible.
+	uniform := make([][]int, 10)
+	for r := range uniform {
+		uniform[r] = make([]int, 10)
+		for c := range uniform[r] {
+			uniform[r][c] = 5
+		}
+	}
+	// scrambled: a deterministic high-entropy fill (many colors, no runs).
+	scrambled := make([][]int, 10)
+	for r := range scrambled {
+		scrambled[r] = make([]int, 10)
+		for c := range scrambled[r] {
+			scrambled[r][c] = (r*7 + c*3 + r*c) % 10
+		}
+	}
+	u, s := hypCompression(uniform), hypCompression(scrambled)
+	if !(u > s) {
+		t.Fatalf("compression should score the regular grid higher: uniform=%.3f scrambled=%.3f", u, s)
+	}
+	if !(u > 0.7) {
+		t.Fatalf("a uniform grid should be highly compressible (>0.7), got %.3f", u)
+	}
+
+	// a half-then-mirror (repetitive) grid beats the scramble too.
+	striped := make([][]int, 10)
+	for r := range striped {
+		striped[r] = make([]int, 10)
+		for c := range striped[r] {
+			striped[r][c] = c % 2 * 3 // vertical stripes -> compresses well column-major
+		}
+	}
+	if hypCompression(striped) <= s {
+		t.Fatalf("a striped (repetitive) grid should beat the scramble: striped=%.3f scrambled=%.3f", hypCompression(striped), s)
+	}
+}
