@@ -95,8 +95,13 @@ func main() {
 		verdict := classify(o)
 		counts[verdict]++
 		rows_ = append(rows_, row{g, verdict, o.bestLevels, o.changed, o.topo, o.gameOvers, o.actions})
-		fmt.Printf("  %-14s %-11s  levels=%d changed=%d/%d topo_changes=%d game_overs=%d\n",
-			g, verdict, o.bestLevels, o.changed, o.actions, o.topo, o.gameOvers)
+		// maxsat = highest hypothesis satisfaction reached (did any hypothesis get
+		// fully REALIZED, ~1.0?); climb = the biggest rise the agent DROVE a
+		// hypothesis through (did goal-directed action actually make progress?).
+		// Together these separate "wrong hypothesis" (high maxsat, unsolved) from
+		// "can't realize" (low maxsat/climb) -- the transfer question, per game.
+		fmt.Printf("  %-14s %-11s  levels=%d changed=%d/%d topo=%d gover=%d  maxsat=%.2f(%s) climb=%+.2f\n",
+			g, verdict, o.bestLevels, o.changed, o.actions, o.topo, o.gameOvers, o.maxSat, o.maxSatHyp, o.bestClimb)
 	}
 
 	fmt.Printf("\n=== MATRIX ===\n")
@@ -110,6 +115,8 @@ func main() {
 
 type outcome struct {
 	bestLevels, changed, topo, gameOvers, actions int
+	maxSat, bestClimb                             float64 // transfer signal: highest hypothesis satisfaction reached, and the biggest climb driven
+	maxSatHyp                                     string  // which hypothesis reached maxSat
 }
 
 // dangerAvoidWeight scales how strongly resemblance to a death state lowers a
@@ -162,6 +169,8 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 	memory := bridge.NewOutcomeMemory()
 	tracker := perception.NewObjectTracker()
 	tester := perception.NewHypothesisTester() // goal inference by hypothesis-and-test
+	type hypStat struct{ first, max float64 }
+	hypStats := map[string]*hypStat{} // per-hypothesis first/max satisfaction, for the transfer signal
 	var o outcome
 	prevObs, prevClicked, prevTopology := "", "", ""
 	prevLevels := frame.LevelsCompleted
@@ -268,6 +277,14 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			engine.AttributePreferenceGain(newPref - prevPref)
 		}
 		prevPref = newPref
+		// Transfer signal: track, per hypothesis, its satisfaction when first
+		// pursued and the max reached -- so the report can show whether any
+		// hypothesis got realized (max ~1.0) and how far the agent DROVE it (climb).
+		if hn, s := tester.Current().Name, tester.Satisfaction(frame.Grid); hypStats[hn] == nil {
+			hypStats[hn] = &hypStat{first: s, max: s}
+		} else if s > hypStats[hn].max {
+			hypStats[hn].max = s
+		}
 		if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
 			if frame.State == environment.StateGameOver {
 				o.gameOvers++
@@ -287,6 +304,14 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			prevObs, prevClicked, prevTopology = "", "", ""
 			prevLevels = frame.LevelsCompleted
 			prevPref = preferenceOf(engine, tester, frame.Grid, maxBlobs, cols, rows)
+		}
+	}
+	for hn, st := range hypStats {
+		if st.max > o.maxSat {
+			o.maxSat, o.maxSatHyp = st.max, hn
+		}
+		if climb := st.max - st.first; climb > o.bestClimb {
+			o.bestClimb = climb
 		}
 	}
 	return o
