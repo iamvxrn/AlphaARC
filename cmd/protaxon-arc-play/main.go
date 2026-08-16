@@ -89,7 +89,7 @@ func main() {
 	prevObservation := ""
 	prevClickedLabel := ""
 	prevLevelsCompleted := frame.LevelsCompleted
-	prevPreference := perception.StructureScore(frame.Grid)
+	prevPreference := 0.1 * perception.StructureScore(frame.Grid) // matches the in-loop formula before any goal is learned
 
 	for actionsTaken < *maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -223,24 +223,28 @@ func main() {
 		}
 		frame = newFrame
 
-		// Pragmatic drive (source of meaning): did this action move the world
-		// toward the PREFERRED (more structured) state? If so, reward the click
-		// that did it -- the agent now acts toward a goal (order), not just
-		// toward "something changed". This is the first prior-preference in the
-		// system; StructureScore is a deliberately swappable guess at what
-		// "good" means (see perception.StructureScore).
-		newPreference := perception.StructureScore(frame.Grid)
+		// Pragmatic drive (source of meaning). LEARNED, not guessed (the dream):
+		// if this action completed a level, remember the winning state as the
+		// goal; thereafter preference = how much a state resembles a winning one
+		// (LearnedPreference), plus a weak structural prior so there's some
+		// gradient BEFORE the first win (until then, curiosity toward the unusual
+		// does the finding). The winning cycle itself yields a big preference
+		// jump -- exactly the reward that teaches which action mattered.
+		frameVec := pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, *maxBlobs, *cols, *rows))
+		if frame.LevelsCompleted > prevLevelsCompleted {
+			engine.RememberGoalState(frameVec)
+		}
+		newPreference := engine.LearnedPreference(frameVec) + 0.1*perception.StructureScore(frame.Grid)
 		preferenceIncreased := newPreference > prevPreference
 		if preferenceIncreased && !exploredAction && clickedLabel != "" {
 			memory.Record(clickedLabel, true)
 		}
 		// Plan: credit this action's realized preference change so BestAction
 		// can steer toward the goal next time (the pragmatic half of expected
-		// free energy). Attributed to the action just taken (its token still
-		// pending from ConditionForecastOnAction above).
+		// free energy). Attributed to the action just taken.
 		engine.AttributePreferenceGain(newPreference - prevPreference)
-		fmt.Printf("action %d: preference(structure)=%.4f delta=%+.4f%s\n",
-			actionsTaken, newPreference, newPreference-prevPreference,
+		fmt.Printf("action %d: preference=%.4f delta=%+.4f (learned_goal=%v)%s\n",
+			actionsTaken, newPreference, newPreference-prevPreference, engine.HasLearnedGoal(),
 			map[bool]string{true: " <- toward goal, reinforced", false: ""}[preferenceIncreased && !exploredAction && clickedLabel != ""])
 		prevPreference = newPreference
 

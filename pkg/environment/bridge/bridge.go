@@ -260,18 +260,20 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 	chosenIndex := defaultIndex
 
 	if curiosity := engine.Homeostasis.Curiosity; explorationRoll < curiosity && len(labeled) > 1 {
-		others := make([]int, 0, len(labeled)-1)
+		// Curiosity toward the UNUSUAL: when exploring, go to the most
+		// distinctive blob (rarest color) rather than a random one -- the lone
+		// different block is the prior for "probably relevant", the buildable
+		// form of the dream's "it sees something that stands out and pokes it"
+		// (without pretending to recognize a "key"). Falls back to the default
+		// if a salient non-default can't be found.
+		salience := perception.BlobSalience(labeled)
+		bestSal := -1.0
 		for i := range labeled {
-			if i != defaultIndex {
-				others = append(others, i)
+			if i != defaultIndex && salience[i] > bestSal {
+				bestSal = salience[i]
+				chosenIndex = i
 			}
 		}
-		normalizedRoll := explorationRoll / curiosity // curiosity > explorationRoll >= 0, so curiosity > 0 here
-		idx := int(normalizedRoll * float64(len(others)))
-		if idx >= len(others) {
-			idx = len(others) - 1
-		}
-		chosenIndex = others[idx]
 	}
 
 	bestProvenIndex := -1
