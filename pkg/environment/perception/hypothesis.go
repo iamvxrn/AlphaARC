@@ -1,5 +1,10 @@
 package perception
 
+import (
+	"bytes"
+	"compress/flate"
+)
+
 // Goal inference by HYPOTHESIS-AND-TEST -- the first mechanism here that is
 // actually goal inference rather than a proxy for it. The environment gives
 // almost no reward (only a rare level-completion), so the agent cannot LEARN
@@ -33,6 +38,13 @@ type Hypothesis struct {
 // the wrong invariant when the real goal isn't in this list.
 func GoalHypotheses() []Hypothesis {
 	return []Hypothesis{
+		// compression is the GENERAL principle (the user's aSoA thesis): the goal
+		// is a maximally REGULAR / compressible state. It subsumes the specific
+		// invariants below (symmetry, uniformity, repetition, consolidation are all
+		// special cases of "short description"), so it's non-enumerative -- one
+		// principle instead of a hand-list. Led first; the specific ones remain as
+		// sharper gradients where they happen to fit.
+		{"compression", hypCompression},
 		{"all-one-color", hypAllOneColor},
 		{"horizontal-symmetry", hypHorizontalSymmetry},
 		{"vertical-symmetry", hypVerticalSymmetry},
@@ -41,6 +53,68 @@ func GoalHypotheses() []Hypothesis {
 		{"enclosure", hypEnclosure},
 		{"gravity", hypGravity},
 	}
+}
+
+// hypCompression is COMPRESSION-AS-GOAL: regularity measured by an actual general
+// compressor (DEFLATE), not a hand-authored invariant. The grid is serialized
+// both row-major and column-major and each is compressed; regularity = 1 minus
+// the better compression ratio (smaller compressed = more regular = higher
+// score). A uniform/repetitive/structured grid compresses tiny (score ~1); a
+// scrambled one barely compresses (score ~0). Because it's a real compressor it
+// captures ANY regularity the encoder finds -- runs, tiling, uniformity, near-
+// repetition -- along either axis, subsuming the specific invariants under one
+// principle. HONEST: DEFLATE is a 1-D coder, so it catches axis-aligned
+// repetition better than 2-D symmetry; and compression is still A prior (games
+// whose goal is LESS regular than the start resist it) -- just a far more general
+// one than any single invariant.
+func hypCompression(grid [][]int) float64 {
+	h := len(grid)
+	if h == 0 || len(grid[0]) == 0 {
+		return 0
+	}
+	w := len(grid[0])
+	n := h * w
+	rowBytes := make([]byte, 0, n)
+	colBytes := make([]byte, 0, n)
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			rowBytes = append(rowBytes, byte(grid[r][c]))
+		}
+	}
+	for c := 0; c < w; c++ {
+		for r := 0; r < h; r++ {
+			colBytes = append(colBytes, byte(grid[r][c]))
+		}
+	}
+	best := compressionRatio(rowBytes)
+	if cr := compressionRatio(colBytes); cr < best {
+		best = cr
+	}
+	reg := 1 - best
+	if reg < 0 {
+		reg = 0
+	}
+	if reg > 1 {
+		reg = 1
+	}
+	return reg
+}
+
+// compressionRatio is compressed size / raw size for a byte slice under DEFLATE.
+func compressionRatio(b []byte) float64 {
+	if len(b) == 0 {
+		return 1
+	}
+	var buf bytes.Buffer
+	zw, err := flate.NewWriter(&buf, flate.BestCompression)
+	if err != nil {
+		return 1
+	}
+	if _, err := zw.Write(b); err != nil {
+		return 1
+	}
+	zw.Close()
+	return float64(buf.Len()) / float64(len(b))
 }
 
 // hypAllOneColor: the goal is consolidation -- every non-background cell the
