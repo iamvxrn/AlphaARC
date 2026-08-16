@@ -25,9 +25,10 @@ type ObjectTracker struct {
 }
 
 type trackedObj struct {
-	id, color  int
-	cx, cy     int
-	size       int
+	id, color int
+	cx, cy    int
+	size      int
+	cells     []Point // the object's cells this frame -- needed so LabeledObjects can carry them for the counterfactual
 }
 
 func NewObjectTracker() *ObjectTracker { return &ObjectTracker{nextID: 1, maxDist: 8} }
@@ -62,7 +63,7 @@ func (t *ObjectTracker) Track(grid [][]int) []string {
 			t.nextID++
 		}
 		tokens = append(tokens, fmt.Sprintf("obj%d-color%d", id, b.Color))
-		next = append(next, trackedObj{id: id, color: b.Color, cx: b.Centroid.X, cy: b.Centroid.Y, size: len(b.Cells)})
+		next = append(next, trackedObj{id: id, color: b.Color, cx: b.Centroid.X, cy: b.Centroid.Y, size: len(b.Cells), cells: b.Cells})
 	}
 	t.objs = next
 	return tokens
@@ -87,7 +88,7 @@ func (t *ObjectTracker) LabeledObjects() []LabeledBlob {
 	out := make([]LabeledBlob, 0, len(objs))
 	for _, o := range objs {
 		out = append(out, LabeledBlob{
-			Blob:  Blob{Color: o.color, Centroid: Point{X: o.cx, Y: o.cy}},
+			Blob:  Blob{Color: o.color, Centroid: Point{X: o.cx, Y: o.cy}, Cells: o.cells},
 			Label: fmt.Sprintf("obj%d-color%d", o.id, o.color),
 		})
 	}
