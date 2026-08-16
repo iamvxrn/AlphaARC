@@ -25,6 +25,13 @@ type OutcomeMemory struct {
 	// finally does the whole sequence that produced it must stick, not just
 	// the single last click.
 	eligibility map[string]float64
+	// refractory is per-label Inhibition of Return: a click that changed
+	// nothing meaningful (no shift in the numeric progress tokens) gets its
+	// target locked out for a few steps, so the budget stops draining into
+	// re-toggling the same already-checked switch (a live vc33 run spent ~25
+	// of 50 actions hammering two dead points). Counts down one per Record
+	// (one game step); IsRefractory reports label > 0.
+	refractory map[string]int
 }
 
 // eligibilityDecay is how fast a label's credit trace fades each click
@@ -37,13 +44,45 @@ func NewOutcomeMemory() *OutcomeMemory {
 		attempts:    make(map[string]int),
 		successes:   make(map[string]int),
 		eligibility: make(map[string]float64),
+		refractory:  make(map[string]int),
 	}
+}
+
+// Refract locks label out of selection for the next `steps` game steps --
+// Inhibition of Return. Called when a click produced no meaningful change, so
+// the agent stops re-clicking a target it already knows does nothing right now.
+// A larger request wins (re-confirming deadness extends the lockout, doesn't
+// shorten it).
+func (m *OutcomeMemory) Refract(label string, steps int) {
+	if label == "" || steps <= 0 {
+		return
+	}
+	if steps > m.refractory[label] {
+		m.refractory[label] = steps
+	}
+}
+
+// IsRefractory reports whether label is currently locked out by Inhibition of
+// Return (its cooldown hasn't elapsed). ChooseClickAction filters such labels
+// out of the candidate set (keeping the full set only if ALL are refractory).
+func (m *OutcomeMemory) IsRefractory(label string) bool {
+	return m.refractory[label] > 0
 }
 
 // Record logs one outcome for label. A blank label (nothing was clicked
 // yet, e.g. the very first call in a session) is silently ignored rather
 // than polluting the memory with a meaningless empty-string entry.
 func (m *OutcomeMemory) Record(label string, success bool) {
+	// Tick down every Inhibition-of-Return cooldown once per step. Done even
+	// on a blank label (a step still elapsed), and before the early return so
+	// lockouts always expire on schedule.
+	for l, n := range m.refractory {
+		if n <= 1 {
+			delete(m.refractory, l)
+		} else {
+			m.refractory[l] = n - 1
+		}
+	}
 	if label == "" {
 		return
 	}

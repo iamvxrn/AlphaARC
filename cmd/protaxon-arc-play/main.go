@@ -104,6 +104,7 @@ func main() {
 	tries := map[string]int{}                                     // per action type: how many times chosen (optimism for the under-tried)
 	stagnation := 0                                               // consecutive actions with no frame change and no level progress
 	lastActionTok := ""
+	prevNumeric := ""                        // last frame's numeric progress tokens (nobj*/tdist*), for per-target inhibition of return
 	tracker := perception.NewObjectTracker() // stable object identity + motion across frames (Core Knowledge)
 	prevTopology := ""                       // last frame's object-topology signature, for conveyor-belt-aware stagnation
 
@@ -148,10 +149,23 @@ func main() {
 		// Object identity + motion, PLUS the numeric-magnitude channel (object
 		// count, quantized distance to the salient target) so the observation
 		// carries a genuine sense of number, not only categorical tokens.
-		motionObs := strings.Join(append(tracker.Track(frame.Grid), perception.NumericTokens(frame.Grid)...), " ")
+		numericObs := strings.Join(perception.NumericTokens(frame.Grid), " ")
+		motionObs := strings.Join(append(tracker.Track(frame.Grid), numericObs), " ")
 		topo := tracker.TopologySignature()
 		topologyChanged := topo != prevTopology
 		prevTopology = topo
+
+		// Inhibition of Return (fix 2): if the PREVIOUS click left the numeric
+		// progress tokens (nobj*/tdist*) unchanged, it accomplished nothing
+		// meaningful -- lock that target out for a few steps so the budget stops
+		// draining into re-toggling an already-checked switch. Judged on the
+		// numeric channel, not raw pixels: a switch that visually flips but moves
+		// no body/nothing closer is exactly the dead click to refract. Applied
+		// BEFORE the choice so this step can't re-pick it.
+		if prevClickedLabel != "" && numericObs == prevNumeric {
+			memory.Refract(prevClickedLabel, refractorySteps)
+		}
+		prevNumeric = numericObs
 
 		action, observation, clickedLabel, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, levelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel, motionObs)
 		if err != nil {
@@ -314,6 +328,7 @@ func main() {
 		// preferenceOf) LOWERS it near death-like states, so the same credit
 		// machinery also steers away from what killed the agent.
 		newPreference := preferenceOf(frame.Grid)
+		preferenceDelta := newPreference - prevPreference
 		preferenceIncreased := newPreference > prevPreference
 		if preferenceIncreased && !exploredAction && clickedLabel != "" {
 			memory.Record(clickedLabel, true)
@@ -321,7 +336,7 @@ func main() {
 		// Plan: credit this action's realized preference change so BestAction
 		// can steer toward the goal next time (the pragmatic half of expected
 		// free energy). Attributed to the action just taken.
-		engine.AttributePreferenceGain(newPreference - prevPreference)
+		engine.AttributePreferenceGain(preferenceDelta)
 		fmt.Printf("action %d: preference=%.4f delta=%+.4f (learned_goal=%v)%s\n",
 			actionsTaken, newPreference, newPreference-prevPreference, engine.HasLearnedGoal(),
 			map[bool]string{true: " <- toward goal, reinforced", false: ""}[preferenceIncreased && !exploredAction && clickedLabel != ""])
@@ -363,15 +378,25 @@ func main() {
 			// next attempt), instead of throwing the episode away. WIN also
 			// resets to keep going within the action budget.
 			if frame.State == environment.StateGameOver {
-				engine.PenalizeLastAction(lossActionPenalty)
-				memory.PenalizeSequence(lossSequenceStrength)
-				// Self-preservation: remember the state the fatal action was taken
-				// FROM, so DangerProximity lowers preference near it next time and
-				// the planner learns to avoid re-entering it -- learned aversion, a
-				// mirror of RememberGoalState, not a hard block (death stays possible
-				// and informative).
-				engine.RememberDangerState(pipeline.ObservationVector(perception.DescribeGridStructural(preStepGrid, *maxBlobs, *cols, *rows)))
-				fmt.Printf("GAME_OVER: penalized fatal action %q + recent sequence, remembered danger state, resetting to retry\n", lastActionTok)
+				// Fix 1 -- separate a HAZARD death from a TIMEOUT/budget death. We
+				// have no direct "collided with a deadly object" detector, so use
+				// the sign of the fatal step's preference delta as the proxy: a
+				// NEGATIVE delta means the action made things worse (hazard-like) --
+				// penalize it and remember the danger state; a >= 0 delta means the
+				// step was progress and the death was non-causal (ran out of the
+				// level's step budget while improving, as vc33 did one click from
+				// the win with delta=+0.0391) -- penalizing that would punish the
+				// RIGHT move and, since click is the only tool here, collapse the
+				// agent into negative-preference flailing. So only the harmful case
+				// trains aversion.
+				if preferenceDelta < 0 {
+					engine.PenalizeLastAction(lossActionPenalty)
+					memory.PenalizeSequence(lossSequenceStrength)
+					engine.RememberDangerState(pipeline.ObservationVector(perception.DescribeGridStructural(preStepGrid, *maxBlobs, *cols, *rows)))
+					fmt.Printf("GAME_OVER (hazard-like, delta=%+.4f): penalized fatal action %q + sequence, remembered danger, resetting\n", preferenceDelta, lastActionTok)
+				} else {
+					fmt.Printf("GAME_OVER (timeout-like, delta=%+.4f >= 0): fatal step was progress -- NOT penalized, resetting\n", preferenceDelta)
+				}
 			}
 			resetFrame, resetErr := sess.Reset()
 			if resetErr != nil {
@@ -379,7 +404,7 @@ func main() {
 				break
 			}
 			frame = resetFrame
-			prevObservation, prevClickedLabel, lastActionTok = "", "", ""
+			prevObservation, prevClickedLabel, lastActionTok, prevNumeric = "", "", "", ""
 			tracker = perception.NewObjectTracker()
 			prevTopology = ""
 			prevLevelsCompleted = frame.LevelsCompleted
@@ -438,6 +463,11 @@ const (
 	// the dark-room "never act" corner (the anti-stagnation drive is the other
 	// counterweight). A guess, tunable against a live run.
 	dangerAvoidWeight = 0.3
+	// refractorySteps is how many steps a target is locked out after a click
+	// there changed nothing meaningful (Inhibition of Return). ~4 is the middle
+	// of the "3-5 moves" the vc33 post-mortem called for: long enough to break a
+	// hammering loop, short enough that a target worth revisiting comes back.
+	refractorySteps = 4
 )
 
 // availableSimpleActions returns every offered non-click action (ACTION1-5 and
