@@ -155,6 +155,64 @@ func (t *AffordanceTable) LookaheadValue(grid [][]int, first Blob, others []Blob
 	return best, true
 }
 
+// ApplyMacro predicts the grid after the learned operator for `colorClass` is
+// applied to EVERY object of that class at once -- a MACRO-operator: one rule
+// ("transform all of class C"), many physical clicks. This is the
+// transformation-MDL move. A single micro-click barely changes a dense grid
+// (Δsat ~0, why climb stalled), but a class-wide macro makes a large structural
+// change (large Δsat), giving the climb machinery real leverage; and the macro
+// is a SHORT description (one class-rule) regardless of how many clicks realize
+// it. (nil,false) when the class has no known affordance or no objects present.
+func (t *AffordanceTable) ApplyMacro(grid [][]int, colorClass int) ([][]int, bool) {
+	changes, ok := t.Operator(colorClass)
+	if !ok {
+		return nil, false
+	}
+	bg := BackgroundColor(grid)
+	out := make([][]int, len(grid))
+	for r := range grid {
+		row := make([]int, len(grid[r]))
+		copy(row, grid[r])
+		out[r] = row
+	}
+	applied := false
+	for _, b := range FindBlobs(grid, bg) {
+		if b.Color != colorClass {
+			continue
+		}
+		for _, ch := range changes {
+			nr, nc := b.Centroid.Y+ch.DY, b.Centroid.X+ch.DX
+			if nr >= 0 && nr < len(out) && nc >= 0 && nc < len(out[nr]) {
+				out[nr][nc] = ch.Color
+			}
+		}
+		applied = true
+	}
+	if !applied {
+		return nil, false
+	}
+	return out, true
+}
+
+// MacroValue is how much applying the class-C macro is predicted to advance the
+// current hypothesis: Δ(scoped satisfaction) of the whole-class transform. This
+// replaces the per-object 1-step Δsat as the pragmatic drive -- the agent values
+// the RULE (transform all of class C), not the individual click, so a
+// goal-advancing macro spikes even when a single click of it wouldn't. known is
+// false when the class has no learned affordance (caller probes it -- babbling).
+func (t *AffordanceTable) MacroValue(grid [][]int, colorClass int, score func([][]int) float64) (float64, bool) {
+	predicted, ok := t.ApplyMacro(grid, colorClass)
+	if !ok {
+		return 0, false
+	}
+	minR, minC, maxR, maxC, hasFG := ForegroundBBox(grid)
+	if !hasFG {
+		return 0, true
+	}
+	base := score(cropTo(grid, minR, minC, maxR, maxC))
+	return score(cropTo(predicted, minR, minC, maxR, maxC)) - base, true
+}
+
 func templateKey(changes []CellChange) string {
 	cp := append([]CellChange(nil), changes...)
 	sort.Slice(cp, func(i, j int) bool {

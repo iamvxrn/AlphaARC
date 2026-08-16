@@ -218,14 +218,10 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			candidates = append(candidates, t)
 			simpleByTok[t] = a
 		}
-		// Per-object EFE + short-horizon rollout in the learned relational model:
-		// prefer the object whose 2-click chain most advances the hypothesis.
+		// Transformation-MDL via MACRO-operators: value clicking an object by the
+		// Δsat of transforming its whole CLASS (the short "transform all of C" rule),
+		// not the single click -- the leverage a per-object nudge lacked.
 		curHyp := tester.Current()
-		curSat := tester.Satisfaction(frame.Grid)
-		candidateBlobs := make([]perception.Blob, 0, len(objCandidates))
-		for _, ob := range objCandidates {
-			candidateBlobs = append(candidateBlobs, ob.Blob)
-		}
 		tok, bestVal := "", -1e18
 		for _, c := range candidates {
 			v := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
@@ -233,8 +229,8 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 				v += graphPriorBonus
 			}
 			if ob, ok := clickByTok[c]; ok {
-				if dv, known := afford.LookaheadValue(frame.Grid, ob.Blob, candidateBlobs, curHyp.Score, rolloutDepth); known {
-					v += pragmaticBeta * (dv - curSat)
+				if dv, known := afford.MacroValue(frame.Grid, ob.Blob.Color, curHyp.Score); known {
+					v += pragmaticBeta * dv
 				} else {
 					v += epistemicBonus // unknown effect -> probe it (motor babbling)
 				}

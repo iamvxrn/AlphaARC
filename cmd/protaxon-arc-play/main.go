@@ -299,11 +299,6 @@ func main() {
 		// takes over as it accrues.
 		graphPick := "click-" + clickedLabel
 		curHyp := tester.Current()
-		curSat := tester.Satisfaction(frame.Grid)
-		candidateBlobs := make([]perception.Blob, 0, len(objCandidates))
-		for _, ob := range objCandidates {
-			candidateBlobs = append(candidateBlobs, ob.Blob)
-		}
 		chosenTok, bestVal := "", math.Inf(-1)
 		for _, c := range candidates {
 			efe := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
@@ -313,21 +308,18 @@ func main() {
 			if c == graphPick {
 				prior = graphPriorBonus
 			}
-			// Honest counterfactual 1-step lookahead: use the LEARNED effect of
-			// clicking this object (affordance table) to predict Δsat. If the
-			// object's class has a known affordance, inject pragmaticBeta*Δsat so a
-			// genuinely goal-advancing click spikes above noise; if the effect is
-			// still UNKNOWN, give an epistemic bonus instead -- probe it to learn
-			// what it does (motor babbling). Early on everything is unknown so the
-			// agent babbles; as affordances are learned, it climbs deliberately.
+			// TRANSFORMATION-MDL via MACRO-operators: value clicking this object by
+			// the Δsat of transforming its WHOLE CLASS (applying the learned
+			// affordance to every object of that color) -- the short rule
+			// "transform all of class C", not the individual click. A single click
+			// on a dense grid barely moves sat (why climb stalled); the class-wide
+			// macro makes a large structural change, so a goal-advancing rule spikes.
+			// The agent then realizes the macro incrementally (one class-object per
+			// step). Unknown-affordance class -> epistemic bonus (babbling).
 			pragmatic := 0.0
 			if ob, ok := clickByToken[c]; ok {
-				// Short-horizon rollout in the LEARNED relational model: the best
-				// sat reachable within rolloutDepth clicks that start with this one,
-				// so a preparatory move (Δsat<=0 now) still scores if a follow-up
-				// then closes the invariant -- stepping over non-monotonic valleys.
-				if v, known := afford.LookaheadValue(frame.Grid, ob.Blob, candidateBlobs, curHyp.Score, rolloutDepth); known {
-					pragmatic = pragmaticBeta * (v - curSat)
+				if v, known := afford.MacroValue(frame.Grid, ob.Blob.Color, curHyp.Score); known {
+					pragmatic = pragmaticBeta * v
 				} else {
 					pragmatic = epistemicBonus
 				}
