@@ -32,6 +32,7 @@ import (
 	"log"
 	"math"
 	"math/rand"
+	"strings"
 
 	"protaxon/pkg/environment"
 	"protaxon/pkg/environment/bridge"
@@ -95,6 +96,7 @@ func main() {
 	tries := map[string]int{}                                     // per action type: how many times chosen (optimism for the under-tried)
 	stagnation := 0                                               // consecutive actions with no frame change and no level progress
 	lastActionTok := ""
+	var prevGrid [][]int // previous decision frame's grid, for object-motion detection (nil on a fresh episode)
 
 	for actionsTaken < *maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -126,7 +128,16 @@ func main() {
 		// exploiting the proxy while levels_completed never moved).
 		levelsCompletedIncreased := frame.LevelsCompleted > prevLevelsCompleted
 
-		action, observation, clickedLabel, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, levelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel)
+		// Core Knowledge brick 2: object MOTION since the previous frame -- a
+		// cross-frame fact the single-frame grid can't express -- fed into the
+		// observation so the forward model perceives that bodies moved.
+		motionObs := ""
+		if prevGrid != nil {
+			motionObs = strings.Join(perception.ObjectMotions(prevGrid, frame.Grid), " ")
+		}
+		prevGrid = frame.Grid
+
+		action, observation, clickedLabel, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, levelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel, motionObs)
 		if err != nil {
 			fmt.Printf("action %d: choose action failed: %v\n", actionsTaken, err)
 			break
@@ -311,7 +322,7 @@ func main() {
 			// from newFrame above; prevLevelsCompleted still holds the
 			// pre-this-action value) -- matters here.
 			terminalLevelsCompletedIncreased := frame.LevelsCompleted > prevLevelsCompleted
-			if _, finalObs, _, _, regErr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, terminalLevelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel); regErr != nil {
+			if _, finalObs, _, _, regErr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, terminalLevelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel, ""); regErr != nil {
 				fmt.Printf("terminal state %s: outcome registration failed: %v\n", frame.State, regErr)
 			} else {
 				fmt.Printf("terminal state %s registered (changed since last frame: %v, levels_completed_increased: %v)\n", frame.State, finalObs != prevObservation, terminalLevelsCompletedIncreased)
@@ -335,6 +346,7 @@ func main() {
 			}
 			frame = resetFrame
 			prevObservation, prevClickedLabel, lastActionTok = "", "", ""
+			prevGrid = nil
 			prevLevelsCompleted = frame.LevelsCompleted
 			prevPreference = 0.1 * perception.StructureScore(frame.Grid)
 			stagnation = 0
