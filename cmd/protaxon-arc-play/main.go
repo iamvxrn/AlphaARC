@@ -30,6 +30,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"math/rand"
 
 	"protaxon/pkg/environment"
@@ -90,6 +91,10 @@ func main() {
 	prevClickedLabel := ""
 	prevLevelsCompleted := frame.LevelsCompleted
 	prevPreference := 0.1 * perception.StructureScore(frame.Grid) // matches the in-loop formula before any goal is learned
+	deadCount := map[string]float64{}                             // per action type: decaying count of "did nothing" (inhibition of return / taboo)
+	tries := map[string]int{}                                     // per action type: how many times chosen (optimism for the under-tried)
+	stagnation := 0                                               // consecutive actions with no frame change and no level progress
+	lastActionTok := ""
 
 	for actionsTaken < *maxActions {
 		if !hasAction6(frame.AvailableActions) {
@@ -133,8 +138,28 @@ func main() {
 		// printed too since it's what determined whether this action was
 		// an exploration override or the default WTA/fallback choice.
 		changedSinceLastFrame := prevObservation == "" || observation != prevObservation
-		fmt.Printf("action %d: perceives %q (changed since last frame: %v, levels_completed_increased: %v, curiosity=%.4f)\n",
-			actionsTaken+1, observation, changedSinceLastFrame, levelsCompletedIncreased, engine.Homeostasis.Curiosity)
+
+		// Inhibition of return + stagnation (this frame reflects the PREVIOUS
+		// action's effect): if the last action changed nothing and made no
+		// level progress, grow its taboo and the stagnation counter; otherwise
+		// forgive it and reset stagnation. When stagnation is sharp, DON'T let a
+		// stable, well-predicted scene quench curiosity -- spike it to force the
+		// agent out of the dead corner.
+		if lastActionTok != "" {
+			if !changedSinceLastFrame && !levelsCompletedIncreased {
+				deadCount[lastActionTok] = deadCount[lastActionTok]*0.9 + 1
+				stagnation++
+			} else {
+				deadCount[lastActionTok] *= 0.5
+				stagnation = 0
+			}
+		}
+		if stagnation >= 4 {
+			engine.Homeostasis.Curiosity = 1.0 // sharp anti-stagnation kick, not a quench
+		}
+
+		fmt.Printf("action %d: perceives %q (changed since last frame: %v, levels_completed_increased: %v, curiosity=%.4f, stagnation=%d)\n",
+			actionsTaken+1, observation, changedSinceLastFrame, levelsCompletedIncreased, engine.Homeostasis.Curiosity, stagnation)
 		// Diagnostic: the predictive-coding signals from THIS cycle's internal
 		// forward model. forecast_error is how wrong the PREVIOUS cycle's
 		// prediction of this frame turned out to be -- a real cross-cycle
@@ -186,11 +211,26 @@ func main() {
 			candidates = append(candidates, tok)
 			simpleByToken[tok] = a
 		}
-		chosenTok := engine.BestAction(candidates) // plan by expected free energy (preference gain + competence)
+		// Plan by expected free energy (preference gain + competence), then two
+		// adjustments: an OPTIMISM bonus for under-tried actions so a single
+		// noisy negative delta can't choke out act-5..7 (they stay in the
+		// balance), and a TABOO penalty (exponential in recent deadness) so an
+		// action that keeps doing nothing loses appeal.
+		chosenTok, bestVal := "", math.Inf(-1)
+		for _, c := range candidates {
+			efe := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
+			optimism := 0.05 / float64(1+tries[c])
+			taboo := 0.1 * (1 - math.Exp(-deadCount[c]))
+			if v := efe + optimism - taboo; v > bestVal {
+				bestVal, chosenTok = v, c
+			}
+		}
 		exploring := rand.Float64() < *exploreActions
 		if exploring || chosenTok == "" {
 			chosenTok = candidates[rand.Intn(len(candidates))]
 		}
+		tries[chosenTok]++
+		lastActionTok = chosenTok
 		exploredAction := false
 		if id, ok := simpleByToken[chosenTok]; ok {
 			action = environment.Action{ID: id}
