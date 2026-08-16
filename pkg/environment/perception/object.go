@@ -54,3 +54,17 @@ func ObjectSignature(b Blob) string {
 	}
 	return fmt.Sprintf("obj-color%d-shape%08x", b.Color, h.Sum32())
 }
+
+// ObjectTokens returns the position-invariant identity signature of every
+// object (blob) in the grid -- the stable "these bodies are present" tokens.
+// Wired into the observation, they give the graph a PERSISTENT node per object
+// that survives the object moving, unlike the position-baked color-cell labels
+// that spawn a fresh node every pixel-shift.
+func ObjectTokens(grid [][]int) []string {
+	blobs := FindBlobs(grid, BackgroundColor(grid))
+	out := make([]string, len(blobs))
+	for i, b := range blobs {
+		out[i] = ObjectSignature(b)
+	}
+	return out
+}
