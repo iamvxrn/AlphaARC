@@ -30,7 +30,8 @@ import (
 )
 
 func main() {
-	suite := flag.Int("suite", 12, "how many different games to probe")
+	suite := flag.Int("suite", 12, "how many different games to probe (the first N) when -games is empty")
+	gamesFilter := flag.String("games", "", "comma-separated game-id prefixes to probe INSTEAD of the first -suite (e.g. vc33,sp80,bp35) -- targeted, cheaper than a blind sweep")
 	maxActions := flag.Int("actions", 60, "actions per game")
 	maxBlobs := flag.Int("maxblobs", 300, "max blobs perceived per frame")
 	cols := flag.Int("cols", 16, "grid-cell lattice columns")
@@ -50,15 +51,36 @@ func main() {
 	if len(games) == 0 {
 		log.Fatalf("no games returned")
 	}
-	n := *suite
-	if n > len(games) {
-		n = len(games)
+	// Pick which games to probe: a targeted -games list (prefix match, so short
+	// ids like "vc33" work) when given, else the first -suite games.
+	var selected []string
+	if *gamesFilter != "" {
+		wanted := strings.Split(*gamesFilter, ",")
+		for _, g := range games {
+			for _, w := range wanted {
+				if w = strings.TrimSpace(w); w != "" && strings.HasPrefix(g.GameID, w) {
+					selected = append(selected, g.GameID)
+					break
+				}
+			}
+		}
+		if len(selected) == 0 {
+			log.Fatalf("no games matched -games=%q (have %d games)", *gamesFilter, len(games))
+		}
+	} else {
+		n := *suite
+		if n > len(games) {
+			n = len(games)
+		}
+		for i := 0; i < n; i++ {
+			selected = append(selected, games[i].GameID)
+		}
 	}
 	cardID, err := client.OpenScorecard(ctx, []string{"protaxon-arc-suite"})
 	if err != nil {
 		log.Fatalf("open scorecard: %v", err)
 	}
-	fmt.Printf("probing %d games, %d actions each (scorecard %s)\n\n", n, *maxActions, cardID)
+	fmt.Printf("probing %d games, %d actions each (scorecard %s)\n\n", len(selected), *maxActions, cardID)
 
 	type row struct {
 		game                            string
@@ -68,8 +90,7 @@ func main() {
 	}
 	var rows_ []row
 	counts := map[string]int{}
-	for i := 0; i < n; i++ {
-		g := games[i].GameID
+	for _, g := range selected {
 		o := probeGame(ctx, client, cardID, g, *maxActions, *maxBlobs, *cols, *rows, *exploreActions)
 		verdict := classify(o)
 		counts[verdict]++
@@ -79,7 +100,7 @@ func main() {
 	}
 
 	fmt.Printf("\n=== MATRIX ===\n")
-	fmt.Printf("SOLVED=%d  INTERACTIVE=%d  DEAD-END=%d  UNPLAYABLE=%d  (of %d)\n", counts["SOLVED"], counts["INTERACTIVE"], counts["DEAD-END"], counts["UNPLAYABLE"], n)
+	fmt.Printf("SOLVED=%d  INTERACTIVE=%d  DEAD-END=%d  UNPLAYABLE=%d  (of %d)\n", counts["SOLVED"], counts["INTERACTIVE"], counts["DEAD-END"], counts["UNPLAYABLE"], len(selected))
 	if summary, err := client.CloseScorecard(ctx, cardID); err != nil {
 		log.Printf("close scorecard: %v", err)
 	} else {
