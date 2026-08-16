@@ -103,3 +103,52 @@ func TestPragmaticValueRewardsGoalAdvancingClicks(t *testing.T) {
 		}
 	}
 }
+
+// TestTopologyInvariants: connectivity, enclosure, and gravity each peak when
+// their goal is met and score lower when violated -- new Core-Knowledge gradients.
+func TestTopologyInvariants(t *testing.T) {
+	// connectivity: one joined bar vs two separate pieces (bg 0 kept majority).
+	joined := [][]int{{0, 0, 3, 3, 3, 0, 0}}
+	split := [][]int{{0, 3, 0, 0, 0, 3, 0}}
+	if a, b := hypConnectivity(joined), hypConnectivity(split); !(a > b) {
+		t.Fatalf("connectivity should score the joined body higher: %.3f vs %.3f", a, b)
+	}
+	if got := hypConnectivity(joined); got != 1.0 {
+		t.Fatalf("a single connected body should score 1.0, got %.3f", got)
+	}
+
+	// enclosure: a ring around an interior bg cell vs an open shape (embedded in
+	// a bg field so 0 stays the background).
+	ring := [][]int{
+		{0, 0, 0, 0, 0},
+		{0, 3, 3, 3, 0},
+		{0, 3, 0, 3, 0},
+		{0, 3, 3, 3, 0},
+		{0, 0, 0, 0, 0},
+	}
+	open := [][]int{
+		{0, 0, 0, 0, 0},
+		{0, 3, 3, 3, 0},
+		{0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0},
+		{0, 0, 0, 0, 0},
+	}
+	if a, b := hypEnclosure(ring), hypEnclosure(open); !(a > b) {
+		t.Fatalf("enclosure should score the ring higher: %.3f vs %.3f", a, b)
+	}
+
+	// gravity: settled at the bottom vs floating at the top.
+	settled := [][]int{
+		{0, 0, 0},
+		{0, 0, 0},
+		{3, 3, 3},
+	}
+	floating := [][]int{
+		{3, 3, 3},
+		{0, 0, 0},
+		{0, 0, 0},
+	}
+	if a, b := hypGravity(settled), hypGravity(floating); !(a > b) {
+		t.Fatalf("gravity should score the settled body higher: %.3f vs %.3f", a, b)
+	}
+}
