@@ -96,3 +96,150 @@ func RelationalTokens(grid [][]int) []string {
 	}
 	return tokens
 }
+
+// SpatialRelationTokens is the missing RELATIONAL half of Core-Knowledge
+// perception: beyond "which objects exist" it reports how they RELATE --
+// touching, containment (inside/outside), and alignment. These feed the
+// observation (like the object-id and numeric tokens), giving the graph and
+// forward model surface-agnostic relational structure to bind concepts to
+// ("click the object that's inside another") and to transfer across levels.
+// Emitted as bounded structural COUNTS (color/id-agnostic, capped at 9) so they
+// stay transfer-friendly and don't explode the token space:
+//   - "touch<k>":  pairs of different objects that are 4-adjacent.
+//   - "inside<k>": objects walled off from the border by other foreground
+//                  (enclosed -> "inside"); the topological inside/outside prior.
+//   - "aligned<k>": pairs of objects sharing a centroid row or column.
+func SpatialRelationTokens(grid [][]int) []string {
+	bg := BackgroundColor(grid)
+	blobs := FindBlobs(grid, bg)
+	var tokens []string
+	if t := countTouchingPairs(grid, blobs, bg); t > 0 {
+		tokens = append(tokens, fmt.Sprintf("touch%d", min(t, 9)))
+	}
+	if c := countContained(grid, blobs, bg); c > 0 {
+		tokens = append(tokens, fmt.Sprintf("inside%d", min(c, 9)))
+	}
+	if a := countAlignedPairs(blobs); a > 0 {
+		tokens = append(tokens, fmt.Sprintf("aligned%d", min(a, 9)))
+	}
+	return tokens
+}
+
+// countTouchingPairs counts distinct pairs of DIFFERENT objects that are
+// 4-adjacent anywhere (objects in contact -- a Core-Knowledge relation).
+func countTouchingPairs(grid [][]int, blobs []Blob, bg int) int {
+	h := len(grid)
+	if h == 0 {
+		return 0
+	}
+	w := len(grid[0])
+	idx := make([][]int, h) // cell -> blob index+1 (0 = background)
+	for r := range idx {
+		idx[r] = make([]int, w)
+	}
+	for i, b := range blobs {
+		for _, p := range b.Cells {
+			if p.Y >= 0 && p.Y < h && p.X >= 0 && p.X < w {
+				idx[p.Y][p.X] = i + 1
+			}
+		}
+	}
+	seen := map[[2]int]bool{}
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			a := idx[r][c]
+			if a == 0 {
+				continue
+			}
+			for _, d := range neighbors4 {
+				nr, nc := r+d[0], c+d[1]
+				if nr < 0 || nr >= h || nc < 0 || nc >= w {
+					continue
+				}
+				b := idx[nr][nc]
+				if b == 0 || b == a {
+					continue
+				}
+				lo, hi := a, b
+				if lo > hi {
+					lo, hi = hi, lo
+				}
+				seen[[2]int{lo, hi}] = true
+			}
+		}
+	}
+	return len(seen)
+}
+
+// countContained counts objects that are ENCLOSED -- none of their cells touches
+// background reachable from the grid border, i.e. they're walled off by other
+// foreground ("inside" something).
+func countContained(grid [][]int, blobs []Blob, bg int) int {
+	h := len(grid)
+	if h == 0 {
+		return 0
+	}
+	w := len(grid[0])
+	reach := make([][]bool, h) // background reachable from the border
+	for i := range reach {
+		reach[i] = make([]bool, w)
+	}
+	var q []Point
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			if (r == 0 || r == h-1 || c == 0 || c == w-1) && grid[r][c] == bg && !reach[r][c] {
+				reach[r][c] = true
+				q = append(q, Point{X: c, Y: r})
+			}
+		}
+	}
+	for len(q) > 0 {
+		p := q[len(q)-1]
+		q = q[:len(q)-1]
+		for _, d := range neighbors4 {
+			nr, nc := p.Y+d[0], p.X+d[1]
+			if nr >= 0 && nr < h && nc >= 0 && nc < w && !reach[nr][nc] && grid[nr][nc] == bg {
+				reach[nr][nc] = true
+				q = append(q, Point{X: nc, Y: nr})
+			}
+		}
+	}
+	contained := 0
+	for _, b := range blobs {
+		open := false
+		for _, p := range b.Cells {
+			for _, d := range neighbors4 {
+				nr, nc := p.Y+d[0], p.X+d[1]
+				if nr < 0 || nr >= h || nc < 0 || nc >= w { // touches the grid edge -> not enclosed
+					open = true
+					break
+				}
+				if grid[nr][nc] == bg && reach[nr][nc] {
+					open = true
+					break
+				}
+			}
+			if open {
+				break
+			}
+		}
+		if !open {
+			contained++
+		}
+	}
+	return contained
+}
+
+// countAlignedPairs counts pairs of objects whose centroids share a row or a
+// column exactly -- the geometric alignment prior.
+func countAlignedPairs(blobs []Blob) int {
+	n := 0
+	for i := 0; i < len(blobs); i++ {
+		for j := i + 1; j < len(blobs); j++ {
+			if blobs[i].Centroid.X == blobs[j].Centroid.X || blobs[i].Centroid.Y == blobs[j].Centroid.Y {
+				n++
+			}
+		}
+	}
+	return n
+}

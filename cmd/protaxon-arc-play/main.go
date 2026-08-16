@@ -153,7 +153,11 @@ func main() {
 		// count, quantized distance to the salient target) so the observation
 		// carries a genuine sense of number, not only categorical tokens.
 		numericObs := strings.Join(perception.NumericTokens(frame.Grid), " ")
-		motionObs := strings.Join(append(tracker.Track(frame.Grid), numericObs), " ")
+		// Relational perception (Core Knowledge): touch / inside / aligned -- how
+		// objects RELATE, not just which exist, so the graph/forward model get
+		// surface-agnostic relational structure to bind and transfer over.
+		relObs := perception.SpatialRelationTokens(frame.Grid)
+		motionObs := strings.Join(append(append(tracker.Track(frame.Grid), numericObs), relObs...), " ")
 		topo := tracker.TopologySignature()
 		topologyChanged := topo != prevTopology
 		prevTopology = topo

@@ -187,7 +187,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 		if frame.LevelsCompleted > o.bestLevels {
 			o.bestLevels = frame.LevelsCompleted
 		}
-		motion := strings.Join(append(tracker.Track(frame.Grid), perception.NumericTokens(frame.Grid)...), " ")
+		motion := strings.Join(append(append(tracker.Track(frame.Grid), perception.NumericTokens(frame.Grid)...), perception.SpatialRelationTokens(frame.Grid)...), " ")
 		objCandidates := tracker.LabeledObjects() // Fix 3: click candidates in the graph's obj-id vocabulary
 		if topo := tracker.TopologySignature(); topo != prevTopology {
 			if prevTopology != "" {
