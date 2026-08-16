@@ -26,13 +26,20 @@ type Hypothesis struct {
 	Score func(grid [][]int) float64
 }
 
-// GoalHypotheses is the ordered candidate-goal vocabulary the agent tests.
+// GoalHypotheses is the ordered candidate-goal vocabulary the agent tests. It's
+// a set of Core-Knowledge structural invariants (Chollet/Spelke): color, geometry
+// (symmetry/correspondence), and topology (connectivity/enclosure/gravity). The
+// vocabulary is meant to GROW -- s5i5 showed the climb machinery works but climbs
+// the wrong invariant when the real goal isn't in this list.
 func GoalHypotheses() []Hypothesis {
 	return []Hypothesis{
 		{"all-one-color", hypAllOneColor},
 		{"horizontal-symmetry", hypHorizontalSymmetry},
 		{"vertical-symmetry", hypVerticalSymmetry},
 		{"halves-match", hypHalvesMatch},
+		{"connectivity", hypConnectivity},
+		{"enclosure", hypEnclosure},
+		{"gravity", hypGravity},
 	}
 }
 
@@ -141,6 +148,143 @@ func mirrorSatisfaction(grid [][]int, mirrorOf func(r, c, h, w int) (int, int)) 
 	}
 	return float64(match) / float64(total)
 }
+
+// hypConnectivity: the goal is to JOIN the foreground into one body. Score =
+// largest connected foreground component (any non-background color, 4-
+// connectivity) / total foreground cells; 1.0 when all foreground is a single
+// connected piece. Rewards bridging gaps between objects.
+func hypConnectivity(grid [][]int) float64 {
+	bg := BackgroundColor(grid)
+	h := len(grid)
+	if h == 0 || len(grid[0]) == 0 {
+		return 0
+	}
+	w := len(grid[0])
+	seen := make([][]bool, h)
+	for i := range seen {
+		seen[i] = make([]bool, w)
+	}
+	total, largest := 0, 0
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			if grid[r][c] != bg {
+				total++
+			}
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			if grid[r][c] == bg || seen[r][c] {
+				continue
+			}
+			sz := 0
+			q := []Point{{X: c, Y: r}}
+			seen[r][c] = true
+			for len(q) > 0 {
+				p := q[len(q)-1]
+				q = q[:len(q)-1]
+				sz++
+				for _, d := range neighbors4 {
+					ny, nx := p.Y+d[0], p.X+d[1]
+					if ny >= 0 && ny < h && nx >= 0 && nx < w && !seen[ny][nx] && grid[ny][nx] != bg {
+						seen[ny][nx] = true
+						q = append(q, Point{X: nx, Y: ny})
+					}
+				}
+			}
+			if sz > largest {
+				largest = sz
+			}
+		}
+	}
+	return float64(largest) / float64(total)
+}
+
+// hypEnclosure: the goal is to CLOSE contours -- foreground walls surrounding
+// background. Score = background cells NOT reachable from the border (enclosed)
+// / total background; 1.0 when the foreground encloses all interior background,
+// 0 when nothing is closed off. Rewards forming loops/boundaries.
+func hypEnclosure(grid [][]int) float64 {
+	bg := BackgroundColor(grid)
+	h := len(grid)
+	if h == 0 || len(grid[0]) == 0 {
+		return 0
+	}
+	w := len(grid[0])
+	reach := make([][]bool, h)
+	for i := range reach {
+		reach[i] = make([]bool, w)
+	}
+	var q []Point
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			if (r == 0 || r == h-1 || c == 0 || c == w-1) && grid[r][c] == bg && !reach[r][c] {
+				reach[r][c] = true
+				q = append(q, Point{X: c, Y: r})
+			}
+		}
+	}
+	for len(q) > 0 {
+		p := q[len(q)-1]
+		q = q[:len(q)-1]
+		for _, d := range neighbors4 {
+			ny, nx := p.Y+d[0], p.X+d[1]
+			if ny >= 0 && ny < h && nx >= 0 && nx < w && !reach[ny][nx] && grid[ny][nx] == bg {
+				reach[ny][nx] = true
+				q = append(q, Point{X: nx, Y: ny})
+			}
+		}
+	}
+	totalBg, enclosed := 0, 0
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			if grid[r][c] == bg {
+				totalBg++
+				if !reach[r][c] {
+					enclosed++
+				}
+			}
+		}
+	}
+	if totalBg == 0 {
+		return 0
+	}
+	return float64(enclosed) / float64(totalBg)
+}
+
+// hypGravity: the goal is for bodies to SETTLE -- nothing floating. Score =
+// foreground cells that are supported (on the bottom edge, or with foreground
+// directly below) / total foreground; 1.0 when everything rests. Rewards
+// dropping/packing objects downward.
+func hypGravity(grid [][]int) float64 {
+	bg := BackgroundColor(grid)
+	h := len(grid)
+	if h == 0 || len(grid[0]) == 0 {
+		return 0
+	}
+	w := len(grid[0])
+	total, supported := 0, 0
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			if grid[r][c] == bg {
+				continue
+			}
+			total++
+			if r == h-1 || grid[r+1][c] != bg {
+				supported++
+			}
+		}
+	}
+	if total == 0 {
+		return 0
+	}
+	return float64(supported) / float64(total)
+}
+
+var neighbors4 = [4][2]int{{0, 1}, {0, -1}, {1, 0}, {-1, 0}}
 
 // hypRotatePatience is how many steps the pursued hypothesis may go without
 // improving its best-seen satisfaction before the tester gives up on it and
