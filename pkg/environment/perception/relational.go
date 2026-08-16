@@ -30,30 +30,20 @@ func DescribeGridStructural(grid [][]int, maxBlobs, cols, rows int) string {
 	// forward model weights structure more heavily and leans on the part that
 	// transfers across surface-different domains.
 	joined := strings.Join(rel, " ")
-	weighted := make([]string, 0, structuralWeight+objectWeight+1)
+	weighted := make([]string, 0, structuralWeight+1)
 	if base != "" {
 		weighted = append(weighted, base)
 	}
 	for i := 0; i < structuralWeight; i++ {
 		weighted = append(weighted, joined)
 	}
-	// Object-identity tokens (Core Knowledge brick 1): position-invariant
-	// signatures, so an object that MOVES keeps one persistent graph node
-	// instead of spawning a fresh one every pixel-shift. Weighted so the graph
-	// and forward model actually lean on stable object identity, not just the
-	// churning position labels in `base`.
-	if objs := ObjectTokens(grid); len(objs) > 0 {
-		objJoined := strings.Join(objs, " ")
-		for i := 0; i < objectWeight; i++ {
-			weighted = append(weighted, objJoined)
-		}
-	}
+	// NOTE: object identity used to be appended here as ObjectSignature tokens,
+	// but the exact-pixel-shape hash proved too brittle live (a one-pixel
+	// deformation = a whole new identity = fragmentation). Stable object
+	// identity now comes from ObjectTracker (continuity-based), fed in by the
+	// caller via ChooseClickAction's extraObs, not from a single-frame hash.
 	return strings.Join(weighted, " ")
 }
-
-// objectWeight is how many times object-identity tokens are repeated in a
-// structural observation -- their share relative to the position-baked labels.
-const objectWeight = 2
 
 // structuralWeight is how many times the structural tokens are repeated in a
 // structural observation -- their weight relative to surface tokens. 3 is the
