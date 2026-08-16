@@ -204,6 +204,21 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 		return environment.Action{}, "", "", nil, fmt.Errorf("bridge: no blobs found in grid, nothing to click")
 	}
 
+	// Inhibition of Return: drop candidates whose target is on a refractory
+	// cooldown (a recent click there changed nothing meaningful), so selection
+	// can't keep hammering a dead switch. Keep the full set only if EVERY
+	// candidate is locked out -- better to re-try a dead one than click nothing.
+	if viable := labeled[:0:0]; true {
+		for _, lb := range labeled {
+			if !memory.IsRefractory(lb.Label) {
+				viable = append(viable, lb)
+			}
+		}
+		if len(viable) > 0 {
+			labeled = viable
+		}
+	}
+
 	// Structural observation: per-blob surface tokens PLUS surface-agnostic
 	// structural tokens (RelationalTokens). The forward model and graph now
 	// see structure that can transfer across surface-different domains; the
