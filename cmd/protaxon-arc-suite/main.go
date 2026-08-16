@@ -120,9 +120,13 @@ type outcome struct {
 const dangerAvoidWeight = 0.3
 
 // hypWeight scales the pursued hypothesis's satisfaction as the goal-directed
-// preference term -- kept in sync with the live player's constant of the same
-// name.
-const hypWeight = 1.0
+// preference term; graphPriorBonus/pragmaticBeta mirror the live player's
+// per-object selection (graph-WTA prior + counterfactual 1-step lookahead).
+const (
+	hypWeight       = 1.0
+	graphPriorBonus = 0.03
+	pragmaticBeta   = 2.0
+)
 
 // preferenceOf is the prior preference over a state, identical to the live
 // player's: learned goal + weak structural prior + spatial approach to the key,
@@ -202,7 +206,23 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			candidates = append(candidates, t)
 			simpleByTok[t] = a
 		}
-		tok := engine.BestAction(candidates)
+		// Per-object expected free energy + counterfactual 1-step lookahead: prefer
+		// the object whose click most advances the current hypothesis (Δsat),
+		// injected directly so it spikes over exploration noise.
+		curHyp := tester.Current()
+		tok, bestVal := "", -1e18
+		for _, c := range candidates {
+			v := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
+			if c == "click-"+clicked {
+				v += graphPriorBonus
+			}
+			if ob, ok := clickByTok[c]; ok {
+				v += pragmaticBeta * perception.PragmaticValue(frame.Grid, ob.Blob, curHyp.Score)
+			}
+			if v > bestVal {
+				bestVal, tok = v, c
+			}
+		}
 		if tok == "" {
 			tok = "click-" + clicked // graph pick as the default
 		}
@@ -232,16 +252,19 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 		if frame.LevelsCompleted > o.bestLevels {
 			o.bestLevels = frame.LevelsCompleted
 		}
-		// Goal inference: pursue the current hypothesis; a completion confirms it,
-		// a plateau rotates. Same drive the live player uses.
-		frameVec := pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, maxBlobs, cols, rows))
-		if frame.LevelsCompleted > prevLevels {
-			engine.RememberGoalState(frameVec)
-			tester.Confirm()
+		// Goal inference: pursue the current hypothesis. On a level completion,
+		// warm-start the winning hypothesis for the next level and forget the
+		// stale learned goal (fix a); a plateau rotates.
+		leveledUp := frame.LevelsCompleted > prevLevels
+		if leveledUp {
+			tester.WarmStart()
+			engine.ForgetGoal()
+			tracker = perception.NewObjectTracker()
+			prevTopology = ""
 		}
 		rotated := tester.Observe(frame.Grid)
 		newPref := preferenceOf(engine, tester, frame.Grid, maxBlobs, cols, rows)
-		if !rotated {
+		if !rotated && !leveledUp {
 			engine.AttributePreferenceGain(newPref - prevPref)
 		}
 		prevPref = newPref
