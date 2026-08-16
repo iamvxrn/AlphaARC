@@ -91,7 +91,7 @@ func main() {
 	prevObservation := ""
 	prevClickedLabel := ""
 	prevLevelsCompleted := frame.LevelsCompleted
-	prevPreference := 0.1 * perception.StructureScore(frame.Grid) // matches the in-loop formula before any goal is learned
+	prevPreference := 0.1*perception.StructureScore(frame.Grid) + perception.ApproachPreference(frame.Grid) // matches the in-loop formula before any goal is learned
 	deadCount := map[string]float64{}                             // per action type: decaying count of "did nothing" (inhibition of return / taboo)
 	tries := map[string]int{}                                     // per action type: how many times chosen (optimism for the under-tried)
 	stagnation := 0                                               // consecutive actions with no frame change and no level progress
@@ -137,7 +137,10 @@ func main() {
 		// shape hash). These tokens feed the observation so the graph gets one
 		// persistent node per body. topo is the frame's object-level fingerprint
 		// (which bodies exist), used below for conveyor-belt-aware stagnation.
-		motionObs := strings.Join(tracker.Track(frame.Grid), " ")
+		// Object identity + motion, PLUS the numeric-magnitude channel (object
+		// count, quantized distance to the salient target) so the observation
+		// carries a genuine sense of number, not only categorical tokens.
+		motionObs := strings.Join(append(tracker.Track(frame.Grid), perception.NumericTokens(frame.Grid)...), " ")
 		topo := tracker.TopologySignature()
 		topologyChanged := topo != prevTopology
 		prevTopology = topo
@@ -293,7 +296,11 @@ func main() {
 		if frame.LevelsCompleted > prevLevelsCompleted {
 			engine.RememberGoalState(frameVec)
 		}
-		newPreference := engine.LearnedPreference(frameVec) + 0.1*perception.StructureScore(frame.Grid)
+		// Composer: the spatial approach term makes preference RISE as a body
+		// nears the salient target, so AttributePreferenceGain credits the action
+		// that closed the distance and BestAction learns to navigate toward the
+		// key -- BEFORE any level is ever completed (LearnedPreference is still 0).
+		newPreference := engine.LearnedPreference(frameVec) + 0.1*perception.StructureScore(frame.Grid) + perception.ApproachPreference(frame.Grid)
 		preferenceIncreased := newPreference > prevPreference
 		if preferenceIncreased && !exploredAction && clickedLabel != "" {
 			memory.Record(clickedLabel, true)
@@ -357,7 +364,7 @@ func main() {
 			tracker = perception.NewObjectTracker()
 			prevTopology = ""
 			prevLevelsCompleted = frame.LevelsCompleted
-			prevPreference = 0.1 * perception.StructureScore(frame.Grid)
+			prevPreference = 0.1*perception.StructureScore(frame.Grid) + perception.ApproachPreference(frame.Grid)
 			stagnation = 0
 			continue
 		}
