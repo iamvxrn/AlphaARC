@@ -120,12 +120,6 @@ func main() {
 		// getting cut off by the top-N-by-size ranking before it's ever
 		// perceived at all.
 		totalBlobs := len(perception.FindBlobs(frame.Grid, perception.BackgroundColor(frame.Grid)))
-
-		labeled := perception.RankedLabeledBlobs(frame.Grid, *maxBlobs, *cols, *rows)
-		labels := make([]string, len(labeled))
-		for i, lb := range labeled {
-			labels[i] = lb.Label
-		}
 		fmt.Printf("action %d: %d total blobs in frame (using top %d)\n", actionsTaken+1, totalBlobs, *maxBlobs)
 
 		// Real ground truth from the game server for whether the PREVIOUS
@@ -155,6 +149,17 @@ func main() {
 		topologyChanged := topo != prevTopology
 		prevTopology = topo
 
+		// Fix 3: click candidates in the graph's OWN vocabulary (obj-id labels +
+		// centroids), computed after Track so ids are current. These become both
+		// the selection candidates and the graph-state diagnostic's labels, so the
+		// diagnostic finally shows real node/activation/edges instead of the
+		// "not yet in graph" the cell-labels always produced.
+		objCandidates := tracker.LabeledObjects()
+		labels := make([]string, len(objCandidates))
+		for i, lb := range objCandidates {
+			labels[i] = lb.Label
+		}
+
 		// Inhibition of Return (fix 2): if the PREVIOUS click left the numeric
 		// progress tokens (nobj*/tdist*) unchanged, it accomplished nothing
 		// meaningful -- lock that target out for a few steps so the budget stops
@@ -167,7 +172,7 @@ func main() {
 		}
 		prevNumeric = numericObs
 
-		action, observation, clickedLabel, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, levelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel, motionObs)
+		action, observation, clickedLabel, res, err := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, levelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel, motionObs, objCandidates)
 		if err != nil {
 			fmt.Printf("action %d: choose action failed: %v\n", actionsTaken, err)
 			break
@@ -365,7 +370,7 @@ func main() {
 			// from newFrame above; prevLevelsCompleted still holds the
 			// pre-this-action value) -- matters here.
 			terminalLevelsCompletedIncreased := frame.LevelsCompleted > prevLevelsCompleted
-			if _, finalObs, _, _, regErr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, terminalLevelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel, ""); regErr != nil {
+			if _, finalObs, _, _, regErr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", *maxBlobs, *cols, *rows, prevObservation, terminalLevelsCompletedIncreased, *curiosityStep, rand.Float64(), memory, prevClickedLabel, "", nil); regErr != nil {
 				fmt.Printf("terminal state %s: outcome registration failed: %v\n", frame.State, regErr)
 			} else {
 				fmt.Printf("terminal state %s registered (changed since last frame: %v, levels_completed_increased: %v)\n", frame.State, finalObs != prevObservation, terminalLevelsCompletedIncreased)

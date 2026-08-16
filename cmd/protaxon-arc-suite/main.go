@@ -166,6 +166,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			o.bestLevels = frame.LevelsCompleted
 		}
 		motion := strings.Join(append(tracker.Track(frame.Grid), perception.NumericTokens(frame.Grid)...), " ")
+		objCandidates := tracker.LabeledObjects() // Fix 3: click candidates in the graph's obj-id vocabulary
 		if topo := tracker.TopologySignature(); topo != prevTopology {
 			if prevTopology != "" {
 				o.topo++
@@ -186,7 +187,7 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 		}
 		engine.ConditionForecastOnAction(tok)
 
-		action, obs, clicked, _, cerr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", maxBlobs, cols, rows, prevObs, levelsInc, 0.1, rand.Float64(), memory, prevClicked, motion)
+		action, obs, clicked, _, cerr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", maxBlobs, cols, rows, prevObs, levelsInc, 0.1, rand.Float64(), memory, prevClicked, motion, objCandidates)
 		if cerr != nil {
 			break
 		}

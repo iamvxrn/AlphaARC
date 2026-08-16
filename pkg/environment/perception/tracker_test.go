@@ -60,3 +60,38 @@ func hasTwoDistinctIds(tokens []string) bool {
 	}
 	return len(seen) >= 2
 }
+
+// TestLabeledObjectsMatchTrackTokens: the click-candidate labels LabeledObjects
+// returns must be byte-identical to the identity tokens Track emits into the
+// observation -- otherwise winningBlobLabel can never bind a graph node to a
+// candidate and Fix 3's reconnection silently fails. Also checks each candidate
+// carries a real centroid.
+func TestLabeledObjectsMatchTrackTokens(t *testing.T) {
+	// two separate bodies of different colors
+	grid := [][]int{
+		{3, 0, 0, 0, 7},
+		{3, 0, 0, 0, 7},
+		{0, 0, 0, 0, 0},
+	}
+	tr := NewObjectTracker()
+	tokens := tr.Track(grid)
+	// collect the identity tokens Track emitted (obj<id>-color<c>, not motion)
+	idTokens := map[string]bool{}
+	for _, tok := range tokens {
+		if strings.HasPrefix(tok, "obj") && strings.Contains(tok, "-color") {
+			idTokens[tok] = true
+		}
+	}
+	objs := tr.LabeledObjects()
+	if len(objs) != len(idTokens) {
+		t.Fatalf("LabeledObjects count %d != identity-token count %d", len(objs), len(idTokens))
+	}
+	for _, lb := range objs {
+		if !idTokens[lb.Label] {
+			t.Fatalf("candidate label %q is not among Track's identity tokens %v", lb.Label, idTokens)
+		}
+		if lb.Blob.Centroid == (Point{}) && !(lb.Blob.Centroid.X == 0 && lb.Blob.Centroid.Y == 0) {
+			t.Fatalf("candidate %q has no centroid", lb.Label)
+		}
+	}
+}

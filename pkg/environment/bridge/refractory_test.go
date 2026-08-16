@@ -44,3 +44,24 @@ func TestRefractExtendsNotShortens(t *testing.T) {
 		t.Fatal("lockout should finally expire")
 	}
 }
+
+// TestLooksLikeBlobLabelObjTokens: Fix 3 makes obj-id identity tokens the click
+// vocabulary. looksLikeBlobLabel must accept "obj<N>-color<C>" (a clickable
+// candidate that IS in the graph) while still rejecting the "obj<N>-<dir>"
+// motion tokens and "nobj<N>" count tokens that share the observation but are
+// not click targets -- otherwise winningBlobLabel could bind the graph winner
+// to a non-clickable node.
+func TestLooksLikeBlobLabelObjTokens(t *testing.T) {
+	accept := []string{"obj4-color5", "obj12-color0", "color2-cell3-2"}
+	reject := []string{"obj4-left", "obj7-up", "nobj11", "tdist2", "cmult3"}
+	for _, w := range accept {
+		if !looksLikeBlobLabel(w) {
+			t.Errorf("expected %q to be recognized as a clickable label", w)
+		}
+	}
+	for _, w := range reject {
+		if looksLikeBlobLabel(w) {
+			t.Errorf("expected %q to be rejected as a clickable label", w)
+		}
+	}
+}
