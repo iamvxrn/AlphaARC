@@ -1,6 +1,9 @@
 package perception
 
-import "fmt"
+import (
+	"fmt"
+	"sort"
+)
 
 // ObjectTracker gives objects STABLE identity across frames by CONTINUITY, not
 // by exact pixel shape. The shape-hash identity (ObjectSignature) proved too
@@ -63,6 +66,32 @@ func (t *ObjectTracker) Track(grid [][]int) []string {
 	}
 	t.objs = next
 	return tokens
+}
+
+// LabeledObjects returns the click candidates in the SAME vocabulary the graph
+// and observation speak: one entry per object tracked in the most recent Track
+// call, labeled "obj<id>-color<c>" (byte-identical to the identity token Track
+// emits into the observation) and carrying that object's centroid. Ordered
+// largest object first, matching RankedLabeledBlobs' convention.
+//
+// This is the Fix-3 reconnection. Previously the click candidates were cell-
+// labeled ("color<n>-cell<c>-<r>") while the graph held only obj-id nodes, so
+// winningBlobLabel matched nothing, every candidate read "not yet in graph",
+// and the graph was out of click selection entirely. With candidate labels that
+// match the graph's node labels, the winning category can be bound back to a
+// concrete object centroid and the graph rejoins the decision. Call after Track.
+func (t *ObjectTracker) LabeledObjects() []LabeledBlob {
+	objs := make([]trackedObj, len(t.objs))
+	copy(objs, t.objs)
+	sort.SliceStable(objs, func(i, j int) bool { return objs[i].size > objs[j].size })
+	out := make([]LabeledBlob, 0, len(objs))
+	for _, o := range objs {
+		out = append(out, LabeledBlob{
+			Blob:  Blob{Color: o.color, Centroid: Point{X: o.cx, Y: o.cy}},
+			Label: fmt.Sprintf("obj%d-color%d", o.id, o.color),
+		})
+	}
+	return out
 }
 
 // TopologySignature is a frame's OBJECT-LEVEL fingerprint: the sorted multiset

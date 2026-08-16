@@ -190,7 +190,13 @@ func labelForNode(g *graph.Graph, nodeID int) string {
 // won't trigger one even when making real progress), so the grid-changed
 // proxy still has to carry most cycles -- this only means "if the game
 // itself just confirmed real progress, believe that over anything else."
-func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string, levelsCompletedIncreased bool, curiosityStep, explorationRoll float64, memory *OutcomeMemory, previousClickedLabel, extraObs string) (environment.Action, string, string, *pipeline.CycleResult, error) {
+// objCandidates (Fix 3) are click targets in the graph's own vocabulary --
+// perception.ObjectTracker.LabeledObjects(), labeled "obj<id>-color<c>" with
+// each object's centroid. When non-empty they REPLACE the cell-lattice
+// candidates (RankedLabeledBlobs) so the winning graph category can actually be
+// bound to a candidate and the graph rejoins selection; the caller passes nil
+// (or empty) to keep the legacy cell-labeled behavior.
+func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]int, goal string, maxBlobs, cols, rows int, previousObservation string, levelsCompletedIncreased bool, curiosityStep, explorationRoll float64, memory *OutcomeMemory, previousClickedLabel, extraObs string, objCandidates []perception.LabeledBlob) (environment.Action, string, string, *pipeline.CycleResult, error) {
 	if memory == nil {
 		// A caller that forgot to construct one loses cross-call persistence
 		// (this fresh instance dies with the call), but that's a silent
@@ -199,7 +205,13 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 		memory = NewOutcomeMemory()
 	}
 
-	labeled := perception.RankedLabeledBlobs(grid, maxBlobs, cols, rows)
+	// Prefer obj-id candidates (Fix 3): they share the graph's vocabulary, so
+	// winningBlobLabel below can match them. Fall back to the cell-lattice
+	// labeling when the caller supplies none.
+	labeled := objCandidates
+	if len(labeled) == 0 {
+		labeled = perception.RankedLabeledBlobs(grid, maxBlobs, cols, rows)
+	}
 	if len(labeled) == 0 {
 		return environment.Action{}, "", "", nil, fmt.Errorf("bridge: no blobs found in grid, nothing to click")
 	}
@@ -398,9 +410,16 @@ func winningBlobLabel(g *graph.Graph, activeNodeIDs []int) string {
 	return best
 }
 
-// looksLikeBlobLabel reports whether word matches DescribeGridCells's
-// "color<N>-cell<C>-<R>" shape.
+// looksLikeBlobLabel reports whether word is a click-candidate category token:
+// the obj-id identity token "obj<N>-color<C>" (Fix 3, the vocabulary now shared
+// with the graph and preferred by ChooseClickAction), or the legacy cell token
+// "color<N>-cell<C>-<R>". Note "obj<N>-<dir>" motion tokens and "nobj<N>" count
+// tokens are deliberately excluded -- they're not clickable targets -- because
+// neither begins "obj...-color".
 func looksLikeBlobLabel(word string) bool {
+	if strings.HasPrefix(word, "obj") && strings.Contains(word, "-color") {
+		return true
+	}
 	return strings.HasPrefix(word, "color") && strings.Contains(word, "-cell")
 }
 
