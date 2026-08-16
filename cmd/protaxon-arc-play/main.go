@@ -253,24 +253,49 @@ func main() {
 		// simple control N. The forward model is then conditioned (branch A) on
 		// the type actually taken, which is also what accrues the per-action
 		// learning progress this selection reads next time.
-		candidates := []string{"click"}
+		// PER-OBJECT action selection (the fix the uniform-graph run motivated).
+		// Each object is its OWN click candidate -- token "click-<objlabel>" --
+		// instead of a single "click". The forward model is then conditioned on
+		// that per-object token, so ActionLearningProgress/ActionPreferenceGain
+		// accrue PER OBJECT and the planner can prefer the object it's learning
+		// most from / that yields the most preference gain -- breaking the
+		// symmetry that made every toggle-node identical when "click" was one
+		// token. act-N simple controls stay in the same balance.
+		candidates := []string{}
+		clickByToken := map[string]perception.LabeledBlob{}
+		for _, ob := range objCandidates {
+			tok := "click-" + ob.Label
+			candidates = append(candidates, tok)
+			clickByToken[tok] = ob
+		}
+		if len(candidates) == 0 {
+			// No obj candidates (cell-label fallback path): a bare "click" that
+			// uses ChooseClickAction's own chosen target.
+			candidates = append(candidates, "click")
+		}
 		simpleByToken := map[string]environment.ActionID{}
 		for _, a := range availableSimpleActions(frame.AvailableActions) {
 			tok := fmt.Sprintf("act-%d", a)
 			candidates = append(candidates, tok)
 			simpleByToken[tok] = a
 		}
-		// Plan by expected free energy (preference gain + competence), then two
-		// adjustments: an OPTIMISM bonus for under-tried actions so a single
-		// noisy negative delta can't choke out act-5..7 (they stay in the
-		// balance), and a TABOO penalty (exponential in recent deadness) so an
-		// action that keeps doing nothing loses appeal.
+		// Plan by expected free energy (preference gain + competence), with an
+		// OPTIMISM bonus for under-tried candidates, a TABOO penalty (exponential
+		// in recent deadness), and a small GRAPH-PRIOR bonus for the object the
+		// reconnected graph's WTA actually chose -- so at cold start (all
+		// per-object gains ~0) the graph decides, and the learned per-object signal
+		// takes over as it accrues.
+		graphPick := "click-" + clickedLabel
 		chosenTok, bestVal := "", math.Inf(-1)
 		for _, c := range candidates {
 			efe := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
 			optimism := 0.05 / float64(1+tries[c])
 			taboo := 0.1 * (1 - math.Exp(-deadCount[c]))
-			if v := efe + optimism - taboo; v > bestVal {
+			prior := 0.0
+			if c == graphPick {
+				prior = graphPriorBonus
+			}
+			if v := efe + optimism - taboo + prior; v > bestVal {
 				bestVal, chosenTok = v, c
 			}
 		}
@@ -281,18 +306,24 @@ func main() {
 		tries[chosenTok]++
 		lastActionTok = chosenTok
 		exploredAction := false
-		if id, ok := simpleByToken[chosenTok]; ok {
+		if ob, ok := clickByToken[chosenTok]; ok {
+			// Click THIS specific object's centroid (may differ from
+			// ChooseClickAction's default when the per-object EFE prefers another).
+			action = environment.Action{ID: environment.Action6, X: ob.Blob.Centroid.X, Y: ob.Blob.Centroid.Y}
+			clickedLabel = ob.Label
+		} else if id, ok := simpleByToken[chosenTok]; ok {
 			action = environment.Action{ID: id}
 			clickedLabel = "" // not a click -- don't credit a blob label to this step
 			exploredAction = true
 		}
+		// (chosenTok == "click" bare fallback keeps ChooseClickAction's action/label.)
 		engine.ConditionForecastOnAction(chosenTok)
 
-		fmt.Printf("action %d: chose %q (%s) -- preference_gain: click=%+.4f%s | competence: click=%+.4f%s\n",
+		fmt.Printf("action %d: chose %q (%s) -- pref_gain=%+.4f competence=%+.4f%s\n",
 			actionsTaken+1, chosenTok,
 			map[bool]string{true: "exploring", false: "by expected free energy"}[exploring],
-			engine.ActionPreferenceGain["click"], simpleActionGainString(engine.ActionPreferenceGain, simpleByToken),
-			engine.ActionLearningProgress["click"], simpleActionGainString(engine.ActionLearningProgress, simpleByToken))
+			engine.ActionPreferenceGain[chosenTok], engine.ActionLearningProgress[chosenTok],
+			simpleActionGainString(engine.ActionPreferenceGain, simpleByToken))
 		if exploredAction {
 			fmt.Printf("action %d: sending simple action %v (not a click)\n", actionsTaken+1, action.ID)
 		} else if rate, attempts := memory.SuccessRate(clickedLabel); attempts > 0 {
@@ -473,6 +504,12 @@ const (
 	// of the "3-5 moves" the vc33 post-mortem called for: long enough to break a
 	// hammering loop, short enough that a target worth revisiting comes back.
 	refractorySteps = 4
+	// graphPriorBonus nudges per-object selection toward the object the
+	// reconnected graph's WTA chose. Comparable to the optimism bonus (max 0.05)
+	// so at cold start (per-object gains ~0) the graph breaks the tie, but small
+	// enough that a real learned per-object preference/competence signal overrides
+	// it once accrued. A guess, tunable against a live run.
+	graphPriorBonus = 0.03
 )
 
 // availableSimpleActions returns every offered non-click action (ACTION1-5 and

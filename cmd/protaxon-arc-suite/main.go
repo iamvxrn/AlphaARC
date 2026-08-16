@@ -174,7 +174,22 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			prevTopology = topo
 		}
 
-		candidates := []string{"click"}
+		// ChooseClickAction runs the predictive cycle + graph + memory and proposes
+		// a graph-informed click target (via objCandidates). Called BEFORE the
+		// action is conditioned, so conditioning uses THIS cycle's state.
+		action, obs, clicked, _, cerr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", maxBlobs, cols, rows, prevObs, levelsInc, 0.1, rand.Float64(), memory, prevClicked, motion, objCandidates)
+		if cerr != nil {
+			break
+		}
+		// Per-object selection: one click candidate per object ("click-<objlabel>")
+		// so the forward model conditions per object and PG/LP differentiate them.
+		candidates := []string{}
+		clickByTok := map[string]perception.LabeledBlob{}
+		for _, ob := range objCandidates {
+			t := "click-" + ob.Label
+			candidates = append(candidates, t)
+			clickByTok[t] = ob
+		}
 		simpleByTok := map[string]environment.ActionID{}
 		for _, a := range simpleActions(frame.AvailableActions) {
 			t := fmt.Sprintf("act-%d", a)
@@ -182,16 +197,17 @@ func probeGame(ctx context.Context, client *remote.Client, cardID, gameID string
 			simpleByTok[t] = a
 		}
 		tok := engine.BestAction(candidates)
-		if rand.Float64() < exploreActions || tok == "" {
+		if tok == "" {
+			tok = "click-" + clicked // graph pick as the default
+		}
+		if len(candidates) > 0 && rand.Float64() < exploreActions {
 			tok = candidates[rand.Intn(len(candidates))]
 		}
 		engine.ConditionForecastOnAction(tok)
-
-		action, obs, clicked, _, cerr := bridge.ChooseClickAction(ctx, engine, frame.Grid, "solve the puzzle", maxBlobs, cols, rows, prevObs, levelsInc, 0.1, rand.Float64(), memory, prevClicked, motion, objCandidates)
-		if cerr != nil {
-			break
-		}
-		if id, ok := simpleByTok[tok]; ok {
+		if ob, ok := clickByTok[tok]; ok {
+			action = environment.Action{ID: environment.Action6, X: ob.Blob.Centroid.X, Y: ob.Blob.Centroid.Y}
+			clicked = ob.Label
+		} else if id, ok := simpleByTok[tok]; ok {
 			action = environment.Action{ID: id}
 			clicked = ""
 		}
