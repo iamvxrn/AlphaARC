@@ -316,7 +316,29 @@ func main() {
 			} else {
 				fmt.Printf("terminal state %s registered (changed since last frame: %v, levels_completed_increased: %v)\n", frame.State, finalObs != prevObservation, terminalLevelsCompletedIncreased)
 			}
-			break
+
+			// LEARN FROM THE LOSS, then RETRY: a GAME_OVER is a negative reward.
+			// Penalize the action that ended the game and the recent click
+			// sequence, then reset and keep playing with the SAME brain -- so
+			// the loss actually teaches (die, learn what killed you, avoid it
+			// next attempt), instead of throwing the episode away. WIN also
+			// resets to keep going within the action budget.
+			if frame.State == environment.StateGameOver {
+				engine.PenalizeLastAction(lossActionPenalty)
+				memory.PenalizeSequence(lossSequenceStrength)
+				fmt.Printf("GAME_OVER: penalized fatal action %q + recent sequence, resetting to retry\n", lastActionTok)
+			}
+			resetFrame, resetErr := sess.Reset()
+			if resetErr != nil {
+				fmt.Printf("reset after %s failed: %v -- stopping\n", frame.State, resetErr)
+				break
+			}
+			frame = resetFrame
+			prevObservation, prevClickedLabel, lastActionTok = "", "", ""
+			prevLevelsCompleted = frame.LevelsCompleted
+			prevPreference = 0.1 * perception.StructureScore(frame.Grid)
+			stagnation = 0
+			continue
 		}
 	}
 
@@ -354,10 +376,24 @@ func simpleActionGainString(gains map[string]float64, simpleByToken map[string]e
 	return out
 }
 
+// lossActionPenalty nudges the fatal action's pragmatic value down on a
+// GAME_OVER (moderate -- comparable to the other selection terms, so the
+// planner avoids it without permanently killing a usually-useful control).
+// lossSequenceStrength is how hard the loss drops the recent click sequence.
+const (
+	lossActionPenalty    = 0.05
+	lossSequenceStrength = 3.0
+)
+
+// availableSimpleActions returns every offered non-click action (ACTION1-5 and
+// ACTION7) -- the keyboard controls the click-only agent never tries. Only
+// ACTION6 (the click, which ChooseClickAction handles) and ACTIONRESET are
+// excluded. ACTION7 is INCLUDED, not assumed to be useless undo: in a novel
+// game we don't know what a control does until we try it.
 func availableSimpleActions(actions []environment.ActionID) []environment.ActionID {
 	simple := make([]environment.ActionID, 0, len(actions))
 	for _, a := range actions {
-		if a >= environment.Action1 && a <= environment.Action5 {
+		if a != environment.Action6 && a != environment.ActionReset {
 			simple = append(simple, a)
 		}
 	}

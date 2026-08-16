@@ -86,3 +86,19 @@ func (m *OutcomeMemory) SuccessRate(label string) (rate float64, attempts int) {
 	}
 	return float64(m.successes[label]) / float64(a), a
 }
+
+// PenalizeSequence is the mirror of ReinforceLevelCompletion for a LOSS
+// (GAME_OVER): it credits FAILURE back along the recent click sequence --
+// each label gets attempts (but no successes) proportional to its eligibility
+// trace, dropping its success rate, most for the last click. So the path that
+// led to death becomes less "proven" and gets avoided on the retry. Traces are
+// consumed so one loss is credited once.
+func (m *OutcomeMemory) PenalizeSequence(strength float64) {
+	for label, elig := range m.eligibility {
+		credit := int(strength*elig + 0.5)
+		if credit > 0 {
+			m.attempts[label] += credit // failures: attempts up, successes flat -> rate falls
+		}
+		m.eligibility[label] = 0
+	}
+}

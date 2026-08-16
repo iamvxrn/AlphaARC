@@ -453,6 +453,18 @@ func (e *Engine) AttributePreferenceGain(delta float64) {
 	e.ActionPreferenceGain[e.PendingActionToken] = preferenceGainAlpha*delta + (1-preferenceGainAlpha)*prev
 }
 
+// PenalizeLastAction drops the pragmatic value of the action that conditioned
+// the current forecast -- used on a LOSS (GAME_OVER) so the planner avoids the
+// action that just ended the game. Global (not context-specific): without a
+// causal state model the agent can't yet know WHEN the action is fatal vs
+// fine, so a fatal-here action loses appeal everywhere until re-earned.
+func (e *Engine) PenalizeLastAction(strength float64) {
+	if e.PendingActionToken == "" {
+		return
+	}
+	e.ActionPreferenceGain[e.PendingActionToken] -= strength
+}
+
 // BestAction plans by minimizing expected free energy: it picks the candidate
 // with the highest pragmatic value (expected preference gain -- movement
 // toward the preferred/meaningful state) plus a modest epistemic term
