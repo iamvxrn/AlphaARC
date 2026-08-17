@@ -380,6 +380,17 @@ func (h *HindsightMemory) EpisodeCount() int {
 	return len(h.episodes)
 }
 
+// Episodes returns a copy of the completed episodes slice, allowing external
+// analysis (e.g., Goal Proposers) to read the transition history without
+// breaking encapsulation.
+func (h *HindsightMemory) Episodes() []*Episode {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	out := make([]*Episode, len(h.episodes))
+	copy(out, h.episodes)
+	return out
+}
+
 // HasEpisodeInProgress reports whether BeginEpisode was called without
 // a matching EndEpisode yet.
 func (h *HindsightMemory) HasEpisodeInProgress() bool {
