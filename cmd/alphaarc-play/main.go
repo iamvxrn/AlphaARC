@@ -159,8 +159,165 @@ func main() {
 		//     continue
 		// }
 		if !hasAction6(frame.AvailableActions) {
-			fmt.Printf("game does not offer ACTION6 (available: %v) -- ChooseClickAction only proposes clicks, stopping\n", frame.AvailableActions)
-			break
+			// BUTTON-ONLY AGENT: this game has no pixel clicks, only
+			// discrete controls (Action1-5). We explore them, learn their
+			// effects, and exploit the ones that move us toward the goal.
+			buttons := availableSimpleActions(frame.AvailableActions)
+			if len(buttons) == 0 {
+				fmt.Printf("no actions available at all -- stopping\n")
+				break
+			}
+
+			// Phase 1 (Probe): if we haven't tried all buttons yet, pick
+			// the least-tried one to learn what it does.
+			// Phase 2 (Exploit): once every button has been tried at least
+			// once, pick the one with the best observed preference gain.
+			type buttonStats struct {
+				tries     int
+				totalGain float64
+				lastGain  float64
+			}
+			btnStats := map[environment.ActionID]*buttonStats{}
+			for _, b := range buttons {
+				btnStats[b] = &buttonStats{}
+			}
+
+			fmt.Printf("BUTTON-ONLY MODE: %d buttons available %v\n", len(buttons), buttons)
+
+			for actionsTaken < *maxActions {
+				// Pick action: least-tried first (probe), then best average gain (exploit)
+				var chosenBtn environment.ActionID
+				minTries := math.MaxInt32
+				for _, b := range buttons {
+					if btnStats[b].tries < minTries {
+						minTries = btnStats[b].tries
+					}
+				}
+
+				if minTries == 0 {
+					// Probe: pick a button we haven't tried yet
+					for _, b := range buttons {
+						if btnStats[b].tries == 0 {
+							chosenBtn = b
+							break
+						}
+					}
+				} else {
+					// Exploit: pick button with best average preference gain,
+					// with a small exploration bonus for under-tried buttons
+					bestScore := math.Inf(-1)
+					for _, b := range buttons {
+						avg := btnStats[b].totalGain / float64(btnStats[b].tries)
+						exploration := 0.1 / float64(1+btnStats[b].tries)
+						score := avg + exploration
+						if score > bestScore {
+							bestScore = score
+							chosenBtn = b
+						}
+					}
+
+					// If ALL buttons have negative average gain and we've tried
+					// each at least twice, try random exploration to break out
+					if bestScore < 0 && minTries >= 2 {
+						chosenBtn = buttons[rand.Intn(len(buttons))]
+					}
+				}
+
+				preGrid := frame.Grid
+				prePref := preferenceOf(frame.Grid)
+
+				action := environment.Action{ID: chosenBtn}
+				newFrame, stepErr := sess.Step(action)
+				actionsTaken++
+				if stepErr != nil {
+					fmt.Printf("action %d: button %v step failed: %v\n", actionsTaken, chosenBtn, stepErr)
+					break
+				}
+
+				// Measure what changed
+				gridDelta := gridChangeMagnitude(preGrid, newFrame.Grid)
+				newPref := preferenceOf(newFrame.Grid)
+				prefDelta := newPref - prePref
+				leveledUp := newFrame.LevelsCompleted > frame.LevelsCompleted
+
+				// Update stats
+				btnStats[chosenBtn].tries++
+				btnStats[chosenBtn].totalGain += prefDelta
+				btnStats[chosenBtn].lastGain = prefDelta
+
+				// Feed into hypothesis tester
+				tester.Observe(newFrame.Grid)
+
+				fmt.Printf("action %d: BUTTON %v -> grid_delta=%d pref=%+.4f sat=%.3f levels=%d%s\n",
+					actionsTaken, chosenBtn, gridDelta, prefDelta,
+					tester.Satisfaction(newFrame.Grid), newFrame.LevelsCompleted,
+					map[bool]string{true: " LEVEL UP!", false: ""}[leveledUp])
+
+				frame = newFrame
+				prevPreference = newPref
+
+				if leveledUp {
+					tester.WarmStart()
+					engine.ForgetGoal()
+					fmt.Printf("action %d: LEVEL %d COMPLETED via button %v\n",
+						actionsTaken, frame.LevelsCompleted, chosenBtn)
+					// Reset button stats for new level (physics may change)
+					for _, b := range buttons {
+						btnStats[b] = &buttonStats{}
+					}
+				}
+
+				// Terminal states
+				if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
+					won := frame.State == environment.StateWin || leveledUp
+					newSkills := engine.HER.EndEpisode(won)
+					fmt.Printf("terminal %s (won=%v, +%d skills)\n", frame.State, won, newSkills)
+
+					if frame.State == environment.StateGameOver {
+						resetFrame, resetErr := sess.Reset()
+						if resetErr != nil {
+							fmt.Printf("reset failed: %v -- stopping\n", resetErr)
+							break
+						}
+						frame = resetFrame
+						engine.HER.BeginEpisode(target)
+						tester.Refute()
+						prevPreference = preferenceOf(frame.Grid)
+						for _, b := range buttons {
+							btnStats[b] = &buttonStats{}
+						}
+						fmt.Printf("reset: testing next hypothesis %q\n", tester.Current().Name)
+						continue
+					}
+					break // WIN -> done
+				}
+
+				// Stagnation detection: if grid hasn't changed for several
+				// button presses, try resetting to attempt a different strategy
+				if gridDelta == 0 {
+					stagnation++
+				} else {
+					stagnation = 0
+				}
+				if stagnation >= len(buttons)*3 {
+					fmt.Printf("action %d: stagnation (%d dead presses) -- resetting\n", actionsTaken, stagnation)
+					resetFrame, resetErr := sess.Reset()
+					if resetErr != nil {
+						break
+					}
+					frame = resetFrame
+					engine.HER.EndEpisode(false)
+					engine.HER.BeginEpisode(target)
+					tester.Refute()
+					prevPreference = preferenceOf(frame.Grid)
+					stagnation = 0
+					for _, b := range buttons {
+						btnStats[b] = &buttonStats{}
+					}
+					fmt.Printf("reset: trying hypothesis %q\n", tester.Current().Name)
+				}
+			}
+			break // exit the outer loop after button-only mode completes
 		}
 
 		// Diagnostic: total blobs actually present this frame, UNBOUNDED by
@@ -694,4 +851,24 @@ func availableSimpleActions(actions []environment.ActionID) []environment.Action
 		}
 	}
 	return simple
+}
+
+// gridChangeMagnitude counts how many pixels differ between two grids.
+// Returns 0 if grids are identical or incomparable (different dimensions).
+func gridChangeMagnitude(a, b [][]int) int {
+	if len(a) != len(b) {
+		return len(a) * len(a[0]) // completely different shape = maximum change
+	}
+	count := 0
+	for r := range a {
+		if r >= len(b) || len(a[r]) != len(b[r]) {
+			return len(a) * len(a[0])
+		}
+		for c := range a[r] {
+			if a[r][c] != b[r][c] {
+				count++
+			}
+		}
+	}
+	return count
 }
