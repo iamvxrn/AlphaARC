@@ -155,6 +155,11 @@ type Engine struct {
 	// changedTokens and RunPredictiveCycle Step 1a.
 	PrevObservation string
 
+	// PrevRawHERObservation holds the fully discriminative state string (including
+	// [GRID] tokens) from the previous cycle, ensuring HER records accurate 
+	// state vectors.
+	PrevRawHERObservation string
+
 	// CompressionThreshold is the mean intra-cluster edge weight at/above
 	// which the sleep step collapses a cluster into one abstraction node
 	// (Stage 3). Configurable (was a hardcoded 0.75) so the level can be
@@ -423,7 +428,10 @@ func NewEngine() *Engine {
 		CompressionThreshold:   0.75,
 		ActionLearningProgress: make(map[string]float64),
 		ActionPreferenceGain:   make(map[string]float64),
-		HER:                    memory.NewHindsightMemory(dim, 50, 200),
+		// HER uses a 256-dimensional state signature (unlike the 20D MLP vectors)
+		// to minimize hash collisions on complex frames, ensuring states are
+		// distinguishable for the skill repertoire and milestone graph.
+		HER:                    memory.NewHindsightMemory(256, 50, 200),
 	}
 }
 
@@ -638,14 +646,22 @@ func vectorMSE(a, b []float64) float64 {
 	}
 	return sum / float64(len(a))
 }
-
 // maxRecentConflicts bounds Engine.RecentConflicts so it doesn't grow
 // unbounded over a long-running engine.
 const maxRecentConflicts = 20
 
-func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal string, actualSuccess bool) (*CycleResult, error) {
-	e.Sys.Mode = core.Online
+func (e *Engine) RunPredictiveCycle(ctx context.Context, observation string, goal string, actualSuccess bool) (*CycleResult, error) {
 	e.StepCounter++
+
+	// Separate the highly-discriminative raw state signature (if provided) from 
+	// the structural observation. The graph and MLP use the structural part, 
+	// while HER uses the full discriminative string to prevent state aliasing.
+	rawHERObservation := observation
+	if idx := strings.Index(observation, " [GRID] "); idx != -1 {
+		observation = observation[:idx]
+	}
+
+	e.Sys.Mode = core.Online
 
 	// 0. Hierarchical Goal Stack (Stage 4 piece 2): auto-bootstrap a root
 	// External goal from the flat `goal` string the first time the stack is
@@ -704,15 +720,12 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	// EndEpisode) is managed by the caller (bridge/cmd); here we just
 	// append transitions as they happen. When the episode ends, HER
 	// relabels it into skills -- "synthetic memories of success."
-	if e.HER != nil && e.PrevObservation != "" && e.PendingActionToken != "" {
-		// Record the RAW previous state, NOT e.PrevStateVector: the latter was
-		// action-BLENDED by ConditionForecastOnAction last cycle, so a transition
-		// graph built from it goes blended->raw and never chains, and the caller's
-		// raw start-state never matches a blended graph node -- which made the
-		// irreversibility proposer structurally always return nil. e.PrevObservation
-		// still holds last cycle's raw observation here (it's overwritten in Step
-		// 1a below), so ObservationVector of it is the clean raw predecessor state.
-		e.HER.RecordTransition(ObservationVector(e.PrevObservation), e.PendingActionToken, stateVector)
+	if e.HER != nil && e.PrevRawHERObservation != "" && e.PendingActionToken != "" {
+		// We embed it into 256 dimensions (instead of the MLP's 20) so the state 
+		// signature is highly discriminative, preventing hash collisions that
+		// would falsely alias different frames into the same state and starve the
+		// skill repertoire/milestone graph.
+		e.HER.RecordTransition(EmbedObservation(e.PrevRawHERObservation, 256), e.PendingActionToken, EmbedObservation(rawHERObservation, 256))
 	}
 
 	// 1a. Attentional narrowing (precision-weighting / Easterbrook 1959 cue-
@@ -730,6 +743,7 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	// cycle still gets its node.
 	prevObservation := e.PrevObservation
 	e.PrevObservation = observation
+	e.PrevRawHERObservation = rawHERObservation
 
 	// 1. Observation -> Node Lookup-or-Create -> Spreading Activation -> Active Subgraph Extraction
 	// EnsureConceptNodes always runs on the FULL observation so the graph grows

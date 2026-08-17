@@ -163,7 +163,8 @@ func main() {
 		motionObs := strings.Join(append(tracker.Track(frame.Grid), numericObs), " ")
 		
 		if !startStateCaptured {
-			startState = pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, *maxBlobs, *cols, *rows) + " " + motionObs)
+			rawState := perception.DescribeGridStructural(frame.Grid, *maxBlobs, *cols, *rows) + " " + motionObs + " [GRID] " + perception.DescribeGridCells(frame.Grid, *maxBlobs, *cols, *rows)
+			startState = pipeline.EmbedObservation(rawState, 256)
 			startStateCaptured = true
 		}
 		
@@ -436,7 +437,8 @@ func main() {
 			// HER: this state is a REAL success -- remember it as a target the skill
 			// repertoire can steer toward (the "wooden horse" real memory among the
 			// implanted ones). ShortestSkillTo(herTarget) then biases action choice.
-			herTarget = pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, *maxBlobs, *cols, *rows))
+			rawState := perception.DescribeGridStructural(frame.Grid, *maxBlobs, *cols, *rows) + " [GRID] " + perception.DescribeGridCells(frame.Grid, *maxBlobs, *cols, *rows)
+			herTarget = pipeline.EmbedObservation(rawState, 256)
 			tracker = perception.NewObjectTracker()
 			prevTopology, prevNumeric = "", ""
 			stagnation = 0

@@ -1,0 +1,28 @@
+--- pkg/pipeline/observation_vector.go
++++ pkg/pipeline/observation_vector.go
+@@ -32,15 +32,23 @@
+ func ObservationVector(observation string) []float64 {
++	return EmbedObservation(observation, ObservationVectorDim)
++}
++
++// EmbedObservation is a generalized version of ObservationVector that allows
++// embedding into an arbitrary dimensionality. This is critical for systems like
++// HER or Goal Proposers that need highly discriminative state signatures, as
++// hashing a complex ARC-AGI frame down to 20 dimensions causes massive hash
++// collisions and aliasing (cosine similarity ~0.96+ between different frames).
++func EmbedObservation(observation string, dim int) []float64 {
+-	vec := make([]float64, ObservationVectorDim)
++	vec := make([]float64, dim)
+ 	for _, token := range strings.Fields(observation) {
+ 		h := fnv.New32a()
+ 		_, _ = h.Write([]byte(token)) // fnv.Write never errors
+ 		sum := h.Sum32()
+ 
+-		idx := int(sum % uint32(ObservationVectorDim))
++		idx := int(sum % uint32(dim))
+ 		sign := 1.0
+-		if (sum/uint32(ObservationVectorDim))%2 == 0 {
++		if (sum/uint32(dim))%2 == 0 {
+ 			sign = -1.0
+ 		}
+ 		vec[idx] += sign

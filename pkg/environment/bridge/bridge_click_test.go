@@ -185,12 +185,13 @@ func TestChooseClickActionSingleBlobTrivialWin(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}
-	if want := perception.DescribeGridStructural(grid, 1, 2, 2); obs != want {
-		t.Fatalf("FAIL: expected returned observation %q to match DescribeGridStructural, got %q", want, obs)
+	wantObs := perception.DescribeGridStructural(grid, 1, 2, 2) + " [GRID] " + perception.DescribeGridCells(grid, 1, 2, 2)
+	if obs != wantObs {
+		t.Fatalf("FAIL: expected returned observation %q to match DescribeGridStructural + [GRID], got %q", wantObs, obs)
 	}
-	want := environment.Action{ID: environment.Action6, X: 3, Y: 3}
-	if action != want {
-		t.Fatalf("FAIL: expected %+v, got %+v", want, action)
+	wantAction := environment.Action{ID: environment.Action6, X: 3, Y: 3}
+	if action != wantAction {
+		t.Fatalf("FAIL: expected action %+v, got %+v", wantAction, action)
 	}
 }
 
