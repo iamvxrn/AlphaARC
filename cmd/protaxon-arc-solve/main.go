@@ -331,6 +331,11 @@ func main() {
 	baseSpace = append(baseSpace, &IdentityProgram{})
 	baseSpace = append(baseSpace, &CropBackgroundProgram{})
 	baseSpace = append(baseSpace, &FractalExpandProgram{})
+	baseSpace = append(baseSpace, &MirrorXProgram{})
+	baseSpace = append(baseSpace, &MirrorYProgram{})
+	for c := 1; c < 10; c++ {
+		baseSpace = append(baseSpace, &FillInteriorProgram{NewColor: c})
+	}
 	
 	for c := 0; c < 10; c++ {
 		baseSpace = append(baseSpace, &RecolorProgram{TargetColor: c})
