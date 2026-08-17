@@ -210,8 +210,15 @@ func main() {
 
 			for actionsTaken < *maxActions {
 				if kinematics.CheckCalibrated() {
-					fmt.Printf("action %d: KINEMATICS CALIBRATED. Yielding to Cortex Macro Planner.\n", actionsTaken+1)
-					break // Break out of inner exploration loop to let Cortex run Macros
+					if currentMacroIdx < len(macrosToTest) {
+						fmt.Printf("action %d: KINEMATICS CALIBRATED. Yielding to Cortex Macro Planner.\n", actionsTaken+1)
+						break // Break out of inner exploration loop to let Cortex run Macros
+					} else {
+						// Cortex tested all macros and none of them generated a path/actionQueue.
+						// Fall back to exploration for this step so we don't infinite loop.
+						// Wait, if it's completely stuck, let's just trigger a reset.
+						stagnation++
+					}
 				}
 
 				// Pick least-tried action to ensure we calibrate all directions
