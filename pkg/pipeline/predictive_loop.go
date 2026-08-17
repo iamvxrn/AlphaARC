@@ -704,8 +704,15 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	// EndEpisode) is managed by the caller (bridge/cmd); here we just
 	// append transitions as they happen. When the episode ends, HER
 	// relabels it into skills -- "synthetic memories of success."
-	if e.HER != nil && e.PrevStateVector != nil && e.PendingActionToken != "" {
-		e.HER.RecordTransition(e.PrevStateVector, e.PendingActionToken, stateVector)
+	if e.HER != nil && e.PrevObservation != "" && e.PendingActionToken != "" {
+		// Record the RAW previous state, NOT e.PrevStateVector: the latter was
+		// action-BLENDED by ConditionForecastOnAction last cycle, so a transition
+		// graph built from it goes blended->raw and never chains, and the caller's
+		// raw start-state never matches a blended graph node -- which made the
+		// irreversibility proposer structurally always return nil. e.PrevObservation
+		// still holds last cycle's raw observation here (it's overwritten in Step
+		// 1a below), so ObservationVector of it is the clean raw predecessor state.
+		e.HER.RecordTransition(ObservationVector(e.PrevObservation), e.PendingActionToken, stateVector)
 	}
 
 	// 1a. Attentional narrowing (precision-weighting / Easterbrook 1959 cue-
