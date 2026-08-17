@@ -209,25 +209,41 @@ func main() {
 			fmt.Printf("BUTTON-ONLY MODE: Calibration Phase for %d buttons\n", len(buttons))
 
 			for actionsTaken < *maxActions {
-				if kinematics.CheckCalibrated() {
-					if currentMacroIdx < len(macrosToTest) {
-						fmt.Printf("action %d: KINEMATICS CALIBRATED. Yielding to Cortex Macro Planner.\n", actionsTaken+1)
-						break // Break out of inner exploration loop to let Cortex run Macros
-					} else {
-						// Cortex tested all macros and none of them generated a path/actionQueue.
-						// Fall back to exploration for this step so we don't infinite loop.
-						// Wait, if it's completely stuck, let's just trigger a reset.
-						stagnation++
-					}
-				}
-
-				// Pick least-tried action to ensure we calibrate all directions
-				var chosenBtn environment.ActionID
-				minTries := math.MaxInt32
+				var minTries = math.MaxInt32
 				for _, b := range buttons {
 					if btnStats[b].tries < minTries {
 						minTries = btnStats[b].tries
-						chosenBtn = b
+					}
+				}
+
+				if minTries > 0 && kinematics.CheckCalibrated() {
+					if currentMacroIdx < len(macrosToTest) {
+						fmt.Printf("action %d: KINEMATICS CALIBRATED. Yielding to Cortex Macro Planner.\n", actionsTaken+1)
+						break // Break out of inner exploration loop to let Cortex run Macros
+					}
+				}
+
+				var chosenBtn environment.ActionID
+				if minTries == 0 {
+					for _, b := range buttons {
+						if btnStats[b].tries == 0 {
+							chosenBtn = b
+							break
+						}
+					}
+				} else {
+					bestScore := math.Inf(-1)
+					for _, b := range buttons {
+						avg := btnStats[b].totalGain / float64(btnStats[b].tries)
+						exploration := 0.1 / float64(1+btnStats[b].tries)
+						score := avg + exploration
+						if score > bestScore {
+							bestScore = score
+							chosenBtn = b
+						}
+					}
+					if bestScore < 0 && minTries >= 2 {
+						chosenBtn = buttons[rand.Intn(len(buttons))]
 					}
 				}
 
@@ -293,6 +309,35 @@ func main() {
 						continue
 					}
 					break
+				}
+				// Stagnation detection for Button games: 
+				// Since grid_delta is always >0 due to cursor movement, we judge stagnation
+				// by whether the preference function (which evaluates goal satisfaction) changes.
+				if math.Abs(prefDelta) < 0.0001 && minTries > 0 {
+					stagnation++
+				} else {
+					stagnation = 0
+				}
+				
+				if stagnation >= 15 {
+					fmt.Printf("action %d: HARD STAGNATION RESET (%d dead actions) -- resetting and switching hypothesis\n", actionsTaken, stagnation)
+					resetFrame, resetErr := sess.Reset()
+					if resetErr == nil {
+						frame = resetFrame
+						engine.HER.EndEpisode(false)
+						engine.HER.BeginEpisode(target)
+						tester.Refute()
+						prevPreference = preferenceOf(frame.Grid)
+						stagnation = 0
+						kinematics = macro.NewMotorKinematics(0)
+						compiler.Kinematics = kinematics
+						currentMacroIdx = 0 // Reset Cortex to try macros again on new hypothesis!
+						for _, b := range buttons {
+							btnStats[b] = &buttonStats{}
+						}
+						fmt.Printf("reset: now testing hypothesis %q\n", tester.Current().Name)
+						continue
+					}
 				}
 			}
 			if frame.State == environment.StateWin {
