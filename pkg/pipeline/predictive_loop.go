@@ -214,6 +214,24 @@ type Engine struct {
 	// meaning -- choosing the action expected to move the world toward the
 	// preferred state -- instead of only reacting after the fact.
 	ActionPreferenceGain map[string]float64
+
+	// HER is the Hindsight Experience Replay memory (the "Nexus-8 implanted
+	// memory" architecture). It records full episodes of interaction and,
+	// when an episode ends (win or loss), relabels every failed attempt as a
+	// synthetic success: "I didn't solve the puzzle, but I DID reach state
+	// S_f -- so now I know how to get there." Over many episodes the agent
+	// builds a repertoire of Skills (state, actions) -> targetState, giving
+	// it goal-conditioned competence from sparse reward.
+	//
+	// This solves half of the Schollé Wall: the agent learns HOW to reach
+	// arbitrary states even when external reward is vanishingly rare. The
+	// other half (WHICH state to target) is handled by the Goal Proposer
+	// (compression / MDL / macro system). Together they close the loop.
+	//
+	// Transitions are recorded automatically in RunPredictiveCycle whenever
+	// HER is non-nil and a PrevStateVector + PendingActionToken exist.
+	// BeginEpisode/EndEpisode are called by the game loop (bridge/cmd).
+	HER *memory.HindsightMemory
 }
 
 const (
@@ -405,6 +423,7 @@ func NewEngine() *Engine {
 		CompressionThreshold:   0.75,
 		ActionLearningProgress: make(map[string]float64),
 		ActionPreferenceGain:   make(map[string]float64),
+		HER:                    memory.NewHindsightMemory(dim, 50, 200),
 	}
 }
 
@@ -677,6 +696,16 @@ func (e *Engine) RunPredictiveCycle(ctx context.Context, observation, goal strin
 	}
 	if hadPendingPrediction {
 		e.PrevForecastError = forecastError
+	}
+
+	// 0c. HER (Hindsight Experience Replay): record the transition from
+	// last cycle's state (conditioned on last cycle's action) to this
+	// cycle's observed state. The episode lifecycle (BeginEpisode /
+	// EndEpisode) is managed by the caller (bridge/cmd); here we just
+	// append transitions as they happen. When the episode ends, HER
+	// relabels it into skills -- "synthetic memories of success."
+	if e.HER != nil && e.PrevStateVector != nil && e.PendingActionToken != "" {
+		e.HER.RecordTransition(e.PrevStateVector, e.PendingActionToken, stateVector)
 	}
 
 	// 1a. Attentional narrowing (precision-weighting / Easterbrook 1959 cue-
