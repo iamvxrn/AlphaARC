@@ -234,7 +234,7 @@ const maxRelabelSamples = 10
 // noveltyThreshold: a new skill is "novel" only if its target state has
 // cosine distance > this from every existing skill's target. Prevents
 // the repertoire from filling up with near-duplicates.
-const noveltyThreshold = 0.05
+const noveltyThreshold = 0.001
 
 // addSkillIfNovel adds a skill only if its target is sufficiently
 // different from all existing skills. Enforces maxSkills by evicting
