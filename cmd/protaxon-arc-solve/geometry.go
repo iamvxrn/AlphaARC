@@ -1,5 +1,10 @@
 package main
 
+import (
+	"fmt"
+	"protaxon/pkg/environment/perception"
+)
+
 // --- FloodFill Program ---
 type FloodFillProgram struct {
 	TargetColor int
@@ -29,9 +34,6 @@ func (p *FloodFillProgram) Apply(input [][]int) [][]int {
 		fill(r, c-1)
 	}
 
-	// In ARC, usually we want to fill the "inside" of closed contours.
-	// But as a primitive, a standard FloodFill on specific connected components is a start.
-	// We will apply this to all blobs of TargetColor.
 	for r := 0; r < R; r++ {
 		for c := 0; c < C; c++ {
 			if out[r][c] == p.TargetColor && !visited[r][c] {
@@ -99,7 +101,6 @@ func (p *FillInteriorProgram) Apply(input [][]int) [][]int {
 		copy(out[r], input[r])
 	}
 
-	// 1. Find all 0-pixels that CAN reach the border
 	reachesBorder := make([][]bool, R)
 	for r := 0; r < R; r++ { reachesBorder[r] = make([]bool, C) }
 
@@ -122,7 +123,6 @@ func (p *FillInteriorProgram) Apply(input [][]int) [][]int {
 		dfs(R-1, c)
 	}
 
-	// 2. Any 0-pixel that CANNOT reach the border is interior
 	for r := 0; r < R; r++ {
 		for c := 0; c < C; c++ {
 			if out[r][c] == 0 && !reachesBorder[r][c] {
@@ -135,3 +135,74 @@ func (p *FillInteriorProgram) Apply(input [][]int) [][]int {
 func (p *FillInteriorProgram) Complexity() float64 { return 2.0 }
 func (p *FillInteriorProgram) Name() string        { return "FillInterior()" }
 func (p *FillInteriorProgram) ChangesShape() bool  { return false }
+
+// --- Gravity Program ---
+// Drops all rigid objects in a specified direction until they hit the bounds or another object.
+type GravityProgram struct {
+	DX, DY int
+}
+
+func (p *GravityProgram) Apply(input [][]int) [][]int {
+	if len(input) == 0 { return input }
+	out := make([][]int, len(input))
+	for r := range input {
+		out[r] = make([]int, len(input[r]))
+		copy(out[r], input[r])
+	}
+
+	blobs := perception.FindBlobs(out, 0)
+
+	movedAny := true
+	for movedAny {
+		movedAny = false
+		for i, b := range blobs {
+			canMove := true
+			for _, cell := range b.Cells {
+				ny, nx := cell.Y+p.DY, cell.X+p.DX
+				if ny < 0 || ny >= len(out) || nx < 0 || nx >= len(out[0]) {
+					canMove = false
+					break
+				}
+				if out[ny][nx] != 0 {
+					isSameBlob := false
+					for _, oc := range b.Cells {
+						if oc.X == nx && oc.Y == ny {
+							isSameBlob = true
+							break
+						}
+					}
+					if !isSameBlob {
+						canMove = false
+						break
+					}
+				}
+			}
+
+			if canMove {
+				// Erase current
+				for _, cell := range b.Cells {
+					out[cell.Y][cell.X] = 0
+				}
+				// Update cells & draw
+				for j, cell := range b.Cells {
+					b.Cells[j].Y = cell.Y + p.DY
+					b.Cells[j].X = cell.X + p.DX
+					out[b.Cells[j].Y][b.Cells[j].X] = b.Color
+				}
+				blobs[i] = b // Update the blob in slice
+				movedAny = true
+			}
+		}
+	}
+	return out
+}
+func (p *GravityProgram) Complexity() float64 { return 2.0 }
+func (p *GravityProgram) Name() string {
+	dir := "Unknown"
+	if p.DY == 1 { dir = "Down" }
+	if p.DY == -1 { dir = "Up" }
+	if p.DX == 1 { dir = "Right" }
+	if p.DX == -1 { dir = "Left" }
+	return fmt.Sprintf("Gravity(%s)", dir)
+}
+func (p *GravityProgram) ChangesShape() bool { return false }

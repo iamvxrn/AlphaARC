@@ -333,6 +333,10 @@ func main() {
 	baseSpace = append(baseSpace, &FractalExpandProgram{})
 	baseSpace = append(baseSpace, &MirrorXProgram{})
 	baseSpace = append(baseSpace, &MirrorYProgram{})
+	baseSpace = append(baseSpace, &GravityProgram{DX: 0, DY: 1})
+	baseSpace = append(baseSpace, &GravityProgram{DX: 0, DY: -1})
+	baseSpace = append(baseSpace, &GravityProgram{DX: 1, DY: 0})
+	baseSpace = append(baseSpace, &GravityProgram{DX: -1, DY: 0})
 	for c := 1; c < 10; c++ {
 		baseSpace = append(baseSpace, &FillInteriorProgram{NewColor: c})
 	}
