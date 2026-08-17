@@ -419,6 +419,32 @@ func main() {
 		if stagnation >= 4 {
 			engine.Homeostasis.Curiosity = 1.0 // sharp anti-stagnation kick, not a quench
 		}
+		// Hard reset: if nothing meaningful has happened for 15 actions,
+		// the current strategy is dead. Reset, switch hypothesis, try again.
+		if stagnation >= 15 {
+			fmt.Printf("action %d: HARD STAGNATION RESET (%d dead actions) -- resetting and switching hypothesis\n", actionsTaken+1, stagnation)
+			resetFrame, resetErr := sess.Reset()
+			if resetErr != nil {
+				fmt.Printf("reset failed: %v -- continuing\n", resetErr)
+			} else {
+				engine.HER.EndEpisode(false)
+				engine.HER.BeginEpisode(target)
+				tester.Refute()
+				frame = resetFrame
+				prevObservation, prevClickedLabel, lastActionTok, prevNumeric = "", "", "", ""
+				tracker = perception.NewObjectTracker()
+				prevTopology = ""
+				prevLevelsCompleted = frame.LevelsCompleted
+				prevPreference = preferenceOf(frame.Grid)
+				stagnation = 0
+				startStateCaptured = false
+				herTarget = nil
+				deadCount = map[string]float64{}
+				tries = map[string]int{}
+				fmt.Printf("reset: now testing hypothesis %q (wins=%d)\n", tester.Current().Name, tester.Wins())
+				continue
+			}
+		}
 
 		fmt.Printf("action %d: perceives %q (changed since last frame: %v, levels_completed_increased: %v, curiosity=%.4f, stagnation=%d)\n",
 			actionsTaken+1, observation, changedSinceLastFrame, levelsCompletedIncreased, engine.Homeostasis.Curiosity, stagnation)
@@ -524,6 +550,12 @@ func main() {
 		for _, c := range candidates {
 			efe := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
 			optimism := 0.05 / float64(1+tries[c])
+			// Buttons (act-N) get a strong epistemic bonus when under-explored:
+			// we MUST discover what each control does before we can plan.
+			// Without this, clicks with graph priors always outcompete buttons.
+			if _, isButton := simpleByToken[c]; isButton && tries[c] < 3 {
+				optimism += 0.3 / float64(1+tries[c])
+			}
 			taboo := 0.1 * (1 - math.Exp(-deadCount[c]))
 			prior := 0.0
 			if c == graphPick {
