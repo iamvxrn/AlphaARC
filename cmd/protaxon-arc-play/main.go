@@ -86,7 +86,9 @@ func main() {
 	fmt.Printf("RESET %s -> state=%s available_actions=%v\n", target, frame.State, frame.AvailableActions)
 
 	engine := pipeline.NewEngine()
+	engine.HER.BeginEpisode(target) // Hindsight Experience Replay: record this attempt as an episode
 	memory := bridge.NewOutcomeMemory()
+	var herTarget []float64 // a win-like state to steer toward via the learned skill repertoire (set on a level completion)
 	// Goal inference by hypothesis-and-test: the agent pursues one candidate goal
 	// (all-one-color, symmetry, halves-match, ...) at a time. The PURSUED
 	// hypothesis's satisfaction is the goal-directed drive -- the agent acts to
@@ -299,6 +301,15 @@ func main() {
 		// takes over as it accrues.
 		graphPick := "click-" + clickedLabel
 		curHyp := tester.Current()
+		// HER goal-conditioned steer: once a real win-state is known, ask the skill
+		// repertoire for the SHORTEST program that reaches a state like it (Occam),
+		// and bias its first action. Empty until a win defines herTarget.
+		herFirst := ""
+		if herTarget != nil {
+			if sk, _ := engine.HER.ShortestSkillTo(herTarget, herMinSim); sk != nil && len(sk.Actions) > 0 {
+				herFirst = sk.Actions[0]
+			}
+		}
 		chosenTok, bestVal := "", math.Inf(-1)
 		for _, c := range candidates {
 			efe := engine.ActionPreferenceGain[c] + 0.3*engine.ActionLearningProgress[c]
@@ -307,6 +318,9 @@ func main() {
 			prior := 0.0
 			if c == graphPick {
 				prior = graphPriorBonus
+			}
+			if c == herFirst {
+				prior += herBonus // this action starts the shortest known skill to a win-like state
 			}
 			// TRANSFORMATION-MDL via MACRO-operators: value clicking this object by
 			// the Δsat of transforming its WHOLE CLASS (applying the learned
@@ -400,6 +414,10 @@ func main() {
 			// a new level is new objects, so old identity/topology/IoR state is stale.
 			tester.WarmStart()
 			engine.ForgetGoal()
+			// HER: this state is a REAL success -- remember it as a target the skill
+			// repertoire can steer toward (the "wooden horse" real memory among the
+			// implanted ones). ShortestSkillTo(herTarget) then biases action choice.
+			herTarget = pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, *maxBlobs, *cols, *rows))
 			tracker = perception.NewObjectTracker()
 			prevTopology, prevNumeric = "", ""
 			stagnation = 0
@@ -465,6 +483,12 @@ func main() {
 				fmt.Printf("terminal state %s registered (changed since last frame: %v, levels_completed_increased: %v)\n", frame.State, finalObs != prevObservation, terminalLevelsCompletedIncreased)
 			}
 
+			// HER: close the episode. Hindsight relabels the states it reached into
+			// skills (implanted "I can make the board become X" memories), won or not.
+			won := frame.State == environment.StateWin || terminalLevelsCompletedIncreased
+			newSkills := engine.HER.EndEpisode(won)
+			fmt.Printf("terminal state %s: HER episode ended (won=%v) -> +%d skills, repertoire=%d\n", frame.State, won, newSkills, engine.HER.SkillCount())
+
 			// LEARN FROM THE LOSS, then RETRY: a GAME_OVER is a negative reward.
 			// Penalize the action that ended the game and the recent click
 			// sequence, then reset and keep playing with the SAME brain -- so
@@ -498,6 +522,7 @@ func main() {
 				break
 			}
 			frame = resetFrame
+			engine.HER.BeginEpisode(target) // start recording the next attempt
 			// The attempt ended without a win -- the hypothesis we were pursuing
 			// wasn't (or wasn't reachably) the goal, so try the next candidate on
 			// the fresh attempt.
@@ -592,6 +617,12 @@ const (
 	// (2 = try chains of two clicks) so a preparatory move can be credited for the
 	// invariant a follow-up closes -- the fix for the non-monotonic landscape.
 	rolloutDepth = 2
+	// herBonus nudges selection toward the first action of the shortest HER skill
+	// that reaches a win-like state; herMinSim is the min cosine similarity a
+	// skill's target must have to the win-state to count. Modest -- HER's payoff
+	// is gated on having seen a real win to define the target.
+	herBonus  = 0.08
+	herMinSim = 0.6
 )
 
 // availableSimpleActions returns every offered non-click action (ACTION1-5 and
