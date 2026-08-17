@@ -1,11 +1,11 @@
 package main
 
 import (
-	"protaxon/pkg/core"
-	"protaxon/pkg/graph"
-	"protaxon/pkg/homeostasis"
-	"protaxon/pkg/memory"
-	"protaxon/pkg/offline"
+	"alphaarc/pkg/core"
+	"alphaarc/pkg/graph"
+	"alphaarc/pkg/homeostasis"
+	"alphaarc/pkg/memory"
+	"alphaarc/pkg/offline"
 	"fmt"
 	"math/rand"
 )

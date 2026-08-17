@@ -2,8 +2,8 @@ package offline
 
 import (
 	"fmt"
-	"protaxon/pkg/core"
-	"protaxon/pkg/graph"
+	"alphaarc/pkg/core"
+	"alphaarc/pkg/graph"
 	"sort"
 )
 

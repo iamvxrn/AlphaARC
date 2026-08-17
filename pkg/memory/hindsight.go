@@ -72,7 +72,7 @@ type Skill struct {
 	ProgramLen  int       // len(Actions) -- cached for sorting by MDL
 }
 
-// HindsightMemory implements Hindsight Experience Replay for Protaxon.
+// HindsightMemory implements Hindsight Experience Replay for AlphaARC.
 //
 // Lifecycle (managed by the caller, typically bridge or cmd):
 //

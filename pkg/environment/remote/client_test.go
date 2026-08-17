@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"protaxon/pkg/environment"
+	"alphaarc/pkg/environment"
 )
 
 func TestNewClientFromEnvRequiresAPIKey(t *testing.T) {
@@ -87,15 +87,15 @@ func TestOpenScorecard(t *testing.T) {
 			t.Fatalf("FAIL: could not decode request body: %v", err)
 		}
 		tags, ok := body["tags"].([]any)
-		if !ok || len(tags) != 1 || tags[0] != "protaxon" {
-			t.Fatalf("FAIL: expected tags [protaxon], got %+v", body)
+		if !ok || len(tags) != 1 || tags[0] != "alphaarc" {
+			t.Fatalf("FAIL: expected tags [alphaarc], got %+v", body)
 		}
 		json.NewEncoder(w).Encode(openScorecardResponse{CardID: "card-123"})
 	}))
 	defer srv.Close()
 
 	c := NewClient(srv.URL, "secret-key", nil)
-	cardID, err := c.OpenScorecard(context.Background(), []string{"protaxon"})
+	cardID, err := c.OpenScorecard(context.Background(), []string{"alphaarc"})
 	if err != nil {
 		t.Fatalf("FAIL: unexpected error: %v", err)
 	}

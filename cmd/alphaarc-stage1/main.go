@@ -1,7 +1,7 @@
 package main
 
 import (
-	"protaxon/pkg/pipeline"
+	"alphaarc/pkg/pipeline"
 	"context"
 	"fmt"
 	"time"
@@ -9,7 +9,7 @@ import (
 
 func main() {
 	fmt.Println("==========================================================================================")
-	fmt.Println("       PROTAXON STAGE 1: NEUROMORPHIC MICRO-MLP ENGINE (TINY NEURAL NETWORKS)             ")
+	fmt.Println("       ALPHAARC STAGE 1: NEUROMORPHIC MICRO-MLP ENGINE (TINY NEURAL NETWORKS)             ")
 	fmt.Println("==========================================================================================")
 	fmt.Println("Substrate           : Tiny Online-Trained MLPs (Input -> Hidden -> Output) in Native Go")
 	fmt.Println("Core Architecture   : Micro-MLP Backprop + Modern Hopfield Attention + Ashby Homeostasis")
@@ -19,7 +19,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	fmt.Println("⚡ [COGNITIVE ENGINE]: Initializing micro-MLP neuromorphic Protaxon engine...")
+	fmt.Println("⚡ [COGNITIVE ENGINE]: Initializing micro-MLP neuromorphic AlphaARC engine...")
 	engine := pipeline.NewEngine()
 
 	tasks := []struct {
@@ -75,5 +75,5 @@ func main() {
 	fmt.Printf("Final Actor Trust        : %.2f\n", engine.Actor.TrustScore())
 	fmt.Printf("Subconscious Sleep Runs  : 2\n")
 
-	fmt.Println("\n✅ Neuromorphic Micro-MLP (Zero-LLM) Protaxon Stage 1 Engine executed successfully!")
+	fmt.Println("\n✅ Neuromorphic Micro-MLP (Zero-LLM) AlphaARC Stage 1 Engine executed successfully!")
 }

@@ -1,6 +1,6 @@
-// Command protaxon-arc-play actually PLAYS one real ARC-AGI-3 game end to
+// Command alphaarc-arc-play actually PLAYS one real ARC-AGI-3 game end to
 // end, using bridge.ChooseClickAction to pick every action -- unlike
-// cmd/protaxon-arc-smoke, which deliberately never calls Step().
+// cmd/alphaarc-arc-smoke, which deliberately never calls Step().
 //
 // Only games whose available_actions include ACTION6 are supported --
 // ChooseClickAction only ever proposes a click, so anything else isn't
@@ -21,8 +21,8 @@
 //
 // Requires ARC_API_KEY in the environment (see .env.example). Run:
 //
-//	go run ./cmd/protaxon-arc-play
-//	go run ./cmd/protaxon-arc-play -game <game_id> -actions 40
+//	go run ./cmd/alphaarc-arc-play
+//	go run ./cmd/alphaarc-arc-play -game <game_id> -actions 40
 package main
 
 import (
@@ -34,12 +34,12 @@ import (
 	"math/rand"
 	"strings"
 
-	"protaxon/pkg/environment"
-	"protaxon/pkg/environment/bridge"
-	"protaxon/pkg/environment/perception"
-	"protaxon/pkg/environment/remote"
-	"protaxon/pkg/goals"
-	"protaxon/pkg/pipeline"
+	"alphaarc/pkg/environment"
+	"alphaarc/pkg/environment/bridge"
+	"alphaarc/pkg/environment/perception"
+	"alphaarc/pkg/environment/remote"
+	"alphaarc/pkg/goals"
+	"alphaarc/pkg/pipeline"
 )
 
 func main() {
@@ -72,7 +72,7 @@ func main() {
 		target = games[0].GameID
 	}
 
-	cardID, err := client.OpenScorecard(ctx, []string{"protaxon-arc-play"})
+	cardID, err := client.OpenScorecard(ctx, []string{"alphaarc-arc-play"})
 	if err != nil {
 		log.Fatalf("open scorecard: %v", err)
 	}

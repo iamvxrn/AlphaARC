@@ -1,7 +1,7 @@
 package offline
 
 import (
-	"protaxon/pkg/graph"
+	"alphaarc/pkg/graph"
 	"sort"
 )
 

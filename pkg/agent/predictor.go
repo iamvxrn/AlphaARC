@@ -1,9 +1,9 @@
 package agent
 
 import (
-	"protaxon/pkg/core"
-	"protaxon/pkg/memory"
-	"protaxon/pkg/mlp"
+	"alphaarc/pkg/core"
+	"alphaarc/pkg/memory"
+	"alphaarc/pkg/mlp"
 	"context"
 	"fmt"
 )

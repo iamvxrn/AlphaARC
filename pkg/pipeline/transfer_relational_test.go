@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"protaxon/pkg/environment/perception"
+	"alphaarc/pkg/environment/perception"
 )
 
 // TestRelationalStructureImprovesTransfer is variant A's payoff measurement:

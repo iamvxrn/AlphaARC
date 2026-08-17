@@ -3,7 +3,7 @@
 // up the real ARC-AGI-3 network service (which needs an ARC_API_KEY).
 package practice
 
-import "protaxon/pkg/environment"
+import "alphaarc/pkg/environment"
 
 // Beacon is the simplest possible ARC-AGI-3-shaped game: a marker (color 1)
 // must reach a beacon (color 2) on an otherwise-blank 64x64 grid (color 0),

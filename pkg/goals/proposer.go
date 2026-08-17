@@ -2,7 +2,7 @@ package goals
 
 import (
 	"math"
-	"protaxon/pkg/memory"
+	"alphaarc/pkg/memory"
 )
 
 // ProposeIrreversibleTarget analyzes the HER transition memory and identifies

@@ -1,6 +1,6 @@
 package graph
 
-import "protaxon/pkg/core"
+import "alphaarc/pkg/core"
 
 // UpdateEligibilityTraces accumulates trace strength on every edge whose
 // source and target are both active this tick: Eligibility += pre*post.

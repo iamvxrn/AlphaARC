@@ -1,4 +1,4 @@
-// Command protaxon-arc-suite probes MANY ARC-AGI-3 games with the full agent
+// Command alphaarc-arc-suite probes MANY ARC-AGI-3 games with the full agent
 // for a short budget each, and prints an outcome matrix:
 //
 //	SOLVED      -- a level was completed (levels_completed > 0)
@@ -11,7 +11,7 @@
 // ChooseClickAction, the object tracker, expected-free-energy action choice --
 // just quiet and repeated. Real API calls: ~ suite * actions; keep both modest.
 //
-//	go run ./cmd/protaxon-arc-suite -suite 12 -actions 60
+//	go run ./cmd/alphaarc-arc-suite -suite 12 -actions 60
 package main
 
 import (
@@ -22,11 +22,11 @@ import (
 	"math/rand"
 	"strings"
 
-	"protaxon/pkg/environment"
-	"protaxon/pkg/environment/bridge"
-	"protaxon/pkg/environment/perception"
-	"protaxon/pkg/environment/remote"
-	"protaxon/pkg/pipeline"
+	"alphaarc/pkg/environment"
+	"alphaarc/pkg/environment/bridge"
+	"alphaarc/pkg/environment/perception"
+	"alphaarc/pkg/environment/remote"
+	"alphaarc/pkg/pipeline"
 )
 
 func main() {
@@ -76,7 +76,7 @@ func main() {
 			selected = append(selected, games[i].GameID)
 		}
 	}
-	cardID, err := client.OpenScorecard(ctx, []string{"protaxon-arc-suite"})
+	cardID, err := client.OpenScorecard(ctx, []string{"alphaarc-arc-suite"})
 	if err != nil {
 		log.Fatalf("open scorecard: %v", err)
 	}

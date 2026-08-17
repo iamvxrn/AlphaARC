@@ -1,4 +1,4 @@
-// Package bridge connects Protaxon's graph/router cognition
+// Package bridge connects AlphaARC's graph/router cognition
 // (pkg/pipeline.Engine) to an environment.Environment: Observe -> Decide ->
 // Act, closing the loop that Stage 4 built the pieces for but never drove
 // against a real interactive task.
@@ -8,15 +8,15 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"protaxon/pkg/environment"
-	"protaxon/pkg/environment/perception"
-	"protaxon/pkg/graph"
-	"protaxon/pkg/pipeline"
+	"alphaarc/pkg/environment"
+	"alphaarc/pkg/environment/perception"
+	"alphaarc/pkg/graph"
+	"alphaarc/pkg/pipeline"
 	"strings"
 )
 
 // DescribeFrame converts an agent/target position pair into a short
-// textual observation Protaxon's graph-based cognition can act on: just the
+// textual observation AlphaARC's graph-based cognition can act on: just the
 // bare direction words needed, nothing else. (Deliberately no filler words
 // like "target" -- EnsureConceptNodes would create a node for that word
 // too, and it would compete with the real direction concepts for the
@@ -54,7 +54,7 @@ var directionActions = map[string]environment.ActionID{
 // then reads back which direction concept actually won the Stage 2 router's
 // competition (res.ActiveNodeIDs) and maps that label to a game action.
 //
-// This deliberately reuses Protaxon's existing graph/router machinery as
+// This deliberately reuses AlphaARC's existing graph/router machinery as
 // the decision mechanism rather than adding a separate hand-written policy
 // -- but it is NOT a claim that the choice is "intelligent." With no prior
 // training on this specific task, which direction wins is governed by
@@ -351,7 +351,7 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 	// NOTE: action-conditioning of the forward model (branch A) is done by the
 	// caller AFTER it decides the final action type (click vs a simple action),
 	// since conditioning here would wrongly condition on "click" even when the
-	// caller ends up sending a simple action instead. See cmd/protaxon-arc-play.
+	// caller ends up sending a simple action instead. See cmd/alphaarc-arc-play.
 	return clickAction(labeled[chosenIndex].Blob), observation, clickedLabel, res, nil
 }
 

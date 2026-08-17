@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"protaxon/pkg/mlp"
+	"alphaarc/pkg/mlp"
 	"context"
 	"fmt"
 )

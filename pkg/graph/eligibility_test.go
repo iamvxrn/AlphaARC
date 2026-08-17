@@ -1,7 +1,7 @@
 package graph
 
 import (
-	"protaxon/pkg/core"
+	"alphaarc/pkg/core"
 	"testing"
 )
 

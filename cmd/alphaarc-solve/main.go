@@ -8,7 +8,7 @@ import (
 	"log"
 	"math"
 
-	"protaxon/pkg/environment/perception"
+	"alphaarc/pkg/environment/perception"
 )
 
 // ARCTask represents the standard ARC-AGI JSON format.

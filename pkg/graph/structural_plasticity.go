@@ -1,6 +1,6 @@
 package graph
 
-import "protaxon/pkg/core"
+import "alphaarc/pkg/core"
 
 // FormCoActivationEdges implements structural plasticity ("cells that fire
 // together, wire together"): for every ordered pair of nodes in activeIDs

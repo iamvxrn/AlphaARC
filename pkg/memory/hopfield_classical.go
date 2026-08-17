@@ -1,6 +1,6 @@
 package memory
 
-import "protaxon/pkg/core"
+import "alphaarc/pkg/core"
 
 type ClassicalHopfield struct {
 	N int

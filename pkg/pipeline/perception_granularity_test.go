@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"protaxon/pkg/environment/perception"
+	"alphaarc/pkg/environment/perception"
 )
 
 // blobRole is one synthetic recurring visual object: a small filled square

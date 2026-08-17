@@ -20,7 +20,7 @@ import (
 	"strings"
 	"time"
 
-	"protaxon/pkg/environment"
+	"alphaarc/pkg/environment"
 )
 
 // Client is a REST client for the ARC-AGI-3 API.

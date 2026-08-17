@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"protaxon/pkg/environment/perception"
+	"alphaarc/pkg/environment/perception"
 )
 
 // TestStructureWeightImprovesTransfer is variant-A step (2)'s real lever: the

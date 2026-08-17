@@ -1,4 +1,4 @@
-// Package environment defines Protaxon's side of an ARC-AGI-3-shaped
+// Package environment defines AlphaARC's side of an ARC-AGI-3-shaped
 // interaction loop: reset a level, submit one action, get back a frame.
 //
 // The types here deliberately mirror the OFFICIAL ARC-AGI-3 Python SDK
@@ -69,7 +69,7 @@ type Frame struct {
 	AvailableActions []ActionID
 }
 
-// Environment is Protaxon's side of the ARC-AGI-3 interaction loop.
+// Environment is AlphaARC's side of the ARC-AGI-3 interaction loop.
 // Implementations: a real network client (not built yet), or a local
 // practice environment (pkg/environment/practice) for offline development.
 type Environment interface {

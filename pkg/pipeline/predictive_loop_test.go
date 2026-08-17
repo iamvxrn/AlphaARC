@@ -1,8 +1,8 @@
 package pipeline
 
 import (
-	"protaxon/pkg/goals"
-	"protaxon/pkg/graph"
+	"alphaarc/pkg/goals"
+	"alphaarc/pkg/graph"
 	"context"
 	"fmt"
 	"math"
@@ -572,7 +572,7 @@ func TestAshbyShockRecoveryAtScale(t *testing.T) {
 // noted in ARCHITECTURE.md: Stage 3 (pkg/offline/abstraction_test.go) was
 // previously only verified against hand-injected synthetic clusters. This
 // runs the real engine through the same 10 observations used in
-// cmd/protaxon-stage1's benchmark demo, twice over (20 cycles, 4
+// cmd/alphaarc-stage1's benchmark demo, twice over (20 cycles, 4
 // Subconscious Sleep triggers), letting EnsureConceptNodes and
 // FormCoActivationEdges (both new) grow the graph's structure from real,
 // repeated experience instead of a single injected clique.

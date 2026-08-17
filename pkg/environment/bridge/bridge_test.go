@@ -2,9 +2,9 @@ package bridge
 
 import (
 	"context"
-	"protaxon/pkg/environment"
-	"protaxon/pkg/environment/practice"
-	"protaxon/pkg/pipeline"
+	"alphaarc/pkg/environment"
+	"alphaarc/pkg/environment/practice"
+	"alphaarc/pkg/pipeline"
 	"testing"
 )
 

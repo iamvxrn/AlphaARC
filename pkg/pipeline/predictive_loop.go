@@ -1,14 +1,14 @@
 package pipeline
 
 import (
-	"protaxon/pkg/agent"
-	"protaxon/pkg/conflict"
-	"protaxon/pkg/core"
-	"protaxon/pkg/goals"
-	"protaxon/pkg/graph"
-	"protaxon/pkg/homeostasis"
-	"protaxon/pkg/memory"
-	"protaxon/pkg/offline"
+	"alphaarc/pkg/agent"
+	"alphaarc/pkg/conflict"
+	"alphaarc/pkg/core"
+	"alphaarc/pkg/goals"
+	"alphaarc/pkg/graph"
+	"alphaarc/pkg/homeostasis"
+	"alphaarc/pkg/memory"
+	"alphaarc/pkg/offline"
 	"context"
 	"fmt"
 	"math"
@@ -88,7 +88,7 @@ type Engine struct {
 	Hopfield    *memory.ModernHopfield
 
 	// Predictor is the cluster-0 / generalist specialist -- kept as a direct
-	// field for backward compatibility (cmd/protaxon-stage1 and existing
+	// field for backward compatibility (cmd/alphaarc-stage1 and existing
 	// tests read it directly). Predictors[0] is always this same instance.
 	Predictor *agent.PredictorAgent
 	// Predictors is the Stage 4 MoE pool: one Predictor specialist per graph

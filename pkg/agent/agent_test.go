@@ -1,7 +1,7 @@
 package agent
 
 import (
-	"protaxon/pkg/core"
+	"alphaarc/pkg/core"
 	"context"
 	"testing"
 )

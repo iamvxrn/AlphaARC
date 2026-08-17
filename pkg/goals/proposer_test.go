@@ -1,7 +1,7 @@
 package goals
 
 import (
-	"protaxon/pkg/memory"
+	"alphaarc/pkg/memory"
 	"testing"
 )
 

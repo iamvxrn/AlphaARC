@@ -1,7 +1,7 @@
 package practice
 
 import (
-	"protaxon/pkg/environment"
+	"alphaarc/pkg/environment"
 	"testing"
 )
 

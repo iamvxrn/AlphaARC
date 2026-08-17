@@ -1,4 +1,4 @@
-// Command protaxon-arc-smoke is a minimal, safe connectivity check against
+// Command alphaarc-arc-smoke is a minimal, safe connectivity check against
 // the real ARC-AGI-3 service: list games, open a scorecard, reset the
 // first (or a chosen) game, print what a real frame actually looks like
 // through pkg/environment/perception, then close the scorecard.
@@ -11,8 +11,8 @@
 //
 // Requires ARC_API_KEY in the environment (see .env.example). Run:
 //
-//	go run ./cmd/protaxon-arc-smoke
-//	go run ./cmd/protaxon-arc-smoke -game <game_id>
+//	go run ./cmd/alphaarc-arc-smoke
+//	go run ./cmd/alphaarc-arc-smoke -game <game_id>
 package main
 
 import (
@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"log"
 
-	"protaxon/pkg/environment/perception"
-	"protaxon/pkg/environment/remote"
+	"alphaarc/pkg/environment/perception"
+	"alphaarc/pkg/environment/remote"
 )
 
 func main() {
@@ -58,7 +58,7 @@ func main() {
 		target = games[0].GameID
 	}
 
-	cardID, err := client.OpenScorecard(ctx, []string{"protaxon-smoke-test"})
+	cardID, err := client.OpenScorecard(ctx, []string{"alphaarc-smoke-test"})
 	if err != nil {
 		log.Fatalf("open scorecard: %v", err)
 	}

@@ -1,7 +1,7 @@
 package memory
 
 import (
-	"protaxon/pkg/core"
+	"alphaarc/pkg/core"
 	"math/rand"
 	"testing"
 )

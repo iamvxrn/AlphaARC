@@ -1,8 +1,8 @@
 package offline
 
 import (
-	"protaxon/pkg/core"
-	"protaxon/pkg/graph"
+	"alphaarc/pkg/core"
+	"alphaarc/pkg/graph"
 	"fmt"
 )
 

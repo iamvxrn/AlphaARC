@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"protaxon/pkg/environment"
-	"protaxon/pkg/environment/perception"
-	"protaxon/pkg/graph"
-	"protaxon/pkg/pipeline"
+	"alphaarc/pkg/environment"
+	"alphaarc/pkg/environment/perception"
+	"alphaarc/pkg/graph"
+	"alphaarc/pkg/pipeline"
 )
 
 func TestActionSucceeded(t *testing.T) {

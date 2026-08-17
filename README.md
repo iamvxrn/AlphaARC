@@ -59,7 +59,7 @@ Requires Go 1.23+. No external dependencies.
 
 ```sh
 go test -count=1 -v ./...             # full test suite
-go run ./cmd/protaxon-arc-smoke       # live connectivity check against the real
+go run ./cmd/alphaarc-arc-smoke       # live connectivity check against the real
                                        # ARC-AGI-3 service (needs your own ARC_API_KEY,
                                        # see .env.example)
 ```
