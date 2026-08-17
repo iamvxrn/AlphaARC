@@ -242,6 +242,13 @@ func ChooseClickAction(ctx context.Context, engine *pipeline.Engine, grid [][]in
 	if extraObs != "" {
 		observation += " " + extraObs
 	}
+	
+	// Inject the fully discriminative state signature for HER (RunPredictiveCycle
+	// strips this before giving it to the graph/MLP). We use DescribeGridCells
+	// to capture exact object positions, which completely resolves the aliasing
+	// where the structural observation mapped all frames to 0.98 similarity.
+	observation += " [GRID] " + perception.DescribeGridCells(grid, maxBlobs, cols, rows)
+	
 	actualSuccess := levelsCompletedIncreased || actionSucceeded(previousObservation, observation)
 	memory.Record(previousClickedLabel, actualSuccess)
 	// Branch C: a real level completion is the only ground-truth reward. When
