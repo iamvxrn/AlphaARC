@@ -126,8 +126,16 @@ func main() {
 	prevTopology := ""                       // last frame's object-topology signature, for conveyor-belt-aware stagnation
 
 	var actionQueue []environment.Action
-	compiler := &macro.IntentCompiler{}
-	_ = compiler
+	kinematics := macro.NewMotorKinematics(0) // Assuming background color is 0
+	compiler := &macro.IntentCompiler{Kinematics: kinematics}
+
+	// For the Macro hypothesis testing
+	macrosToTest := []macro.Program{
+		&macro.MirrorXProgram{},
+		&macro.MirrorYProgram{},
+		&macro.FractalExpandProgram{},
+	}
+	currentMacroIdx := 0
 
 	for actionsTaken < *maxActions {
 
@@ -135,7 +143,11 @@ func main() {
 			action := actionQueue[0]
 			actionQueue = actionQueue[1:]
 			
-			fmt.Printf("action %d: [MOTOR AGENT] executing queued macro click (%d, %d)\n", actionsTaken+1, action.X, action.Y)
+			if action.ID == environment.Action6 {
+				fmt.Printf("action %d: [MOTOR AGENT] executing queued macro click (%d, %d)\n", actionsTaken+1, action.X, action.Y)
+			} else {
+				fmt.Printf("action %d: [MOTOR AGENT] executing queued button %d\n", actionsTaken+1, action.ID)
+			}
 			
 			newFrame, stepErr := sess.Step(action)
 			actionsTaken++
@@ -147,31 +159,43 @@ func main() {
 			if newFrame.State != environment.StateNotFinished {
 				fmt.Printf("Motor Agent interrupted: state changed to %s\n", newFrame.State)
 				actionQueue = nil
+			} else if newFrame.LevelsCompleted > frame.LevelsCompleted {
+				fmt.Printf("Motor Agent interrupted: LEVEL UP!\n")
+				actionQueue = nil
+				kinematics = macro.NewMotorKinematics(0) // Reset kinematics for new level
+				compiler.Kinematics = kinematics
+				currentMacroIdx = 0
 			}
 			frame = newFrame
 			continue
 		}
 
-		// (MOTOR AGENT HOOK): If a Meta-Solver proposes a TargetGrid, compile it:
-		// if targetGrid != nil {
-		//     actionQueue = compiler.Compile(frame.Grid, targetGrid)
-		//     targetGrid = nil
-		//     continue
-		// }
+		// (MACRO META-SOLVER HOOK)
+		// If we are fully calibrated (or clicks are allowed), propose a TargetGrid:
+		canUseMacros := hasAction6(frame.AvailableActions) || kinematics.CheckCalibrated()
+		if canUseMacros && currentMacroIdx < len(macrosToTest) {
+			macroProg := macrosToTest[currentMacroIdx]
+			fmt.Printf("action %d: [CORTEX] Testing macro hypothesis: %T\n", actionsTaken+1, macroProg)
+			targetGrid := macroProg.Apply(frame.Grid)
+			
+			actionQueue = compiler.Compile(frame.Grid, targetGrid)
+			currentMacroIdx++
+			if len(actionQueue) > 0 {
+				fmt.Printf("action %d: [CORTEX] Compiled %T into %d actions\n", actionsTaken+1, macroProg, len(actionQueue))
+				continue
+			} else {
+				fmt.Printf("action %d: [CORTEX] Macro %T caused no changes, skipping\n", actionsTaken+1, macroProg)
+			}
+		}
+
 		if !hasAction6(frame.AvailableActions) {
-			// BUTTON-ONLY AGENT: this game has no pixel clicks, only
-			// discrete controls (Action1-5). We explore them, learn their
-			// effects, and exploit the ones that move us toward the goal.
+			// BUTTON-ONLY AGENT (Calibration / Fallback Mode)
 			buttons := availableSimpleActions(frame.AvailableActions)
 			if len(buttons) == 0 {
 				fmt.Printf("no actions available at all -- stopping\n")
 				break
 			}
 
-			// Phase 1 (Probe): if we haven't tried all buttons yet, pick
-			// the least-tried one to learn what it does.
-			// Phase 2 (Exploit): once every button has been tried at least
-			// once, pick the one with the best observed preference gain.
 			type buttonStats struct {
 				tries     int
 				totalGain float64
@@ -182,44 +206,21 @@ func main() {
 				btnStats[b] = &buttonStats{}
 			}
 
-			fmt.Printf("BUTTON-ONLY MODE: %d buttons available %v\n", len(buttons), buttons)
+			fmt.Printf("BUTTON-ONLY MODE: Calibration Phase for %d buttons\n", len(buttons))
 
 			for actionsTaken < *maxActions {
-				// Pick action: least-tried first (probe), then best average gain (exploit)
+				if kinematics.CheckCalibrated() {
+					fmt.Printf("action %d: KINEMATICS CALIBRATED. Yielding to Cortex Macro Planner.\n", actionsTaken+1)
+					break // Break out of inner exploration loop to let Cortex run Macros
+				}
+
+				// Pick least-tried action to ensure we calibrate all directions
 				var chosenBtn environment.ActionID
 				minTries := math.MaxInt32
 				for _, b := range buttons {
 					if btnStats[b].tries < minTries {
 						minTries = btnStats[b].tries
-					}
-				}
-
-				if minTries == 0 {
-					// Probe: pick a button we haven't tried yet
-					for _, b := range buttons {
-						if btnStats[b].tries == 0 {
-							chosenBtn = b
-							break
-						}
-					}
-				} else {
-					// Exploit: pick button with best average preference gain,
-					// with a small exploration bonus for under-tried buttons
-					bestScore := math.Inf(-1)
-					for _, b := range buttons {
-						avg := btnStats[b].totalGain / float64(btnStats[b].tries)
-						exploration := 0.1 / float64(1+btnStats[b].tries)
-						score := avg + exploration
-						if score > bestScore {
-							bestScore = score
-							chosenBtn = b
-						}
-					}
-
-					// If ALL buttons have negative average gain and we've tried
-					// each at least twice, try random exploration to break out
-					if bestScore < 0 && minTries >= 2 {
-						chosenBtn = buttons[rand.Intn(len(buttons))]
+						chosenBtn = b
 					}
 				}
 
@@ -230,28 +231,26 @@ func main() {
 				newFrame, stepErr := sess.Step(action)
 				actionsTaken++
 				if stepErr != nil {
-					fmt.Printf("action %d: button %v step failed: %v\n", actionsTaken, chosenBtn, stepErr)
 					break
 				}
 
-				// Measure what changed
+				// Kinematics Calibration Observation
+				kinematics.Observe(chosenBtn, preGrid, newFrame.Grid)
+
 				gridDelta := gridChangeMagnitude(preGrid, newFrame.Grid)
 				newPref := preferenceOf(newFrame.Grid)
 				prefDelta := newPref - prePref
 				leveledUp := newFrame.LevelsCompleted > frame.LevelsCompleted
 
-				// Update stats
 				btnStats[chosenBtn].tries++
 				btnStats[chosenBtn].totalGain += prefDelta
 				btnStats[chosenBtn].lastGain = prefDelta
 
-				// Feed into hypothesis tester
 				tester.Observe(newFrame.Grid)
 
-				fmt.Printf("action %d: BUTTON %v -> grid_delta=%d pref=%+.4f sat=%.3f levels=%d%s\n",
+				fmt.Printf("action %d: CALIBRATE BUTTON %v -> grid_delta=%d pref=%+.4f sat=%.3f levels=%d\n",
 					actionsTaken, chosenBtn, gridDelta, prefDelta,
-					tester.Satisfaction(newFrame.Grid), newFrame.LevelsCompleted,
-					map[bool]string{true: " LEVEL UP!", false: ""}[leveledUp])
+					tester.Satisfaction(newFrame.Grid), newFrame.LevelsCompleted)
 
 				frame = newFrame
 				prevPreference = newPref
@@ -259,65 +258,40 @@ func main() {
 				if leveledUp {
 					tester.WarmStart()
 					engine.ForgetGoal()
-					fmt.Printf("action %d: LEVEL %d COMPLETED via button %v\n",
-						actionsTaken, frame.LevelsCompleted, chosenBtn)
-					// Reset button stats for new level (physics may change)
+					kinematics = macro.NewMotorKinematics(0)
+					compiler.Kinematics = kinematics
+					currentMacroIdx = 0
 					for _, b := range buttons {
 						btnStats[b] = &buttonStats{}
 					}
 				}
 
-				// Terminal states
 				if frame.State == environment.StateWin || frame.State == environment.StateGameOver {
 					won := frame.State == environment.StateWin || leveledUp
 					newSkills := engine.HER.EndEpisode(won)
 					fmt.Printf("terminal %s (won=%v, +%d skills)\n", frame.State, won, newSkills)
 
 					if frame.State == environment.StateGameOver {
-						resetFrame, resetErr := sess.Reset()
-						if resetErr != nil {
-							fmt.Printf("reset failed: %v -- stopping\n", resetErr)
-							break
-						}
+						resetFrame, _ := sess.Reset()
 						frame = resetFrame
 						engine.HER.BeginEpisode(target)
 						tester.Refute()
 						prevPreference = preferenceOf(frame.Grid)
+						kinematics = macro.NewMotorKinematics(0)
+						compiler.Kinematics = kinematics
+						currentMacroIdx = 0
 						for _, b := range buttons {
 							btnStats[b] = &buttonStats{}
 						}
-						fmt.Printf("reset: testing next hypothesis %q\n", tester.Current().Name)
 						continue
 					}
-					break // WIN -> done
-				}
-
-				// Stagnation detection: if grid hasn't changed for several
-				// button presses, try resetting to attempt a different strategy
-				if gridDelta == 0 {
-					stagnation++
-				} else {
-					stagnation = 0
-				}
-				if stagnation >= len(buttons)*3 {
-					fmt.Printf("action %d: stagnation (%d dead presses) -- resetting\n", actionsTaken, stagnation)
-					resetFrame, resetErr := sess.Reset()
-					if resetErr != nil {
-						break
-					}
-					frame = resetFrame
-					engine.HER.EndEpisode(false)
-					engine.HER.BeginEpisode(target)
-					tester.Refute()
-					prevPreference = preferenceOf(frame.Grid)
-					stagnation = 0
-					for _, b := range buttons {
-						btnStats[b] = &buttonStats{}
-					}
-					fmt.Printf("reset: trying hypothesis %q\n", tester.Current().Name)
+					break
 				}
 			}
-			break // exit the outer loop after button-only mode completes
+			if frame.State == environment.StateWin {
+				break
+			}
+			continue
 		}
 
 		// Diagnostic: total blobs actually present this frame, UNBOUNDED by
