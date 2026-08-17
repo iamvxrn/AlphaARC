@@ -40,6 +40,7 @@ import (
 	"alphaarc/pkg/environment/remote"
 	"alphaarc/pkg/goals"
 	"alphaarc/pkg/pipeline"
+	"alphaarc/pkg/macro"
 )
 
 func main() {
@@ -124,7 +125,39 @@ func main() {
 	tracker := perception.NewObjectTracker() // stable object identity + motion across frames (Core Knowledge)
 	prevTopology := ""                       // last frame's object-topology signature, for conveyor-belt-aware stagnation
 
+	var actionQueue []environment.Action
+	compiler := &macro.IntentCompiler{}
+	_ = compiler
+
 	for actionsTaken < *maxActions {
+
+		if len(actionQueue) > 0 {
+			action := actionQueue[0]
+			actionQueue = actionQueue[1:]
+			
+			fmt.Printf("action %d: [MOTOR AGENT] executing queued macro click (%d, %d)\n", actionsTaken+1, action.X, action.Y)
+			
+			newFrame, stepErr := sess.Step(action)
+			actionsTaken++
+			if stepErr != nil {
+				fmt.Printf("action %d: step failed: %v\n", actionsTaken, stepErr)
+				break
+			}
+			
+			if newFrame.State != environment.StateNotFinished {
+				fmt.Printf("Motor Agent interrupted: state changed to %s\n", newFrame.State)
+				actionQueue = nil
+			}
+			frame = newFrame
+			continue
+		}
+
+		// (MOTOR AGENT HOOK): If a Meta-Solver proposes a TargetGrid, compile it:
+		// if targetGrid != nil {
+		//     actionQueue = compiler.Compile(frame.Grid, targetGrid)
+		//     targetGrid = nil
+		//     continue
+		// }
 		if !hasAction6(frame.AvailableActions) {
 			fmt.Printf("game does not offer ACTION6 (available: %v) -- ChooseClickAction only proposes clicks, stopping\n", frame.AvailableActions)
 			break

@@ -1,6 +1,6 @@
 # Executables & Binaries
-alphaarc-*
-protaxon-*
+/alphaarc-*
+/protaxon-*
 *.exe
 *.exe;
 *.dll
