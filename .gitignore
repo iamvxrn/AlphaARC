@@ -1,6 +1,6 @@
 # Executables & Binaries
-protaxon
-a
+alphaarc-*
+protaxon-*
 *.exe
 *.exe;
 *.dll
@@ -25,4 +25,3 @@ CONCEPT.md
 *.key
 
 *.log
-/protaxon-arc-play
