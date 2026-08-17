@@ -38,6 +38,7 @@ import (
 	"protaxon/pkg/environment/bridge"
 	"protaxon/pkg/environment/perception"
 	"protaxon/pkg/environment/remote"
+	"protaxon/pkg/goals"
 	"protaxon/pkg/pipeline"
 )
 
@@ -114,6 +115,10 @@ func main() {
 	deadCount := map[string]float64{}                             // per action type: decaying count of "did nothing" (inhibition of return / taboo)
 	tries := map[string]int{}                                     // per action type: how many times chosen (optimism for the under-tried)
 	stagnation := 0                                               // consecutive actions with no frame change and no level progress
+	
+	var startState []float64
+	startStateCaptured := false
+	
 	lastActionTok := ""
 	prevNumeric := ""                        // last frame's numeric progress tokens (nobj*/tdist*), for per-target inhibition of return
 	tracker := perception.NewObjectTracker() // stable object identity + motion across frames (Core Knowledge)
@@ -155,10 +160,13 @@ func main() {
 		// count, quantized distance to the salient target) so the observation
 		// carries a genuine sense of number, not only categorical tokens.
 		numericObs := strings.Join(perception.NumericTokens(frame.Grid), " ")
-		// (Relational tokens -- touch/inside/aligned -- are emitted inside
-		// DescribeGridStructural with the structural transfer-weight, not here, so
-		// they aren't double-counted; see perception.DescribeGridStructural.)
 		motionObs := strings.Join(append(tracker.Track(frame.Grid), numericObs), " ")
+		
+		if !startStateCaptured {
+			startState = pipeline.ObservationVector(perception.DescribeGridStructural(frame.Grid, *maxBlobs, *cols, *rows) + " " + motionObs)
+			startStateCaptured = true
+		}
+		
 		topo := tracker.TopologySignature()
 		topologyChanged := topo != prevTopology
 		prevTopology = topo
@@ -301,9 +309,20 @@ func main() {
 		// takes over as it accrues.
 		graphPick := "click-" + clickedLabel
 		curHyp := tester.Current()
-		// HER goal-conditioned steer: once a real win-state is known, ask the skill
+		
+		// Goal Proposer (Irreversibility): if we don't have a victory-proven herTarget,
+		// search memory for an irreversible milestone (a state we reached but couldn't
+		// return from). This gives HER a "where to go" without needing a win.
+		if herTarget == nil {
+			if prop := goals.ProposeIrreversibleTarget(engine.HER, startState, 0.999); prop != nil {
+				herTarget = prop
+				fmt.Printf("action %d: Goal Proposer identified irreversible milestone from memory as herTarget\n", actionsTaken+1)
+			}
+		}
+		
+		// HER goal-conditioned steer: once a target state is known (from win or proposer), ask the skill
 		// repertoire for the SHORTEST program that reaches a state like it (Occam),
-		// and bias its first action. Empty until a win defines herTarget.
+		// and bias its first action.
 		herFirst := ""
 		if herTarget != nil {
 			if sk, _ := engine.HER.ShortestSkillTo(herTarget, herMinSim); sk != nil && len(sk.Actions) > 0 {
@@ -534,6 +553,8 @@ func main() {
 			prevLevelsCompleted = frame.LevelsCompleted
 			prevPreference = preferenceOf(frame.Grid)
 			stagnation = 0
+			startStateCaptured = false
+			herTarget = nil // re-propose target on fresh attempt
 			continue
 		}
 	}
