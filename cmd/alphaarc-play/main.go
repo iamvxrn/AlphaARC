@@ -197,9 +197,10 @@ func main() {
 			}
 
 			type buttonStats struct {
-				tries     int
-				totalGain float64
-				lastGain  float64
+				tries      int
+				totalGain  float64
+				lastGain   float64
+				experience float64 // Epistemic experience gained from errors
 			}
 			btnStats := map[environment.ActionID]*buttonStats{}
 			for _, b := range buttons {
@@ -233,10 +234,22 @@ func main() {
 					}
 				} else {
 					bestScore := math.Inf(-1)
+					// Cortisol rises when the agent stagnates (fear of getting stuck).
+					cortisol := float64(stagnation) / 15.0 
+
 					for _, b := range buttons {
-						avg := btnStats[b].totalGain / float64(btnStats[b].tries)
-						exploration := 0.1 / float64(1+btnStats[b].tries)
-						score := avg + exploration
+						pragmaticAvg := btnStats[b].totalGain / float64(btnStats[b].tries)
+						
+						// Dopamine: Gained from 'Experience' (errors/mistakes). Counteracts Cortisol.
+						dopamineBonus := btnStats[b].experience * 0.05
+						
+						// Cortisol amplifies the drive for Epistemic exploration over Pragmatic exploitation
+						exploration := (0.1 + dopamineBonus) / float64(1+btnStats[b].tries)
+						if cortisol > 0.5 {
+							exploration *= 2.0 // High stress = higher desperate curiosity
+						}
+						
+						score := pragmaticAvg + exploration
 						if score > bestScore {
 							bestScore = score
 							chosenBtn = b
@@ -268,6 +281,12 @@ func main() {
 				btnStats[chosenBtn].tries++
 				btnStats[chosenBtn].totalGain += prefDelta
 				btnStats[chosenBtn].lastGain = prefDelta
+
+				// 🧠 "Ошибка это не только стресс, а ещё и опыт. А полученный опыт даёт немного дофамина"
+				// If we drifted away from the goal (prefDelta <= 0), we gain epistemic experience.
+				if prefDelta <= 0 {
+					btnStats[chosenBtn].experience += 1.0
+				}
 
 				tester.Observe(newFrame.Grid)
 
