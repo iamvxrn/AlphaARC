@@ -106,7 +106,7 @@ func main() {
 	// the agent killed). One place so in-loop, init, and post-reset can't drift.
 	preferenceOf := func(grid [][]int) float64 {
 		vec := pipeline.ObservationVector(perception.DescribeGridStructural(grid, *maxBlobs, *cols, *rows))
-		return engine.LearnedPreference(vec) + hypWeight*tester.Satisfaction(grid) - dangerAvoidWeight*engine.DangerProximity(vec)
+		return engine.LearnedPreference(vec) + hypWeight*macro.DriveScore(grid, perception.BackgroundColor(grid)) - dangerAvoidWeight*engine.DangerProximity(vec)
 	}
 	actionsTaken := 0
 	prevObservation := ""
@@ -129,13 +129,32 @@ func main() {
 	kinematics := macro.NewMotorKinematics(0) // Assuming background color is 0
 	compiler := &macro.IntentCompiler{Kinematics: kinematics}
 
-	// For the Macro hypothesis testing
-	macrosToTest := []macro.Program{
-		&macro.MirrorXProgram{},
-		&macro.MirrorYProgram{},
-		&macro.FractalExpandProgram{},
-	}
+	// Cortex pixel-repaint macros are DISABLED for the live ARC-3 agent.
+	// They are a Floor-2 (static ARC-1/2) paradigm: MacroProg.Apply proposes a
+	// whole target grid, then IntentCompiler diffs it into one click per differing
+	// pixel -- e.g. MirrorX on vc33 compiled into 1592 clicks and drained the entire
+	// 200-action budget on a single macro, so control never reached the Floor-1
+	// compression-driven click selection below (the [DRIVE] path). Emptying the list
+	// bypasses that branch and lets the interactive agent run: perceive -> learn
+	// affordances -> pick the click whose class-macro most raises DriveScore. The
+	// Program types remain for cmd/alphaarc-solve (the static Track B).
+	macrosToTest := []macro.Program{}
 	currentMacroIdx := 0
+
+	// promoteMacro moves the macro at idx to the front of macrosToTest so it is
+	// tried FIRST on subsequent levels, while every other macro still follows it
+	// (full coverage preserved). Used to warm-start the Cortex from the macro that
+	// just completed a level -- ARC-3 levels within one game usually share the rule,
+	// and a level_up is the ONE real reward the environment gives, so the winning
+	// macro is hard evidence about the goal, not a guessed prior.
+	promoteMacro := func(idx int) {
+		if idx <= 0 || idx >= len(macrosToTest) {
+			return // idx 0 is already first; out-of-range is a no-op
+		}
+		m := macrosToTest[idx]
+		macrosToTest = append(macrosToTest[:idx], macrosToTest[idx+1:]...)
+		macrosToTest = append([]macro.Program{m}, macrosToTest...)
+	}
 
 	for actionsTaken < *maxActions {
 
@@ -162,6 +181,14 @@ func main() {
 			} else if newFrame.LevelsCompleted > frame.LevelsCompleted {
 				fmt.Printf("Motor Agent interrupted: LEVEL UP!\n")
 				actionQueue = nil
+				// The macro that built this queue just completed a level. currentMacroIdx
+				// was incremented right after compiling (line ~191), so the winner is at
+				// currentMacroIdx-1. Warm-start the next level by trying it FIRST.
+				winnerIdx := currentMacroIdx - 1
+				if winnerIdx >= 0 && winnerIdx < len(macrosToTest) {
+					fmt.Printf("  [CORTEX] promoting winning macro %T to front for next level\n", macrosToTest[winnerIdx])
+					promoteMacro(winnerIdx)
+				}
 				kinematics = macro.NewMotorKinematics(0) // Reset kinematics for new level
 				compiler.Kinematics = kinematics
 				currentMacroIdx = 0
@@ -493,6 +520,17 @@ func main() {
 
 		fmt.Printf("action %d: perceives %q (changed since last frame: %v, levels_completed_increased: %v, curiosity=%.4f, stagnation=%d)\n",
 			actionsTaken+1, observation, changedSinceLastFrame, levelsCompletedIncreased, engine.Homeostasis.Curiosity, stagnation)
+
+		// Compression-drive diagnostic: which Core-Knowledge primitive currently
+		// compresses this frame best, and by how many bits. This is the emergent
+		// goal signal the agent is now driven by -- watching it climb (or not) tells
+		// us the drive itself is alive independent of whether the game is solved.
+		{
+			dbg := perception.BackgroundColor(frame.Grid)
+			bp, sav := macro.BestPrimitive(frame.Grid, dbg)
+			fmt.Printf("action %d: [DRIVE] best=%s savings=%d score=%.3f\n",
+				actionsTaken+1, bp.Name, sav, macro.DriveScore(frame.Grid, dbg))
+		}
 		// Diagnostic: the predictive-coding signals from THIS cycle's internal
 		// forward model. forecast_error is how wrong the PREVIOUS cycle's
 		// prediction of this frame turned out to be -- a real cross-cycle
@@ -570,7 +608,13 @@ func main() {
 		// per-object gains ~0) the graph decides, and the learned per-object signal
 		// takes over as it accrues.
 		graphPick := "click-" + clickedLabel
-		curHyp := tester.Current()
+		// Compression drive (the emergent goal, proven offline): score a candidate
+		// class-macro by how much it RAISES structural compression -- DriveScore =
+		// best-primitive bits saved, normalized to [0,1] -- instead of a hand-authored
+		// invariant. The agent pursues whatever regularity (symmetry / periodicity /
+		// repeated objects) compresses THIS grid, decided per grid by the data.
+		frameBg := perception.BackgroundColor(frame.Grid)
+		driveScore := func(g [][]int) float64 { return macro.DriveScore(g, frameBg) }
 		
 		// Goal Proposer (Irreversibility): if we don't have a victory-proven herTarget,
 		// search memory for an irreversible milestone (a state we reached but couldn't
@@ -619,7 +663,7 @@ func main() {
 			// step). Unknown-affordance class -> epistemic bonus (babbling).
 			pragmatic := 0.0
 			if ob, ok := clickByToken[c]; ok {
-				if v, known := afford.MacroValue(frame.Grid, ob.Blob.Color, curHyp.Score); known {
+				if v, known := afford.MacroValue(frame.Grid, ob.Blob.Color, driveScore); known {
 					pragmatic = pragmaticBeta * v
 				} else {
 					pragmatic = epistemicBonus
