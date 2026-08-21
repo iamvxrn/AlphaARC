@@ -115,6 +115,7 @@ func main() {
 	prevPreference := preferenceOf(frame.Grid)
 	deadCount := map[string]float64{}                             // per action type: decaying count of "did nothing" (inhibition of return / taboo)
 	tries := map[string]int{}                                     // per action type: how many times chosen (optimism for the under-tried)
+	driveGain := map[string]float64{}                             // per action token: EMA of OBSERVED compression gain (model-free reinforcement)
 	stagnation := 0                                               // consecutive actions with no frame change and no level progress
 	
 	var startState []float64
@@ -692,7 +693,8 @@ func main() {
 					pragmatic = epistemicBonus
 				}
 			}
-			if v := efe + optimism - taboo + prior + pragmatic; v > bestVal {
+			drive := driveGainWeight * driveGain[c] // reinforce clicks that actually raised compression
+			if v := efe + optimism - taboo + prior + pragmatic + drive; v > bestVal {
 				bestVal, chosenTok = v, c
 			}
 		}
@@ -750,6 +752,17 @@ func main() {
 		if !exploredAction && action.ID == environment.Action6 {
 			afford.ObserveClick(preStepGrid, frame.Grid, action.X, action.Y)
 		}
+
+		// Model-free compression reinforcement. The affordance MODEL cannot learn
+		// vc33-style buttons: the effect is 264 cells > maxChangeCells (dropped as a
+		// cascade), keyed by colour (both 9-buttons collide), and stored relative to
+		// the trigger though the effect is absolute. But the OBSERVED compression delta
+		// is unambiguous -- credit each clicked token with how much it actually raised
+		// the drive's savings, so the grow button (savings up) is reinforced and shrink
+		// (savings down) suppressed. This is the validated gradient (probe: grow
+		// 1332->1390 completes L1) doing the work the predictor cannot.
+		dd := float64(macro.DrivePreference(frame.Grid, frameBg) - macro.DrivePreference(preStepGrid, frameBg))
+		driveGain[chosenTok] = 0.6*driveGain[chosenTok] + 0.4*dd
 
 		// Pragmatic drive (source of meaning). LEARNED, not guessed (the dream):
 		// if this action completed a level, remember the winning state as the
@@ -985,6 +998,12 @@ const (
 	// a genuinely learned high-value class-macro (pragmaticBeta * real Δsavings) can
 	// still exceed it once affordances are learned.
 	residualBonus = 0.15
+	// driveGainWeight scales the model-free observed-compression reinforcement.
+	// A vc33 grow click raises savings by ~19; at 0.02 that is a +0.38 bonus that
+	// dominates optimism/prior, while a shrink click (~-21) is strongly suppressed,
+	// so after one exploratory try of each button the agent locks onto grow. Raw
+	// savings scale with grid size, so this may need per-game tuning later.
+	driveGainWeight = 0.02
 	herMinSim = 0.6
 )
 
