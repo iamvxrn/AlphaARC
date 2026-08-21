@@ -41,11 +41,11 @@ func colorCounts(grid [][]int) map[int]int {
 	return m
 }
 
-func diff(a, b [][]int) []string {
+func diffBoard(a, b [][]int) []string {
 	var d []string
 	for r := range a {
 		if r == 0 {
-			continue // row 0 is the move-counter bar (every click flips (63,0)); ignore it
+			continue // counter bar
 		}
 		for c := range a[r] {
 			if c < len(b[r]) && a[r][c] != b[r][c] {
@@ -54,6 +54,18 @@ func diff(a, b [][]int) []string {
 		}
 	}
 	return d
+}
+
+// growToLevel clicks the L1 grow button until levels_completed reaches `want`
+// (or gives up). Returns the frame at that level.
+func growToLevel(sess *remote.Session, want int) (environment.Frame, int) {
+	f, _ := sess.Reset()
+	clicks := 0
+	for i := 0; i < 12 && f.LevelsCompleted < want; i++ {
+		f, _ = sess.Step(environment.Action{ID: environment.Action6, X: 60, Y: 32})
+		clicks++
+	}
+	return f, clicks
 }
 
 func main() {
@@ -69,57 +81,54 @@ func main() {
 		os.Exit(1)
 	}
 	defer client.CloseScorecard(ctx, card)
-
 	sess := remote.NewSession(client, "vc33-5430563c", card)
-	frame, err := sess.Reset()
-	if err != nil {
-		fmt.Println("reset:", err)
-		os.Exit(1)
-	}
-	h := len(frame.Grid)
-	w := 0
-	if h > 0 {
-		w = len(frame.Grid[0])
-	}
-	fmt.Printf("=== INITIAL vc33 grid %dx%d state=%s actions=%v levels=%d ===\n", w, h, frame.State, frame.AvailableActions, frame.LevelsCompleted)
-	render(frame.Grid)
-	fmt.Printf("colors: %v\n", colorCounts(frame.Grid))
 
-	// DOES THE COMPRESSION DRIVE GIVE A GRADIENT ON THE REAL MECHANIC?
-	// vc33 = two buttons: (60,32) grows the colour-3 region, (60,24) shrinks it.
-	// Click GROW repeatedly and watch DriveScore/BestPrimitive + the region's right
-	// edge. A monotone move = the drive can steer this game.
-	probe := func(label string, bx, by, n int) {
-		f, _ := sess.Reset()
-		bg := perception.BackgroundColor(f.Grid)
-		fmt.Printf("\n=== %s button (%d,%d) x%d ===\n", label, bx, by, n)
-		report := func(step int, fr environment.Frame) {
-			bp, sav := macro.BestPrimitive(fr.Grid, bg)
-			// right edge of the colour-3 block on row 1
-			edge := -1
-			for c := 0; c < len(fr.Grid[1]); c++ {
-				if fr.Grid[1][c] == 3 {
-					edge = c
-				}
+	// Reach Level 2 by solving L1 with the known grow button.
+	f, clicks := growToLevel(sess, 1)
+	fmt.Printf("=== reached level=%d after %d grow clicks, state=%s ===\n", f.LevelsCompleted, clicks, f.State)
+	bg := perception.BackgroundColor(f.Grid)
+	fmt.Printf("=== LEVEL 2 grid %dx%d ===\n", len(f.Grid[0]), len(f.Grid))
+	render(f.Grid)
+	fmt.Printf("colors: %v  bg=%d\n", colorCounts(f.Grid), bg)
+	bp, sav := macro.BestPrimitive(f.Grid, bg)
+	fmt.Printf("L2 drive: best=%s savings=%d score=%.3f residualClusters=%d\n",
+		bp.Name, sav, macro.DriveScore(f.Grid, bg), len(macro.ResidualTargets(f.Grid, bg, 12)))
+
+	if os.Getenv("RENDER_ONLY") != "" {
+		return
+	}
+	// Targeted sweep of L2: probe a coarse grid, re-solving L1 before each click so
+	// every probe is tested from the SAME L2 state. Report only board-changing clicks.
+	step := 4
+	fmt.Printf("\n=== L2 CLICK SWEEP (step %d), board-changing clicks only ===\n", step)
+	h := len(f.Grid)
+	w := len(f.Grid[0])
+	changers := 0
+	for y := 0; y < h; y += step {
+		for x := 0; x < w; x += step {
+			base, _ := growToLevel(sess, 1) // back to fresh L2
+			if base.LevelsCompleted < 1 {
+				continue
 			}
-			fmt.Printf("step %2d: levels=%d state=%s | best=%s savings=%d score=%.3f | 3-edge(row1)=%d residualClusters=%d\n",
-				step, fr.LevelsCompleted, fr.State, bp.Name, sav, macro.DriveScore(fr.Grid, bg),
-				edge, len(macro.ResidualTargets(fr.Grid, bg, 8)))
-		}
-		report(0, f)
-		for i := 1; i <= n; i++ {
-			f, err = sess.Step(environment.Action{ID: environment.Action6, X: bx, Y: by})
+			f1, err := sess.Step(environment.Action{ID: environment.Action6, X: x, Y: y})
 			if err != nil {
 				fmt.Println("step:", err)
 				return
 			}
-			report(i, f)
-			if f.State != environment.StateNotFinished {
-				fmt.Printf("  -> terminal %s at step %d\n", f.State, i)
-				break
+			d := diffBoard(base.Grid, f1.Grid)
+			lvUp := f1.LevelsCompleted > base.LevelsCompleted
+			if len(d) > 0 || lvUp || f1.State != environment.StateNotFinished {
+				changers++
+				show := d
+				if len(show) > 5 {
+					show = show[:5]
+				}
+				_, s0 := macro.BestPrimitive(base.Grid, bg)
+				_, s1 := macro.BestPrimitive(f1.Grid, bg)
+				fmt.Printf("click (%d,%d) -> %d cells, levels=%d state=%s dSavings=%+d %v\n",
+					x, y, len(d), f1.LevelsCompleted, f1.State, s1-s0, show)
 			}
 		}
 	}
-	probe("GROW", 60, 32, 20)
-	probe("SHRINK", 60, 24, 20)
+	fmt.Printf("=== L2 sweep done: %d board-changing clicks ===\n", changers)
 }

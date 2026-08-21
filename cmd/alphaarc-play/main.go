@@ -495,6 +495,23 @@ func main() {
 		// Hard reset: if nothing meaningful has happened for 15 actions,
 		// the current strategy is dead. Reset, switch hypothesis, try again.
 		if stagnation >= 15 {
+			if frame.LevelsCompleted > 0 {
+				// We already cleared level(s). A full game reset rewinds past them
+				// (vc33's reset returns to L1), throwing the progress away and looping
+				// forever re-solving L1. Instead PERSIST on the current level: wipe the
+				// taboo + reinforcement state so the agent re-explores THIS level's
+				// mechanic from scratch, spike curiosity, rotate the hypothesis, and keep
+				// the current frame -- no rewind.
+				fmt.Printf("action %d: STAGNATION on level %d (%d dead) -- persisting & re-exploring (no rewind)\n",
+					actionsTaken+1, frame.LevelsCompleted, stagnation)
+				tester.Refute()
+				stagnation = 0
+				engine.Homeostasis.Curiosity = 1.0
+				deadCount = map[string]float64{}
+				tries = map[string]int{}
+				driveGain = map[string]float64{}
+				continue
+			}
 			fmt.Printf("action %d: HARD STAGNATION RESET (%d dead actions) -- resetting and switching hypothesis\n", actionsTaken+1, stagnation)
 			resetFrame, resetErr := sess.Reset()
 			if resetErr != nil {
