@@ -528,10 +528,10 @@ func main() {
 		{
 			dbg := perception.BackgroundColor(frame.Grid)
 			bp, sav := macro.BestPrimitive(frame.Grid, dbg)
-			rx, ry, hasR := macro.ResidualTarget(frame.Grid, dbg)
-			fmt.Printf("action %d: [DRIVE] best=%s savings=%d score=%.3f | residual=%d target=(%d,%d) ok=%v\n",
+			pts := macro.ResidualTargets(frame.Grid, dbg, 8)
+			fmt.Printf("action %d: [DRIVE] best=%s savings=%d score=%.3f | residualCells=%d clusters=%d\n",
 				actionsTaken+1, bp.Name, sav, macro.DriveScore(frame.Grid, dbg),
-				len(macro.ResidualCells(frame.Grid, dbg)), rx, ry, hasR)
+				len(macro.ResidualCells(frame.Grid, dbg)), len(pts))
 		}
 		// Diagnostic: the predictive-coding signals from THIS cycle's internal
 		// forward model. forecast_error is how wrong the PREVIOUS cycle's
@@ -603,16 +603,16 @@ func main() {
 		// the object tracker otherwise clicks (the vc33 failure: 200 clicks on
 		// periodic-texture blobs, all no-ops). Offer that anomaly as a strongly
 		// prioritised click candidate so the agent probes it, not the background.
-		if rx, ry, ok := macro.ResidualTarget(frame.Grid, perception.BackgroundColor(frame.Grid)); ok {
+		for i, rp := range macro.ResidualTargets(frame.Grid, perception.BackgroundColor(frame.Grid), 8) {
 			col := 0
-			if ry >= 0 && ry < len(frame.Grid) && rx >= 0 && rx < len(frame.Grid[ry]) {
-				col = frame.Grid[ry][rx]
+			if rp.Y >= 0 && rp.Y < len(frame.Grid) && rp.X >= 0 && rp.X < len(frame.Grid[rp.Y]) {
+				col = frame.Grid[rp.Y][rp.X]
 			}
-			tok := "click-residual"
+			tok := fmt.Sprintf("click-residual-%d", i)
 			candidates = append(candidates, tok)
 			clickByToken[tok] = perception.LabeledBlob{
-				Label: "residual",
-				Blob:  perception.Blob{Color: col, Centroid: perception.Point{X: rx, Y: ry}},
+				Label: fmt.Sprintf("residual%d", i),
+				Blob:  perception.Blob{Color: col, Centroid: perception.Point{X: rp.X, Y: rp.Y}},
 			}
 		}
 		simpleByToken := map[string]environment.ActionID{}
@@ -673,8 +673,8 @@ func main() {
 			if c == herFirst {
 				prior += herBonus // this action starts the shortest known skill to a win-like state
 			}
-			if c == "click-residual" {
-				prior += residualBonus // probe the compression anomaly -- the likely interactive element
+			if strings.HasPrefix(c, "click-residual") {
+				prior += residualBonus // probe a compression anomaly -- the likely interactive element
 			}
 			// TRANSFORMATION-MDL via MACRO-operators: value clicking this object by
 			// the Δsat of transforming its WHOLE CLASS (applying the learned

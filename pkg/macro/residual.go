@@ -341,26 +341,41 @@ func clusterResidual(cells []Cell) [][]Cell {
 	return clusters
 }
 
-// ResidualTarget returns the centroid (col=x, row=y) of the LARGEST residual
-// cluster — a single click point aimed at the most prominent anomaly, robust to
-// many scattered anomalies (whose global centroid could land on empty background).
-// ok=false when there is no residual.
-func ResidualTarget(grid [][]int, bg int) (x, y int, ok bool) {
+// ResidualPoint is a residual cluster's centroid (col=X, row=Y) plus its size.
+type ResidualPoint struct{ X, Y, Size int }
+
+// ResidualTargets returns up to maxN residual-cluster centroids, largest cluster
+// first (maxN<=0 = all). A single game control is often a SMALL unique anomaly,
+// not the largest texture break, so offering several distinct clusters lets the
+// agent probe every anomaly systematically instead of hammering one spot.
+func ResidualTargets(grid [][]int, bg, maxN int) []ResidualPoint {
 	cells := ResidualCells(grid, bg)
 	if len(cells) == 0 {
-		return 0, 0, false
+		return nil
 	}
 	clusters := clusterResidual(cells)
-	best := clusters[0]
-	for _, cl := range clusters[1:] {
-		if len(cl) > len(best) {
-			best = cl
+	sort.Slice(clusters, func(i, j int) bool { return len(clusters[i]) > len(clusters[j]) })
+	var out []ResidualPoint
+	for _, cl := range clusters {
+		if maxN > 0 && len(out) >= maxN {
+			break
 		}
+		sumR, sumC := 0, 0
+		for _, c := range cl {
+			sumR += c.R
+			sumC += c.C
+		}
+		out = append(out, ResidualPoint{X: sumC / len(cl), Y: sumR / len(cl), Size: len(cl)})
 	}
-	sumR, sumC := 0, 0
-	for _, cl := range best {
-		sumR += cl.R
-		sumC += cl.C
+	return out
+}
+
+// ResidualTarget returns the centroid of the LARGEST residual cluster (col=x,
+// row=y). ok=false when there is no residual.
+func ResidualTarget(grid [][]int, bg int) (x, y int, ok bool) {
+	pts := ResidualTargets(grid, bg, 1)
+	if len(pts) == 0 {
+		return 0, 0, false
 	}
-	return sumC / len(best), sumR / len(best), true
+	return pts[0].X, pts[0].Y, true
 }
