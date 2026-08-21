@@ -528,8 +528,10 @@ func main() {
 		{
 			dbg := perception.BackgroundColor(frame.Grid)
 			bp, sav := macro.BestPrimitive(frame.Grid, dbg)
-			fmt.Printf("action %d: [DRIVE] best=%s savings=%d score=%.3f\n",
-				actionsTaken+1, bp.Name, sav, macro.DriveScore(frame.Grid, dbg))
+			rx, ry, hasR := macro.ResidualTarget(frame.Grid, dbg)
+			fmt.Printf("action %d: [DRIVE] best=%s savings=%d score=%.3f | residual=%d target=(%d,%d) ok=%v\n",
+				actionsTaken+1, bp.Name, sav, macro.DriveScore(frame.Grid, dbg),
+				len(macro.ResidualCells(frame.Grid, dbg)), rx, ry, hasR)
 		}
 		// Diagnostic: the predictive-coding signals from THIS cycle's internal
 		// forward model. forecast_error is how wrong the PREVIOUS cycle's
@@ -595,6 +597,24 @@ func main() {
 			// uses ChooseClickAction's own chosen target.
 			candidates = append(candidates, "click")
 		}
+		// Residual attention: the compression drive points at the cells that BREAK
+		// the best regularity -- the anomaly in a periodic/symmetric world, which is
+		// the salient, usually-interactive element, as opposed to the inert texture
+		// the object tracker otherwise clicks (the vc33 failure: 200 clicks on
+		// periodic-texture blobs, all no-ops). Offer that anomaly as a strongly
+		// prioritised click candidate so the agent probes it, not the background.
+		if rx, ry, ok := macro.ResidualTarget(frame.Grid, perception.BackgroundColor(frame.Grid)); ok {
+			col := 0
+			if ry >= 0 && ry < len(frame.Grid) && rx >= 0 && rx < len(frame.Grid[ry]) {
+				col = frame.Grid[ry][rx]
+			}
+			tok := "click-residual"
+			candidates = append(candidates, tok)
+			clickByToken[tok] = perception.LabeledBlob{
+				Label: "residual",
+				Blob:  perception.Blob{Color: col, Centroid: perception.Point{X: rx, Y: ry}},
+			}
+		}
 		simpleByToken := map[string]environment.ActionID{}
 		for _, a := range availableSimpleActions(frame.AvailableActions) {
 			tok := fmt.Sprintf("act-%d", a)
@@ -652,6 +672,9 @@ func main() {
 			}
 			if c == herFirst {
 				prior += herBonus // this action starts the shortest known skill to a win-like state
+			}
+			if c == "click-residual" {
+				prior += residualBonus // probe the compression anomaly -- the likely interactive element
 			}
 			// TRANSFORMATION-MDL via MACRO-operators: value clicking this object by
 			// the Δsat of transforming its WHOLE CLASS (applying the learned
@@ -956,6 +979,12 @@ const (
 	// skill's target must have to the win-state to count. Modest -- HER's payoff
 	// is gated on having seen a real win to define the target.
 	herBonus  = 0.08
+	// residualBonus prioritizes clicking the compression anomaly (the cells that
+	// break the best regularity) -- the salient, usually-interactive element in an
+	// otherwise-regular world. Strong enough to beat babbling on inert texture, but
+	// a genuinely learned high-value class-macro (pragmaticBeta * real Δsavings) can
+	// still exceed it once affordances are learned.
+	residualBonus = 0.15
 	herMinSim = 0.6
 )
 
