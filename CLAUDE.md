@@ -28,5 +28,5 @@ A Go cognitive architecture that solves **ARC-AGI-3** (interactive games at thre
 **Fix aggregation first** (it gates everything). Leading candidate: in the model-free reinforcement, reward the **best-improving per-primitive delta** (max over per-primitive Δsavings) instead of the `DrivePreference`(max) delta — so a click that improves *any* compression axis (incl. Correspondence) gets credit even when a big-background primitive dominates the absolute max. Re-test s5i5/tn36, then add **scale** to Correspondence.
 
 ## Deep running log
-Full history, decisions, and the honest-stakes stance live in the auto-memory:
-`/home/aiden/.claude/projects/-home-aiden-extra-git-Protaxon/memory/project_protaxon_resume.md` (read it at session start). Note: Protaxon is the *older* line; **AlphaARC is canonical** — do not sync from it.
+Full history, decisions, and the honest-stakes stance live in the auto-memory, now under the **AlphaARC** project path (auto-loads when the session's working dir is this repo):
+`/home/aiden/.claude/projects/-home-aiden-extra-git-AlphaARC/memory/` — start with `project_protaxon_resume.md`. (A stale copy remains under the `-Protaxon` project path as backup.) Note: the *codebase* named Protaxon is the older line; **AlphaARC is canonical** — do not sync from it.
