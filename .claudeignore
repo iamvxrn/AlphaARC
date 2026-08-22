@@ -1,0 +1,23 @@
+# Keep fresh sessions lean: don't ingest binaries, logs, secrets, or data dumps.
+
+# Compiled binaries (rebuilt on demand with `go build`)
+/probe
+/alphaarc-play
+/alphaarc-solve
+/alphaarc-*
+/protaxon-*
+*.test
+*.out
+*.o
+
+# Logs & run output
+*.log
+
+# Secrets — NEVER read or expose the API key
+.env
+.env.*
+!.env.example
+*.key
+
+# ARC task data dumps
+data/
