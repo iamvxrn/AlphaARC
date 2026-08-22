@@ -224,3 +224,21 @@ def residual_target(grid: Grid, bg: int):
     if not pts:
         return None
     return pts[0]
+
+
+def object_targets(grid: Grid, bg: int, max_n: int) -> List[ResidualPoint]:
+    """Centroid of each distinct foreground object (4-connected component).
+
+    The residual points at the ANOMALY (the biggest broken regularity); but a
+    game's interactive control is often a small distinct blob that is NOT the
+    largest anomaly cluster (vc33's grow/shrink buttons). A residual-only policy
+    misses those buttons -- confirmed live: the ported agent got 0 levels on
+    vc33 until object centroids were added as candidates, then it solved L1.
+    Smaller objects first (buttons before big scenery)."""
+    pts: List[ResidualPoint] = []
+    for _color, cells in _components(grid, bg):
+        sr = sum(c[0] for c in cells)
+        sc = sum(c[1] for c in cells)
+        pts.append(ResidualPoint(sc // len(cells), sr // len(cells), len(cells)))
+    pts.sort(key=lambda p: p.size)
+    return pts[:max_n] if max_n > 0 else pts

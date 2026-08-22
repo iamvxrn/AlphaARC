@@ -16,7 +16,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .mdl import Grid, best_primitive_delta
 from .perception import background_color
-from .residual import residual_targets
+from .residual import object_targets, residual_targets
 
 
 class Policy:
@@ -63,7 +63,16 @@ class Policy:
             bg = background_color(grid)
         self._credit_last(grid, bg)
 
-        pts = residual_targets(grid, bg, self.max_candidates)
+        # Candidates = residual anomaly centroids UNION object centroids, deduped
+        # (residual first). Object centroids surface small interactive controls
+        # (buttons) the residual misses -- without them the ported agent scored 0
+        # on vc33; with them it solves L1. driveGain then learns which pay off.
+        pts = list(residual_targets(grid, bg, self.max_candidates))
+        seen = {(p.x, p.y) for p in pts}
+        for p in object_targets(grid, bg, self.max_candidates):
+            if (p.x, p.y) not in seen:
+                seen.add((p.x, p.y))
+                pts.append(p)
         if not pts:
             self._prev_grid = [row[:] for row in grid]
             self._last_token = None
