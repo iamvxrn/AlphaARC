@@ -41,35 +41,24 @@ func colorCounts(grid [][]int) map[int]int {
 	return m
 }
 
-func diffBoard(a, b [][]int) []string {
-	var d []string
+func changedCells(a, b [][]int) int {
+	n := 0
 	for r := range a {
-		if r == 0 {
-			continue // counter bar
-		}
 		for c := range a[r] {
 			if c < len(b[r]) && a[r][c] != b[r][c] {
-				d = append(d, fmt.Sprintf("(%d,%d):%d->%d", c, r, a[r][c], b[r][c]))
+				n++
 			}
 		}
 	}
-	return d
-}
-
-// growToLevel clicks the L1 grow button until levels_completed reaches `want`
-// (or gives up). Returns the frame at that level.
-func growToLevel(sess *remote.Session, want int) (environment.Frame, int) {
-	f, _ := sess.Reset()
-	clicks := 0
-	for i := 0; i < 12 && f.LevelsCompleted < want; i++ {
-		f, _ = sess.Step(environment.Action{ID: environment.Action6, X: 60, Y: 32})
-		clicks++
-	}
-	return f, clicks
+	return n
 }
 
 func main() {
 	ctx := context.Background()
+	game := os.Getenv("GAME")
+	if game == "" {
+		game = "vc33-5430563c"
+	}
 	client, err := remote.NewClientFromEnv()
 	if err != nil {
 		fmt.Println("client:", err)
@@ -81,54 +70,73 @@ func main() {
 		os.Exit(1)
 	}
 	defer client.CloseScorecard(ctx, card)
-	sess := remote.NewSession(client, "vc33-5430563c", card)
-
-	// Reach Level 2 by solving L1 with the known grow button.
-	f, clicks := growToLevel(sess, 1)
-	fmt.Printf("=== reached level=%d after %d grow clicks, state=%s ===\n", f.LevelsCompleted, clicks, f.State)
-	bg := perception.BackgroundColor(f.Grid)
-	fmt.Printf("=== LEVEL 2 grid %dx%d ===\n", len(f.Grid[0]), len(f.Grid))
-	render(f.Grid)
-	fmt.Printf("colors: %v  bg=%d\n", colorCounts(f.Grid), bg)
-	bp, sav := macro.BestPrimitive(f.Grid, bg)
-	fmt.Printf("L2 drive: best=%s savings=%d score=%.3f residualClusters=%d\n",
-		bp.Name, sav, macro.DriveScore(f.Grid, bg), len(macro.ResidualTargets(f.Grid, bg, 12)))
-
-	if os.Getenv("RENDER_ONLY") != "" {
-		return
+	sess := remote.NewSession(client, game, card)
+	f, err := sess.Reset()
+	if err != nil {
+		fmt.Println("reset:", err)
+		os.Exit(1)
 	}
-	// Targeted sweep of L2: probe a coarse grid, re-solving L1 before each click so
-	// every probe is tested from the SAME L2 state. Report only board-changing clicks.
+	bg := perception.BackgroundColor(f.Grid)
+	fmt.Printf("=== %s  %dx%d  state=%s levels=%d actions=%v ===\n",
+		game, len(f.Grid[0]), len(f.Grid), f.State, f.LevelsCompleted, f.AvailableActions)
+	if os.Getenv("RENDER") != "" {
+		render(f.Grid)
+	}
+	bp, sav := macro.BestPrimitive(f.Grid, bg)
+	pts := macro.ResidualTargets(f.Grid, bg, 12)
+	fmt.Printf("colors=%v bg=%d\n", colorCounts(f.Grid), bg)
+	fmt.Printf("drive: best=%s savings=%d score=%.3f residualClusters=%d\n", bp.Name, sav, macro.DriveScore(f.Grid, bg), len(pts))
+
+	// Step sweep: reset before each probe, click, report board-changing clicks with
+	// the compression delta and whether they complete a level. Answers: is the game
+	// interactive at all, and does the drive point toward the solving click?
 	step := 4
-	fmt.Printf("\n=== L2 CLICK SWEEP (step %d), board-changing clicks only ===\n", step)
+	if s := os.Getenv("STEP"); s == "8" {
+		step = 8
+	}
 	h := len(f.Grid)
 	w := len(f.Grid[0])
-	changers := 0
+	changers, solvers, posDelta, negDelta := 0, 0, 0, 0
+	bestDelta, bestX, bestY := -1<<30, -1, -1
+	corrBest, corrX, corrY := -1<<30, -1, -1
 	for y := 0; y < h; y += step {
 		for x := 0; x < w; x += step {
-			base, _ := growToLevel(sess, 1) // back to fresh L2
-			if base.LevelsCompleted < 1 {
-				continue
-			}
+			f0, _ := sess.Reset()
 			f1, err := sess.Step(environment.Action{ID: environment.Action6, X: x, Y: y})
 			if err != nil {
 				fmt.Println("step:", err)
 				return
 			}
-			d := diffBoard(base.Grid, f1.Grid)
-			lvUp := f1.LevelsCompleted > base.LevelsCompleted
-			if len(d) > 0 || lvUp || f1.State != environment.StateNotFinished {
-				changers++
-				show := d
-				if len(show) > 5 {
-					show = show[:5]
-				}
-				_, s0 := macro.BestPrimitive(base.Grid, bg)
-				_, s1 := macro.BestPrimitive(f1.Grid, bg)
-				fmt.Printf("click (%d,%d) -> %d cells, levels=%d state=%s dSavings=%+d %v\n",
-					x, y, len(d), f1.LevelsCompleted, f1.State, s1-s0, show)
+			nc := changedCells(f0.Grid, f1.Grid)
+			lv := f1.LevelsCompleted > f0.LevelsCompleted
+			term := f1.State != environment.StateNotFinished
+			if nc == 0 && !lv && !term {
+				continue
+			}
+			changers++
+			_, s0 := macro.BestPrimitive(f0.Grid, bg)
+			_, s1 := macro.BestPrimitive(f1.Grid, bg)
+			d := s1 - s0
+			// also track the Correspondence-specific delta -- does the relational
+			// primitive move for ANY click, even where BestPrimitive (max) hides it?
+			cd := macro.CorrespondenceSavings(f1.Grid, bg) - macro.CorrespondenceSavings(f0.Grid, bg)
+			if cd > corrBest {
+				corrBest, corrX, corrY = cd, x, y
+			}
+			if d > 0 {
+				posDelta++
+			} else if d < 0 {
+				negDelta++
+			}
+			if d > bestDelta {
+				bestDelta, bestX, bestY = d, x, y
+			}
+			if lv || term {
+				solvers++
+				fmt.Printf("  SOLVER click (%d,%d): cells=%d dSavings=%+d levels=%d state=%s\n", x, y, nc, d, f1.LevelsCompleted, f1.State)
 			}
 		}
 	}
-	fmt.Printf("=== L2 sweep done: %d board-changing clicks ===\n", changers)
+	fmt.Printf("SWEEP(step %d): board-changers=%d  level-solvers=%d  posDelta=%d negDelta=%d  bestDelta=%+d@(%d,%d)  bestCorrespondenceDelta=%+d@(%d,%d)\n",
+		step, changers, solvers, posDelta, negDelta, bestDelta, bestX, bestY, corrBest, corrX, corrY)
 }

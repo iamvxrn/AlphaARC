@@ -218,6 +218,7 @@ var Primitives = []Primitive{
 	{Name: "Reflect", Savings: SymmetryPreference},
 	{Name: "Translate", Savings: TranslatePreference},
 	{Name: "Count", Savings: NumerosityPreference},
+	{Name: "Correspondence", Savings: CorrespondencePreference},
 }
 
 // BestPrimitive returns the primitive that compresses grid the most, and its
