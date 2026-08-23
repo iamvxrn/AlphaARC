@@ -26,7 +26,6 @@ from .correspondence import (
     Cell,
     _distinct_colors,
     _groups,
-    _residual_identity_cells,
     _subgrid,
 )
 
@@ -37,6 +36,21 @@ MatchTask = Tuple[Grid, List[Tuple[int, int, Grid]]]
 
 def _non_bg(sub: Grid, bg: int) -> int:
     return sum(1 for row in sub for v in row if v != bg)
+
+
+def _hole_cells(sub: Grid, ref: Grid, bg: int) -> List[Cell]:
+    """Local cells where the peer is BACKGROUND but the exemplar has a colour --
+    i.e. the peer is genuinely INCOMPLETE there (a hole to fill). Differing
+    FOREGROUND colours are NOT holes: two same-size regions that merely differ in
+    colour are variants (a palette/legend), not an incomplete copy -- treating
+    them as a fill task is a false positive (seen on lp85: two colour-3 bands,
+    diffs 3->5, no actuator possible). This guard keeps goalfind honest."""
+    out: List[Cell] = []
+    for r in range(min(len(sub), len(ref))):
+        for c in range(min(len(sub[r]), len(ref[r]))):
+            if sub[r][c] == bg and ref[r][c] != bg:
+                out.append((r, c))
+    return out
 
 
 def discover_match_tasks(grid: Grid, bg: int) -> List[MatchTask]:
@@ -51,9 +65,12 @@ def discover_match_tasks(grid: Grid, bg: int) -> List[MatchTask]:
         ref = subs[ref_idx]
         if _distinct_colors(ref) < 2:
             continue  # a solid block is not a real exemplar (cheat guard)
+        # A peer is a fill-workspace only if it has HOLES (bg where ref has
+        # colour); foreground-vs-foreground differences mean it's a variant, not
+        # an incomplete copy -> skip (false-positive guard).
         peers = [(members[i][0], members[i][1], subs[i])
                  for i in range(len(members)) if i != ref_idx
-                 and _residual_identity_cells(subs[i], ref)]  # only peers that differ
+                 and _hole_cells(subs[i], ref, bg)]
         if peers:
             tasks.append((ref, peers))
     return tasks
@@ -65,8 +82,8 @@ def next_fix(grid: Grid, bg: int) -> Optional[Tuple[int, int, int]]:
     matches its target (task complete)."""
     for ref, peers in discover_match_tasks(grid, bg):
         for (minr, minc, sub) in peers:
-            diffs = _residual_identity_cells(sub, ref)
-            if diffs:
-                r, c = diffs[0]
+            holes = _hole_cells(sub, ref, bg)
+            if holes:
+                r, c = holes[0]
                 return (minr + r, minc + c, ref[r][c])
     return None

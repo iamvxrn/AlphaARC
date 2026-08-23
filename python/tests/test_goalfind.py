@@ -88,6 +88,33 @@ def test_full_solve_loop_completes_the_copy():
     assert steps == 3, "should have taken exactly the 3 missing cells, took %d" % steps
 
 
+def test_no_false_positive_on_colour_variants():
+    """Two same-size framed regions that differ only in FOREGROUND colour (a
+    palette/legend, not an incomplete copy) must NOT produce a match task -- the
+    lp85 false positive (two colour-3 bands, diffs 3->5, no holes)."""
+    # Same frame (colour 2), same size, but interiors are different SOLID-ish
+    # colours -- no bg holes anywhere.
+    box_a = [
+        [2, 2, 2, 2, 2],
+        [2, 1, 1, 1, 2],
+        [2, 1, 3, 1, 2],
+        [2, 1, 1, 1, 2],
+        [2, 2, 2, 2, 2],
+    ]
+    box_b = [
+        [2, 2, 2, 2, 2],
+        [2, 6, 6, 6, 2],
+        [2, 6, 7, 6, 2],
+        [2, 6, 6, 6, 2],
+        [2, 2, 2, 2, 2],
+    ]
+    g = _bg_grid(7, 14)
+    _place(g, 1, 1, box_a)
+    _place(g, 1, 8, box_b)
+    assert discover_match_tasks(g, BG) == [], "colour variants must not be a fill task"
+    assert next_fix(g, BG) is None
+
+
 def _run():
     tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
     failed = 0
