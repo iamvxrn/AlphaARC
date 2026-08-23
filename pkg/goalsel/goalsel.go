@@ -19,7 +19,11 @@
 // unit-testable; the feature library and the causal/actuation layer plug in.
 package goalsel
 
-import "math"
+import (
+	"math"
+	"sort"
+	"strings"
+)
 
 // Hypothesis: "the goal is to move Feature in direction Dir (+1 up, -1 down)."
 // Credit is accumulated evidence (from rewards and, decisively, interventions).
@@ -29,13 +33,22 @@ type Hypothesis struct {
 	Credit  float64
 }
 
-// Experimenter runs an isolating intervention: move `move` while holding `keep`
-// approximately fixed, and report whether the environment's reward fired. ok is
-// false when no control that isolates `move` is known yet (needs more
-// affordance learning). This is the causal probe the selector uses to break
-// spurious correlations.
+// Intervention is one active experiment's outcome: the ACTUAL per-feature change
+// a control produced (features are entangled, so this is a vector, not an
+// isolated move) plus whether the reward fired.
+type Intervention struct {
+	Deltas map[string]float64
+	Reward bool
+}
+
+// Experimenter runs active experiments to disentangle a confounded feature set.
+// In real grids features are coupled -- a step moves distance AND compression
+// AND symmetry -- so perfect isolation is usually impossible. Probe therefore
+// returns the best SEPARATING controls it can (varied coupling ratios / most
+// informative), each with its real feature-delta vector + reward, and the
+// selector attributes causality across them. Empty slice = cannot act yet.
 type Experimenter interface {
-	Intervene(move string, keep []string) (reward bool, ok bool)
+	Probe(confounded []string) []Intervention
 }
 
 // GoalSelector maintains candidate goal-hypotheses over a fixed feature set and
@@ -44,9 +57,10 @@ type GoalSelector struct {
 	features []string
 	hyp      map[string]*Hypothesis
 	traj     map[string][]float64
-	window   int      // steps to look back when attributing a reward
-	minDelta float64  // minimum feature move (over the window) to count as "moved"
-	credited []string // features credited together on the most recent reward
+	window   int        // steps to look back when attributing a reward
+	minDelta float64    // minimum feature move (over the window) to count as "moved"
+	credited []string   // features credited together on the most recent reward
+	merged   [][]string // inseparable feature groups collapsed into one goal
 }
 
 // New builds a selector over the given feature names. window is how many recent
@@ -127,35 +141,130 @@ func (s *GoalSelector) Confounded() ([]string, bool) {
 	return tied, true
 }
 
-// Disambiguate breaks a confound by active experiment: for each tied feature,
-// ask the Experimenter to move it ALONE and check whether the reward follows.
-// Isolated movement that reproduces the reward is strong CAUSAL evidence
-// (credit up); isolated movement that does NOT is evidence the feature was a
-// spurious correlate (credit down). This is the correlation->causation step.
+// entangleTol: how close two delta-vectors must be (in cross-ratio) to count as
+// "parallel" -- i.e. the features moved in the same proportion.
+const entangleTol = 1e-6
+
+// Disambiguate breaks a confound WITHOUT requiring clean isolation (features are
+// entangled). It Probes for a set of separating interventions and:
+//  1. if the tied features moved in a constant proportion across EVERY
+//     intervention (no control ever changed their ratio) they are operationally
+//     indistinguishable -> MERGE them into one goal-feature (honest limit, no
+//     infinite loop);
+//  2. otherwise attribute causality by DIFFERENCE OF MEANS: the feature whose
+//     delta is systematically larger on reward-yielding interventions than on
+//     non-reward ones is the cause. Entanglement is beaten by the VARIETY of
+//     coupling ratios across interventions, not by one perfect lever.
 func (s *GoalSelector) Disambiguate(exp Experimenter) bool {
 	tied, ok := s.Confounded()
 	if !ok {
 		return false
 	}
-	acted := false
-	for _, f := range tied {
-		keep := others(tied, f)
-		reward, ran := exp.Intervene(f, keep)
-		if !ran {
-			continue // can't isolate this feature yet
-		}
-		acted = true
-		if reward {
-			s.hyp[f].Credit += 2 // isolated cause reproduced the reward
+	ivs := exp.Probe(tied)
+	if len(ivs) == 0 {
+		return false
+	}
+
+	if parallelSet(tied, ivs) {
+		s.merge(tied)
+		s.credited = s.credited[:0]
+		return true
+	}
+
+	// Difference-of-means attribution (magnitude-aware, entanglement-robust).
+	haveReward, haveNo := false, false
+	for _, iv := range ivs {
+		if iv.Reward {
+			haveReward = true
 		} else {
-			s.hyp[f].Credit -= 1 // moved alone, no reward -> spurious correlate
+			haveNo = true
 		}
 	}
-	if acted {
-		s.credited = s.credited[:0] // confound resolved for this round
+	for _, f := range tied {
+		var sr, sn float64
+		var nr, nn int
+		for _, iv := range ivs {
+			if iv.Reward {
+				sr += iv.Deltas[f]
+				nr++
+			} else {
+				sn += iv.Deltas[f]
+				nn++
+			}
+		}
+		var score float64
+		if haveReward && haveNo {
+			score = sr/float64(nr) - sn/float64(nn) // Δf bigger when rewarded => cause
+		} else {
+			// no reward contrast yet: weak fallback, favour the consistent mover
+			score = 0
+			for _, iv := range ivs {
+				score += float64(sign(iv.Deltas[f]))
+			}
+			score /= float64(len(ivs))
+		}
+		s.hyp[f].Credit += score
 	}
-	return acted
+	s.credited = s.credited[:0]
+	return true
 }
+
+// parallelSet reports whether the tied features' delta sub-vectors are all
+// scalar multiples of one another across the interventions (a constant coupling
+// ratio) -- i.e. no experiment separated them. Uses pairwise cross-ratios
+// against the first intervention with a non-zero tied-vector.
+func parallelSet(tied []string, ivs []Intervention) bool {
+	if len(tied) < 2 || len(ivs) < 2 {
+		// with <2 interventions we cannot claim separability either way; treat as
+		// NOT provably parallel so we prefer attribution over premature merge.
+		return len(ivs) >= 2 && allParallelPairs(tied, ivs)
+	}
+	return allParallelPairs(tied, ivs)
+}
+
+func allParallelPairs(tied []string, ivs []Intervention) bool {
+	// For every pair of features (a,b), the ratio Δa:Δb must be constant across
+	// all interventions (cross product ~0 for every pair of interventions).
+	for ai := 0; ai < len(tied); ai++ {
+		for bi := ai + 1; bi < len(tied); bi++ {
+			a, b := tied[ai], tied[bi]
+			for i := 0; i < len(ivs); i++ {
+				for j := i + 1; j < len(ivs); j++ {
+					cross := ivs[i].Deltas[a]*ivs[j].Deltas[b] - ivs[j].Deltas[a]*ivs[i].Deltas[b]
+					if math.Abs(cross) > entangleTol {
+						return false // this pair's ratio changed -> separable
+					}
+				}
+			}
+		}
+	}
+	return true
+}
+
+// merge collapses an inseparable set into one effective goal-feature (sorted
+// join). Its credit takes the group's best, and members are demoted so the
+// merged feature wins Goal(). Recorded in Merged for inspection.
+func (s *GoalSelector) merge(group []string) {
+	name := mergedName(group)
+	best := 0.0
+	for _, f := range group {
+		if c := s.hyp[f].Credit; c > best {
+			best = c
+		}
+	}
+	if s.hyp[name] == nil {
+		s.hyp[name] = &Hypothesis{Feature: name, Dir: 1}
+		s.features = append(s.features, name)
+	}
+	s.hyp[name].Credit = best + 1
+	for _, f := range group {
+		s.hyp[f].Credit = 0 // subsumed by the merged feature
+	}
+	s.merged = append(s.merged, append([]string(nil), group...))
+}
+
+// Merged returns the inseparable feature groups discovered so far.
+func (s *GoalSelector) Merged() [][]string { return s.merged }
 
 // Goal returns the current best goal hypothesis (highest credit, must be
 // positive). ok is false before any evidence.
@@ -191,12 +300,8 @@ func sign(x float64) int {
 	return 0
 }
 
-func others(set []string, exclude string) []string {
-	var out []string
-	for _, x := range set {
-		if x != exclude {
-			out = append(out, x)
-		}
-	}
-	return out
+func mergedName(group []string) string {
+	g := append([]string(nil), group...)
+	sort.Strings(g)
+	return strings.Join(g, "+")
 }

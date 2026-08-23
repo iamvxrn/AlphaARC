@@ -2,72 +2,47 @@ package goalsel
 
 import "testing"
 
-// groundTruthExp is the synthetic environment's causal oracle. The HIDDEN reward
-// rule is: reward iff feature "fk" reaches the threshold. "fdist" is a
-// distractor that (during normal play) moved in lock-step with fk but has NO
-// causal role. Intervene isolates a single feature from a fresh reset.
-type groundTruthExp struct {
-	threshold float64
-}
+// probeExp returns a fixed set of interventions (the experiments the causal
+// mapper would run). Features are ENTANGLED -- no intervention isolates one --
+// but the coupling RATIO varies across interventions, which is enough to
+// attribute causality. Hidden reward rule: fk drove it, fdist is a correlate.
+type probeExp struct{ ivs []Intervention }
 
-func (e groundTruthExp) Intervene(move string, keep []string) (reward bool, ok bool) {
-	// From a fresh reset (fk=0, fdist=0), an isolating control pushes only `move`
-	// to the threshold. Reward fires iff fk ended up at/over threshold.
-	switch move {
-	case "fk":
-		return true, true // moving fk alone crosses the hidden threshold -> reward
-	case "fdist":
-		return false, true // moving fdist alone leaves fk at 0 -> no reward
-	default:
-		return false, true
-	}
-}
+func (e probeExp) Probe(confounded []string) []Intervention { return e.ivs }
 
-// Capstone: a distractor moved synchronously with the true goal feature right
-// before the reward; the selector must NOT permanently glue them, but resolve
-// causation by intervention.
-func TestGoalSelector_ResolvesCorrelationVsCausation(t *testing.T) {
+// Capstone: a distractor rose in lock-step with the true feature into a reward
+// (confounded), and NO experiment can move either alone -- yet varied coupling
+// ratios let the selector attribute causation to fk.
+func TestGoalSelector_ResolvesEntangledCorrelationVsCausation(t *testing.T) {
 	s := New([]string{"fk", "fdist", "fnoise"}, 5, 3.0)
 
-	// PASSIVE PHASE: two episodes of correlated play. fk and fdist rise together
-	// 0->5 over 5 steps (synchronous!), fnoise wanders without net movement;
-	// reward fires on the step fk hits 5. So fk and fdist get credited together.
-	for ep := 0; ep < 2; ep++ {
-		for step := 1; step <= 5; step++ {
-			v := float64(step)
-			noise := 0.0
-			if step%2 == 0 {
-				noise = 1.0 // jitters but net delta over the window ~0
-			}
-			s.Observe(map[string]float64{"fk": v, "fdist": v, "fnoise": noise}, step == 5)
-		}
-		// reset trajectories between episodes by feeding a fresh baseline
-		s.Observe(map[string]float64{"fk": 0, "fdist": 0, "fnoise": 0}, false)
+	// PASSIVE: fk and fdist rise together 0->5 (synchronous) into a reward.
+	for step := 1; step <= 5; step++ {
+		s.Observe(map[string]float64{"fk": float64(step), "fdist": float64(step), "fnoise": 0}, step == 5)
 	}
-
-	// After correlated rewards, fk and fdist are CONFOUNDED (tied), goal ambiguous.
 	tied, ok := s.Confounded()
-	if !ok {
-		t.Fatalf("expected a confound set from synchronous movement, got none (hyps=%v)", s.Hypotheses())
-	}
-	if !contains(tied, "fk") || !contains(tied, "fdist") {
-		t.Fatalf("confound set should tie fk and fdist, got %v", tied)
+	if !ok || !contains(tied, "fk") || !contains(tied, "fdist") {
+		t.Fatalf("expected fk/fdist confounded from synchronous movement, got %v ok=%v", tied, ok)
 	}
 
-	// ACTIVE PHASE: break the tie by intervention.
-	if !s.Disambiguate(groundTruthExp{threshold: 5}) {
-		t.Fatal("Disambiguate should have run interventions on the confound set")
+	// ACTIVE: entangled interventions with DIFFERENT ratios (never isolated):
+	//   both move + reward; fdist-heavy + no reward; fk-heavy + reward.
+	exp := probeExp{ivs: []Intervention{
+		{Deltas: map[string]float64{"fk": 5, "fdist": 5, "fnoise": 0}, Reward: true},
+		{Deltas: map[string]float64{"fk": 1, "fdist": 5, "fnoise": 0}, Reward: false},
+		{Deltas: map[string]float64{"fk": 5, "fdist": 1, "fnoise": 0}, Reward: true},
+	}}
+	if !s.Disambiguate(exp) {
+		t.Fatal("Disambiguate should have run on the confound set")
 	}
 
-	// The selector must now name fk (causal), not fdist (spurious correlate).
 	feat, dir, ok := s.Goal()
 	if !ok || feat != "fk" {
-		t.Fatalf("goal should resolve to fk after intervention, got %q (ok=%v) hyps=%v", feat, ok, s.Hypotheses())
+		t.Fatalf("goal should resolve to fk (Δfk bigger when rewarded), got %q hyps=%v", feat, s.Hypotheses())
 	}
 	if dir != 1 {
-		t.Fatalf("goal direction should be +1 (increase fk), got %d", dir)
+		t.Fatalf("direction should be +1, got %d", dir)
 	}
-	// fdist must have been demoted below fk.
 	var ck, cd float64
 	for _, h := range s.Hypotheses() {
 		if h.Feature == "fk" {
@@ -77,8 +52,37 @@ func TestGoalSelector_ResolvesCorrelationVsCausation(t *testing.T) {
 			cd = h.Credit
 		}
 	}
-	if !(ck > cd) {
-		t.Fatalf("fk credit (%.1f) must exceed the spurious fdist (%.1f) after intervention", ck, cd)
+	if ck <= cd {
+		t.Fatalf("fk credit (%.2f) must exceed spurious fdist (%.2f)", ck, cd)
+	}
+}
+
+// When two features are PERFECTLY entangled (constant ratio across every
+// intervention -- no experiment ever changes their proportion) they are
+// operationally indistinguishable, so the selector MERGES them instead of
+// looping forever.
+func TestGoalSelector_MergesInseparableFeatures(t *testing.T) {
+	s := New([]string{"fa", "fb"}, 4, 2.0)
+	for step := 1; step <= 4; step++ {
+		s.Observe(map[string]float64{"fa": float64(step), "fb": float64(2 * step)}, step == 4)
+	}
+	if _, ok := s.Confounded(); !ok {
+		t.Fatal("fa/fb should be confounded")
+	}
+	// Every intervention keeps the ratio fa:fb = 1:2 -> inseparable.
+	exp := probeExp{ivs: []Intervention{
+		{Deltas: map[string]float64{"fa": 2, "fb": 4}, Reward: true},
+		{Deltas: map[string]float64{"fa": 3, "fb": 6}, Reward: true},
+	}}
+	if !s.Disambiguate(exp) {
+		t.Fatal("Disambiguate should act")
+	}
+	if len(s.Merged()) == 0 {
+		t.Fatal("inseparable features must be merged, not left dangling")
+	}
+	feat, _, ok := s.Goal()
+	if !ok || feat != "fa+fb" {
+		t.Fatalf("goal should be the merged feature 'fa+fb', got %q merged=%v", feat, s.Merged())
 	}
 }
 
@@ -94,7 +98,7 @@ func TestGoalSelector_IgnoresInertFeature(t *testing.T) {
 	}
 	for _, h := range s.Hypotheses() {
 		if h.Feature == "fstatic" && h.Credit != 0 {
-			t.Fatalf("an inert feature must never be credited, got %.1f", h.Credit)
+			t.Fatalf("inert feature must never be credited, got %.1f", h.Credit)
 		}
 	}
 }
