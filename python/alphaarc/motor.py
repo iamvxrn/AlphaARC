@@ -125,6 +125,95 @@ def astar(start: Cell, goal: Cell, moves: Dict[int, Tuple[int, int]],
     return None
 
 
+def avatar_anchors(grid: Grid, bg: int, color: int) -> List[Cell]:
+    """Top-left of every component of the avatar colour (there may be decoys --
+    e.g. ls20's reference figures are also colour 9)."""
+    out: List[Cell] = []
+    for c, cells in _components(grid, bg):
+        if c != color:
+            continue
+        out.append((min(x[0] for x in cells), min(x[1] for x in cells)))
+    return out
+
+
+def nearest_anchor(grid: Grid, bg: int, color: int, ref: Cell) -> Optional[Cell]:
+    """The avatar-colour component whose top-left is nearest `ref` -- tracks the
+    moving avatar across frames despite same-colour decoys."""
+    best, bestd = None, 1 << 30
+    for a in avatar_anchors(grid, bg, color):
+        d = abs(a[0] - ref[0]) + abs(a[1] - ref[1])
+        if d < bestd:
+            best, bestd = a, d
+    return best
+
+
+class Navigator:
+    """Drives the avatar to a target anchor cell over an UNKNOWN map, discovering
+    walls as it goes (optimistic A* + replanning): assume unknown cells walkable,
+    execute the first step, and if the avatar didn't move (zero-delta) mark that
+    cell a wall and replan. If it gets stuck with no path, it opportunistically
+    probes any not-yet-calibrated action (a direction that was blocked at the
+    start cell) -- once the avatar is elsewhere that action may reveal its vector."""
+
+    def __init__(self, kin: Dict[int, Tuple[int, int]], avatar_color: int, bg: int,
+                 all_actions: Optional[List[int]] = None, bounds: Optional[Tuple[int, int]] = None):
+        self.kin = dict(kin)
+        self.color = avatar_color
+        self.bg = bg
+        self.all_actions = list(all_actions) if all_actions else list(kin.keys())
+        self.bounds = bounds  # (H, W); if None, inferred from the grid each step
+        self.blocked = set()  # anchor cells known to be non-standable
+
+    def _walkable(self, H: int, W: int) -> Callable[[int, int], bool]:
+        def w(r: int, c: int) -> bool:
+            return 0 <= r < H and 0 <= c < W and (r, c) not in self.blocked
+        return w
+
+    def _dims(self, grid: Grid) -> Tuple[int, int]:
+        return self.bounds if self.bounds else (len(grid), len(grid[0]))
+
+    def navigate_to(self, start: Cell, target: Cell, step_fn: Callable[[int], Grid],
+                    grid: Grid, max_steps: int = 400) -> Tuple[bool, Cell]:
+        pos = start
+        for _ in range(max_steps):
+            if pos == target:
+                return True, pos
+            H, W = self._dims(grid)
+            path = astar(pos, target, self.kin, self._walkable(H, W))
+            if not path:
+                # Stuck: try to learn an uncalibrated direction from here.
+                if not self._probe_unknown(step_fn, grid, pos):
+                    return False, pos
+                # _probe_unknown updated kin/pos/grid via return; refetch
+                grid = self._last_grid
+                pos = self._last_pos
+                continue
+            a = path[0]
+            dr, dc = self.kin[a]
+            expected = (pos[0] + dr, pos[1] + dc)
+            grid = step_fn(a)
+            newpos = nearest_anchor(grid, self.bg, self.color, expected) or pos
+            if newpos == pos:  # zero-delta -> the cell we tried to enter is a wall
+                self.blocked.add(expected)
+            else:
+                pos = newpos
+        return pos == target, pos
+
+    def _probe_unknown(self, step_fn: Callable[[int], Grid], grid: Grid, pos: Cell) -> bool:
+        """Try each not-yet-calibrated action once; if one moves the avatar, learn
+        its vector. Returns True if it made progress (learned a move or moved)."""
+        for a in self.all_actions:
+            if a in self.kin:
+                continue
+            g = step_fn(a)
+            newpos = nearest_anchor(g, self.bg, self.color, pos) or pos
+            if newpos != pos:
+                self.kin[a] = (newpos[0] - pos[0], newpos[1] - pos[1])
+                self._last_grid, self._last_pos = g, newpos
+                return True
+        return False
+
+
 def calibrate_kinematics(reset_fn: Callable[[], Grid], step_fn: Callable[[int], Grid],
                          action_ids: List[int], bg: int) -> Tuple[Dict[int, Tuple[int, int]], Optional[int]]:
     """Discover the avatar colour and the action->direction map, by acting.

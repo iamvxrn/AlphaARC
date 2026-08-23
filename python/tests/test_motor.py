@@ -5,7 +5,53 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from alphaarc.motor import AvatarMove, astar, calibrate_kinematics, detect_avatar_move  # noqa: E402
+from alphaarc.motor import AvatarMove, Navigator, astar, calibrate_kinematics, detect_avatar_move  # noqa: E402
+
+
+class SimEnv:
+    """A tiny simulated movement game: a 2x2 avatar (colour 9 with a 7 mark)
+    that steps by unit vectors, blocked by walls (colour 5) or the border. An
+    optional stationary same-colour decoy tests avatar tracking."""
+
+    MOVES = {1: (-1, 0), 2: (1, 0), 3: (0, -1), 4: (0, 1)}  # up/down/left/right
+
+    def __init__(self, H, W, bg, avatar_tl, walls, decoy_tl=None):
+        self.H, self.W, self.bg = H, W, bg
+        self.walls = set(walls)
+        self.pos = avatar_tl
+        self.decoy = decoy_tl
+
+    def _footprint(self, tl):
+        r, c = tl
+        return [(r, c), (r, c + 1), (r + 1, c), (r + 1, c + 1)]
+
+    def _blocked(self, tl):
+        for (r, c) in self._footprint(tl):
+            if not (0 <= r < self.H and 0 <= c < self.W) or (r, c) in self.walls:
+                return True
+        return False
+
+    def grid(self):
+        g = [[self.bg] * self.W for _ in range(self.H)]
+        for (r, c) in self.walls:
+            g[r][c] = 5
+        for blob in ([self.pos] + ([self.decoy] if self.decoy else [])):
+            r, c = blob
+            g[r][c] = 9
+            g[r][c + 1] = 9
+            g[r + 1][c] = 9
+            g[r + 1][c + 1] = 7
+        return g
+
+    def reset(self):
+        return self.grid()
+
+    def step(self, action):
+        dr, dc = self.MOVES[action]
+        nt = (self.pos[0] + dr, self.pos[1] + dc)
+        if not self._blocked(nt):
+            self.pos = nt
+        return self.grid()
 
 
 def _bg(h, w, b):
@@ -124,6 +170,34 @@ def test_calibrate_votes_out_false_positive():
     assert avatar == 9, "avatar colour should win the vote, got %r" % avatar
     assert kin.get(1) == (-2, 0) and kin.get(3) == (0, -2) and kin.get(4) == (0, 2), kin
     assert 2 not in kin, "blocked action (colour-8 decoy) must be dropped: %r" % kin
+
+
+def test_capstone_navigates_around_wall_to_arbitrary_cell():
+    """The motor end-to-end: given an arbitrary empty target cell, the Navigator
+    discovers the wall (zero-delta) and A*-routes the avatar to it -- with a
+    same-colour decoy present to prove avatar tracking."""
+    bg = 4
+    # Vertical wall at col 5, rows 0..6 (2x2 avatar can slip through the rows 7-9 gap).
+    walls = {(r, 5) for r in range(0, 7)} | {(r, 6) for r in range(0, 7)}
+    env = SimEnv(11, 12, bg, avatar_tl=(2, 2), walls=walls, decoy_tl=(0, 10))
+    kin = dict(SimEnv.MOVES)  # fully calibrated
+    nav = Navigator(kin, avatar_color=9, bg=bg, all_actions=[1, 2, 3, 4])
+    ok, pos = nav.navigate_to((2, 2), (2, 8), env.step, env.grid(), max_steps=400)
+    assert ok and pos == (2, 8), "did not reach target: ok=%s pos=%s" % (ok, pos)
+    assert nav.blocked, "should have discovered at least one wall cell"
+
+
+def test_capstone_learns_a_blocked_direction_then_reaches():
+    """Calibration only gave up/left/right (down was blocked at the start cell).
+    The target is straight down; the Navigator must opportunistically probe the
+    uncalibrated DOWN action, learn its vector, and reach."""
+    bg = 4
+    env = SimEnv(12, 8, bg, avatar_tl=(2, 2), walls=set())
+    kin = {1: (-1, 0), 3: (0, -1), 4: (0, 1)}  # NO down (action 2)
+    nav = Navigator(kin, avatar_color=9, bg=bg, all_actions=[1, 2, 3, 4])
+    ok, pos = nav.navigate_to((2, 2), (7, 2), env.step, env.grid(), max_steps=400)
+    assert ok and pos == (7, 2), "did not reach: ok=%s pos=%s" % (ok, pos)
+    assert nav.kin.get(2) == (1, 0), "should have learned DOWN=(1,0): %s" % nav.kin
 
 
 def _run():
