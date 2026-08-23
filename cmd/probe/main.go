@@ -132,6 +132,53 @@ func main() {
 	}
 	fmt.Printf("\ntop-8 cutoff (what the live agent actually sees): %v\n", top8)
 
+	// MOVES mode: press each SIMPLE action (1-5) once from a fresh reset and
+	// report what moved -- the motor-layer microscope for movement games. Prints
+	// the changed cells (before->after) and their bounding box so the avatar and
+	// walls are visible.
+	if os.Getenv("MOVES") != "" {
+		for _, aid := range []environment.ActionID{environment.Action1, environment.Action2, environment.Action3, environment.Action4, environment.Action5} {
+			f0, _ := sess.Reset()
+			f1, err := sess.Step(environment.Action{ID: aid})
+			if err != nil {
+				fmt.Printf("ACTION%d: step error: %v\n", aid, err)
+				continue
+			}
+			var diffs [][3]int // r, c, newval (where changed)
+			minR, minC, maxR, maxC := 1<<30, 1<<30, -1, -1
+			for r := range f0.Grid {
+				for c := range f0.Grid[r] {
+					if c < len(f1.Grid[r]) && f0.Grid[r][c] != f1.Grid[r][c] {
+						diffs = append(diffs, [3]int{r, c, f1.Grid[r][c]})
+						if r < minR {
+							minR = r
+						}
+						if r > maxR {
+							maxR = r
+						}
+						if c < minC {
+							minC = c
+						}
+						if c > maxC {
+							maxC = c
+						}
+					}
+				}
+			}
+			fmt.Printf("ACTION%d: changed=%d state=%s levels=%d", aid, len(diffs), f1.State, f1.LevelsCompleted)
+			if len(diffs) > 0 {
+				fmt.Printf(" bbox=r%d-%d,c%d-%d", minR, maxR, minC, maxC)
+				sample := diffs
+				if len(sample) > 12 {
+					sample = sample[:12]
+				}
+				fmt.Printf(" sample=%v", sample)
+			}
+			fmt.Println()
+		}
+		return
+	}
+
 	// POINTS mode: instead of a grid sweep, probe exact "x,y;x,y;..." coordinates
 	// and print the FULL per-primitive delta for each -- for comparing a known-good
 	// click against a suspected false-positive click side by side.
