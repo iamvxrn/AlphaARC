@@ -26,6 +26,7 @@ import (
 	"alphaarc/pkg/environment/remote"
 	"alphaarc/pkg/feataff"
 	"alphaarc/pkg/goalsel"
+	"alphaarc/pkg/macro"
 )
 
 // liveEnv adapts a remote game session to feataff.Env. It tracks a `dead` flag:
@@ -195,6 +196,42 @@ func main() {
 		if r, _ := play(c); r {
 			won, via, steps = true, "salient-probe", actions
 			break
+		}
+	}
+
+	// Phase G -- GOAL DERIVATION (half ①): read what the grid WANTS -- the cells
+	// that break its dominant regularity and the colour that completes it -- and try
+	// to actuate each with a control already observed to achieve it (half ②). On
+	// stateful games nothing single-step will, which is the honest derive/actuate
+	// split: we can read the goal but not (yet) realise it.
+	if !won && !env.dead {
+		targets := macro.GoalTargets(cur, perception.BackgroundColor(cur))
+		if len(targets) > 0 {
+			actuatable := 0
+			for _, t := range targets {
+				if _, ok := fm.ControlForCellChange(t.R, t.C, t.Want); ok {
+					actuatable++
+				}
+			}
+			fmt.Printf("phase G: goal-deriver -> %d target cells, %d actuatable from observations\n", len(targets), actuatable)
+			for actions < budget && !env.dead && !won {
+				acted := false
+				for _, t := range macro.GoalTargets(cur, perception.BackgroundColor(cur)) {
+					ctrl, ok := fm.ControlForCellChange(t.R, t.C, t.Want)
+					if !ok {
+						continue
+					}
+					reward, _ := play(ctrl)
+					acted = true
+					if reward {
+						won, via, steps = true, "goal-derive", actions
+						break
+					}
+				}
+				if !acted || won {
+					break
+				}
+			}
 		}
 	}
 

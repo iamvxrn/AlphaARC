@@ -110,6 +110,23 @@ func (m *FeatureMapper) ObserveStep(before, after actuate.Grid, ctrl actuate.Con
 	m.obs = append(m.obs, observation{ctrl: ctrl, deltas: d, reward: reward, before: before, after: after})
 }
 
+// ControlForCellChange returns a recorded control observed to set cell (r,c) to
+// colour `to`, from the kept before/after grids -- the cell-level protocol query
+// the goal-deriver needs to actuate a GoalTarget. ok is false if nothing observed
+// achieved it (on stateful games no single step will, which is the honest signal).
+func (m *FeatureMapper) ControlForCellChange(r, c, to int) (actuate.Control, bool) {
+	for _, o := range m.obs {
+		if o.before == nil || o.after == nil {
+			continue
+		}
+		if r < len(o.after) && c < len(o.after[r]) && o.after[r][c] == to &&
+			(r >= len(o.before) || c >= len(o.before[r]) || o.before[r][c] != to) {
+			return o.ctrl, true
+		}
+	}
+	return actuate.Control{}, false
+}
+
 // AddFeatures grows the library WITHOUT spending any actions: it appends the new
 // features and back-fills their deltas on every stored observation from the kept
 // before/after grids. So "grow when stuck" costs nothing on a live budget -- the
