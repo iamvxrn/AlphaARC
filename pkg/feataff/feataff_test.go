@@ -455,3 +455,23 @@ func TestReachability_CausalControlDiscoveryWinsWhenTriggerNotSalient(t *testing
 	}
 	t.Logf("reachability closed it: %d reachable of swept, won via %q at step %d", len(reach), via, steps)
 }
+
+// ExploreSequential fits a live action budget (1 Reset + N Steps) and can catch
+// the sparse reward during the sweep itself.
+func TestExploreSequential_CatchesRewardWithinBudget(t *testing.T) {
+	env := &hiddenTriggerEnv{}
+	fm := New(DefaultFeatures())
+	sweep := SweepControls(env.Reset(), 4) // includes the hidden trigger (8,8)
+	rewarded, at := fm.ExploreSequential(env, sweep)
+	if !rewarded {
+		t.Fatalf("sequential sweep should catch the trigger's reward, didn't")
+	}
+	if at < 0 || at >= len(sweep) {
+		t.Fatalf("bad reward step index %d", at)
+	}
+	// the rewarding control must be the trigger
+	if c := sweep[at]; c.X != htTrigX || c.Y != htTrigY {
+		t.Fatalf("reward attributed to %v, want trigger (%d,%d)", c, htTrigX, htTrigY)
+	}
+	t.Logf("sequential sweep caught reward at step %d/%d (1 reset + %d steps)", at, len(sweep), at+1)
+}

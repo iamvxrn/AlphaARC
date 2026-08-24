@@ -66,6 +66,34 @@ func (m *FeatureMapper) Explore(env Env, controls []actuate.Control) {
 	}
 }
 
+// ExploreSequential explores from a SINGLE reset, stepping through the controls
+// in order and recording each one's INCREMENTAL per-feature delta (from the grid
+// just before that step) plus whether the reward fired. Cost is 1 Reset + N Steps
+// instead of Explore's N x (Reset+Step) -- essential on live games with a bounded
+// action budget where a reset-per-candidate sweep exhausts the session before it
+// can pursue (observed on ft09's ~150-action cap). Deltas are under accumulation
+// (state carries over, like real play), which is fine for DISCOVERY: a control
+// that raises a feature still shows a positive incremental delta. Returns true
+// (and the reward step) if the sparse reward fired during the sweep itself.
+func (m *FeatureMapper) ExploreSequential(env Env, controls []actuate.Control) (rewarded bool, atStep int) {
+	before := env.Reset()
+	bvals := m.eval(before)
+	for i, c := range controls {
+		after, reward := env.Step(c)
+		avals := m.eval(after)
+		d := make(map[string]float64, len(m.features))
+		for _, f := range m.features {
+			d[f.Name] = avals[f.Name] - bvals[f.Name]
+		}
+		m.obs = append(m.obs, observation{ctrl: c, deltas: d, reward: reward})
+		bvals = avals
+		if reward {
+			return true, i
+		}
+	}
+	return false, -1
+}
+
 // Record is one recorded control->effect observation (for inspection/telemetry).
 type Record struct {
 	Control actuate.Control

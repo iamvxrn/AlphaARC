@@ -168,21 +168,25 @@ func main() {
 	//   (feature growth, piece 4) the fixed library may lack the rewarded feature
 	//     -- GROW new candidate families (discovered-transform, color-perm-symmetry).
 	if !won && steps == 0 {
-		reach := feataff.ReachableControls(env, feataff.SweepControls(env.Reset(), 4))
-		grown := feataff.GrowFeatures(env.Reset())
-		if len(reach) > 0 || len(grown) > 0 {
-			fmt.Printf("stuck -- discovered %d reachable control(s), grew %d feature(s), retrying\n", len(reach), len(grown))
-			feats = append(feats, grown...)
-			names2 := make([]string, 0, len(feats))
-			for _, f := range feats {
-				names2 = append(names2, f.Name)
-			}
-			// union of perceptual + causally-discovered controls
-			controls2 := append(feataff.ResidualControls(env.Reset(), 12), reach...)
-			fm = feataff.New(feats)
-			fm.Explore(env, controls2)
+		grown := feataff.GrowFeatures(grid)
+		feats = append(feats, grown...)
+		names2 := make([]string, 0, len(feats))
+		for _, f := range feats {
+			names2 = append(names2, f.Name)
+		}
+		// Budget-fitting causal discovery: ONE sequential coarse sweep from a single
+		// reset (1 Reset + N Steps), NOT a reset-per-candidate sweep -- the latter
+		// exhausts a bounded live budget (ft09's ~150-action cap kills it mid-sweep).
+		// The sweep both finds real actuators (a swept control that moves a grown
+		// feature) and can catch the sparse reward mid-sweep if a control triggers it.
+		fm = feataff.New(feats)
+		sweep := feataff.SweepControls(grid, 8)
+		fmt.Printf("stuck -- grew %d feature(s), budget-fitting sequential sweep of %d controls\n", len(grown), len(sweep))
+		if rew, at := fm.ExploreSequential(env, sweep); rew {
+			won, via, steps = true, "sweep-trigger", at
+		} else {
 			sel = goalsel.New(names2, 5, 5.0)
-			won, via, steps = feataff.PursueToReward(env, feats, fm, sel, "translate", 60)
+			won, via, steps = feataff.PursueToReward(env, feats, fm, sel, "translate", 40)
 		}
 	}
 
