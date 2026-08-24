@@ -107,3 +107,24 @@ func TestProtocol_StatefulArmThenPlace(t *testing.T) {
 	}
 	t.Logf("stateful derive->plan->execute closed: targets=%v plan=%v", targets, full)
 }
+
+// ②-live: the SINGLE-EPISODE stateful planner (one Reset, no reset-per-branch)
+// solves the arm-then-place protocol within a small budget -- the budget-fitting
+// version of PlanStatefulActuation that can run on a cumulative live action budget.
+func TestProtocol_LiveSingleEpisodeArmThenPlace(t *testing.T) {
+	var cands []actuate.Control
+	for r := 0; r < 4; r++ {
+		for c := 0; c < 4; c++ {
+			cands = append(cands, actuate.Control{Kind: "click", X: c, Y: r})
+		}
+	}
+	// achieve hole (0,3) -> 2 in one episode
+	steps, ok := PlanStatefulActuationLive(&paletteTemplateEnv{}, actuate.CellChange{R: 0, C: 3, To: 2}, cands, 40)
+	if !ok {
+		t.Fatalf("live single-episode planner should reach the target within budget (steps=%d)", steps)
+	}
+	if steps < 2 {
+		t.Fatalf("arm->place needs >=2 steps, got %d", steps)
+	}
+	t.Logf("live single-episode stateful actuation reached target in %d steps (one reset)", steps)
+}

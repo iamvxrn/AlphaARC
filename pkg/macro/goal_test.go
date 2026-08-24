@@ -57,3 +57,56 @@ func TestGoalTargets_MultipleHoles(t *testing.T) {
 		}
 	}
 }
+
+// Workspace segmentation: a small tiled workspace with a hole, embedded in a big
+// background field. Whole-grid GoalTargets is fooled (bg is the majority ->
+// guarded to nil); SegmentedGoalTargets crops to the content box and finds the hole.
+func TestGoalTargets_SegmentationFindsEmbeddedWorkspace(t *testing.T) {
+	bg := 7
+	g := make([][]int, 10)
+	for r := range g {
+		g[r] = make([]int, 10)
+		for c := range g[r] {
+			g[r][c] = bg
+		}
+	}
+	// 4x4 tiled workspace (motif [[1,2],[3,4]]) at rows 3-6, cols 3-6
+	motif := [][]int{{1, 2}, {3, 4}}
+	for r := 0; r < 4; r++ {
+		for c := 0; c < 4; c++ {
+			g[3+r][3+c] = motif[r%2][c%2]
+		}
+	}
+	g[4][6] = 9 // corrupt one workspace cell: (4,6) class (1,1) -> want 4
+
+	// whole-grid deriver refuses (background dominates -> no real reference)
+	if ts := GoalTargets(g, bg); ts != nil {
+		t.Fatalf("whole-grid deriver should refuse the bg-dominated grid, got %v", ts)
+	}
+	// segmentation crops to the workspace and finds exactly the hole, in orig coords
+	ts := SegmentedGoalTargets(g, bg)
+	if len(ts) != 1 || ts[0].R != 4 || ts[0].C != 6 || ts[0].Want != 4 {
+		t.Fatalf("segmentation should find (4,6)->4, got %v", ts)
+	}
+}
+
+// No erasing: a target that would set a cell TO background is never emitted, and a
+// tiling whose reference is mostly background is refused (the vc33 "1516 targets"
+// degenerate).
+func TestGoalTargets_RefusesBackgroundReference(t *testing.T) {
+	bg := 3
+	// mostly-bg grid with a small stripe of content: the majority tile is bg.
+	g := make([][]int, 8)
+	for r := range g {
+		g[r] = make([]int, 8)
+		for c := range g[r] {
+			g[r][c] = bg
+		}
+	}
+	for r := 0; r < 8; r++ {
+		g[r][4] = 5 // a single column of content
+	}
+	if ts := SegmentedGoalTargets(g, bg); ts != nil {
+		t.Fatalf("a bg-majority reference must be refused (no erase-to-bg goal), got %v", ts)
+	}
+}

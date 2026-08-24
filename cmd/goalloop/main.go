@@ -244,7 +244,7 @@ func main() {
 	// and is not trustworthy -- reported, not acted on. On stateful games nothing is
 	// single-step actuatable: the honest derive-vs-actuate split live.
 	if !won && actions < budget && !env.dead {
-		targets := macro.GoalTargets(cur, perception.BackgroundColor(cur))
+		targets := macro.SegmentedGoalTargets(cur, perception.BackgroundColor(cur))
 		if n := len(targets); n > 0 {
 			actuatable := 0
 			for _, t := range targets {
@@ -256,7 +256,7 @@ func main() {
 			fmt.Printf("phase G: goal-deriver -> %d target cells, %d actuatable (localized=%v)\n", n, actuatable, localized)
 			for localized && actions < budget && !env.dead && !won {
 				acted := false
-				for _, t := range macro.GoalTargets(cur, perception.BackgroundColor(cur)) {
+				for _, t := range macro.SegmentedGoalTargets(cur, perception.BackgroundColor(cur)) {
 					ctrl, ok := fm.ControlForCellChange(t.R, t.C, t.Want)
 					if !ok {
 						continue

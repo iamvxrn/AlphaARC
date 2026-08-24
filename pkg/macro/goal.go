@@ -64,13 +64,59 @@ func majorityTile(grid [][]int, h, w, pr, pc int) [][]int {
 	return maj
 }
 
+// ContentBox is the bounding box of non-background cells: the crude workspace
+// segmentation. ok is false when the grid is all background.
+func ContentBox(grid [][]int, bg int) (r0, c0, r1, c1 int, ok bool) {
+	h, w := rectDims(grid)
+	r0, c0, r1, c1 = h, w, -1, -1
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			if grid[r][c] != bg {
+				if r < r0 {
+					r0 = r
+				}
+				if r > r1 {
+					r1 = r
+				}
+				if c < c0 {
+					c0 = c
+				}
+				if c > c1 {
+					c1 = c
+				}
+			}
+		}
+	}
+	return r0, c0, r1, c1, r1 >= 0
+}
+
 // GoalTargets derives the goal for a grid: the cells that break its dominant tiling
 // and the colour each should take to complete it. Returns nil when no non-trivial
-// tiling explains the grid well enough (agreement < 0.6) -- i.e. there is no
-// reference regularity to conform to. Periods are bounded (small tiles); the
-// smallest period that maximises agreement wins (Occam).
+// tiling explains the grid well enough. Guards against the degenerate "background
+// is the reference" reading: it refuses a majority tile that is mostly background,
+// and never emits a target that would ERASE content (Want == bg).
 func GoalTargets(grid [][]int, bg int) []GoalTarget {
 	h, w := rectDims(grid)
+	return goalTargetsIn(grid, bg, 0, 0, h-1, w-1)
+}
+
+// SegmentedGoalTargets first crops to the non-background content box (workspace
+// segmentation), then derives targets there and maps them back to original
+// coordinates -- so a small tiled workspace inside a big background field is found
+// instead of being drowned by the background majority.
+func SegmentedGoalTargets(grid [][]int, bg int) []GoalTarget {
+	r0, c0, r1, c1, ok := ContentBox(grid, bg)
+	if !ok {
+		return nil
+	}
+	return goalTargetsIn(grid, bg, r0, c0, r1, c1)
+}
+
+// goalTargetsIn derives goal targets within the inclusive box [r0..r1, c0..c1] of
+// grid, returning targets in ORIGINAL grid coordinates.
+func goalTargetsIn(grid [][]int, bg, r0, c0, r1, c1 int) []GoalTarget {
+	sub := crop(grid, r0, c0, r1, c1)
+	h, w := rectDims(sub)
 	if h < 2 || w < 2 {
 		return nil
 	}
@@ -81,25 +127,52 @@ func GoalTargets(grid [][]int, bg int) []GoalTarget {
 			if pr == 1 && pc == 1 {
 				continue
 			}
-			a := tilingAgreement(grid, h, w, pr, pc)
-			// strictly better, or equally good with a smaller tile (Occam)
+			a := tilingAgreement(sub, h, w, pr, pc)
 			if a > bestAgree+1e-9 || (a > bestAgree-1e-9 && pr*pc < bestPr*bestPc) {
 				bestAgree, bestPr, bestPc = a, pr, pc
 			}
 		}
 	}
-	// need a real regularity that is not already perfect (nothing to fix) and not noise
 	if bestPr == 0 || bestAgree < 0.6 || bestAgree >= 1.0 {
 		return nil
 	}
-	maj := majorityTile(grid, h, w, bestPr, bestPc)
+	maj := majorityTile(sub, h, w, bestPr, bestPc)
+	// reject "background is the reference": the majority tile must be mostly non-bg.
+	nonbg := 0
+	for i := range maj {
+		for j := range maj[i] {
+			if maj[i][j] != bg {
+				nonbg++
+			}
+		}
+	}
+	if nonbg*2 < bestPr*bestPc {
+		return nil
+	}
 	var out []GoalTarget
 	for r := 0; r < h; r++ {
 		for c := 0; c < w; c++ {
-			if want := maj[r%bestPr][c%bestPc]; grid[r][c] != want {
-				out = append(out, GoalTarget{R: r, C: c, Want: want})
+			want := maj[r%bestPr][c%bestPc]
+			if want == bg { // never erase content to reach the "reference"
+				continue
+			}
+			if sub[r][c] != want {
+				out = append(out, GoalTarget{R: r0 + r, C: c0 + c, Want: want})
 			}
 		}
+	}
+	return out
+}
+
+// crop returns the inclusive sub-grid [r0..r1, c0..c1].
+func crop(grid [][]int, r0, c0, r1, c1 int) [][]int {
+	out := make([][]int, 0, r1-r0+1)
+	for r := r0; r <= r1; r++ {
+		row := make([]int, 0, c1-c0+1)
+		for c := c0; c <= c1; c++ {
+			row = append(row, grid[r][c])
+		}
+		out = append(out, row)
 	}
 	return out
 }
