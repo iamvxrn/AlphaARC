@@ -100,11 +100,81 @@ func GoalTargets(grid [][]int, bg int) []GoalTarget {
 	return goalTargetsIn(grid, bg, 0, 0, h-1, w-1)
 }
 
-// SegmentedGoalTargets first crops to the non-background content box (workspace
-// segmentation), then derives targets there and maps them back to original
-// coordinates -- so a small tiled workspace inside a big background field is found
-// instead of being drowned by the background majority.
+// FramedRegions finds the INTERIORS of rectangular frames -- a border of a single
+// non-background colour enclosing a differently-coloured region. This is the
+// workspace-segmentation device most ARC-AGI-3 puzzles use (a box drawn around the
+// play area). Returns interior boxes [r0,c0,r1,c1] (inclusive).
+func FramedRegions(grid [][]int, bg int) [][4]int {
+	h, w := rectDims(grid)
+	// colour -> bounding box
+	type bbox struct{ r0, c0, r1, c1, n int }
+	boxes := map[int]*bbox{}
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			v := grid[r][c]
+			if v == bg {
+				continue
+			}
+			b := boxes[v]
+			if b == nil {
+				boxes[v] = &bbox{r, c, r, c, 1}
+				continue
+			}
+			if r < b.r0 {
+				b.r0 = r
+			}
+			if r > b.r1 {
+				b.r1 = r
+			}
+			if c < b.c0 {
+				b.c0 = c
+			}
+			if c > b.c1 {
+				b.c1 = c
+			}
+			b.n++
+		}
+	}
+	var out [][4]int
+	for f, b := range boxes {
+		if b.r1-b.r0 < 2 || b.c1-b.c0 < 2 {
+			continue // too small to enclose an interior
+		}
+		perimTot, perimF, intTot, intF := 0, 0, 0, 0
+		for r := b.r0; r <= b.r1; r++ {
+			for c := b.c0; c <= b.c1; c++ {
+				onBorder := r == b.r0 || r == b.r1 || c == b.c0 || c == b.c1
+				if onBorder {
+					perimTot++
+					if grid[r][c] == f {
+						perimF++
+					}
+				} else {
+					intTot++
+					if grid[r][c] == f {
+						intF++
+					}
+				}
+			}
+		}
+		// a frame: perimeter mostly the frame colour, interior mostly not.
+		if perimTot > 0 && perimF*5 >= perimTot*4 && (intTot == 0 || intF*2 < intTot) {
+			out = append(out, [4]int{b.r0 + 1, b.c0 + 1, b.r1 - 1, b.c1 - 1})
+		}
+	}
+	return out
+}
+
+// SegmentedGoalTargets segments the workspace then derives targets there, mapped
+// back to original coordinates. It prefers a FRAMED region's interior (the puzzle
+// box) -- robust to border decorations that would blow up the content bbox -- and
+// falls back to the non-background content box when no frame is found.
 func SegmentedGoalTargets(grid [][]int, bg int) []GoalTarget {
+	for _, fr := range FramedRegions(grid, bg) {
+		if t := goalTargetsIn(grid, bg, fr[0], fr[1], fr[2], fr[3]); len(t) > 0 {
+			return t
+		}
+	}
 	r0, c0, r1, c1, ok := ContentBox(grid, bg)
 	if !ok {
 		return nil

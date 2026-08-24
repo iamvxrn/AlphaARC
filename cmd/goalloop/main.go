@@ -254,17 +254,70 @@ func main() {
 			}
 			localized := n <= 64 // else: no workspace segmentation -> untrustworthy
 			fmt.Printf("phase G: goal-deriver -> %d target cells, %d actuatable (localized=%v)\n", n, actuatable, localized)
+
+			// candidate pool for stateful actuation: simple actions + salient + observed changers.
+			pool := env.simpleActionControls()
+			pool = append(pool, feataff.ResidualControls(cur, 12)...)
+			for _, r := range fm.Records() {
+				pool = append(pool, r.Control)
+			}
+			has := func(t macro.GoalTarget) bool {
+				return t.R < len(cur) && t.C < len(cur[t.R]) && cur[t.R][t.C] == t.Want
+			}
+			// ②-live: a bounded single-episode stateful forward search (no reset,
+			// signature-pruned, via play()) to make one target cell hold its colour --
+			// the arm-then-place kind of protocol single-step actuation can't express.
+			achieveLive := func(t macro.GoalTarget, cap int) bool {
+				tried := map[string]map[actuate.Control]bool{}
+				for k := 0; k < cap && actions < budget && !env.dead && !won; k++ {
+					if has(t) {
+						return true
+					}
+					s := gridSig(cur)
+					if tried[s] == nil {
+						tried[s] = map[actuate.Control]bool{}
+					}
+					var chosen actuate.Control
+					found := false
+					for _, c := range pool {
+						if !tried[s][c] {
+							chosen, found = c, true
+							break
+						}
+					}
+					if !found {
+						return false
+					}
+					tried[s][chosen] = true
+					if reward, _ := play(chosen); reward {
+						won, via, steps = true, "goal-stateful", actions
+						return true
+					}
+				}
+				return has(t)
+			}
+
 			for localized && actions < budget && !env.dead && !won {
 				acted := false
 				for _, t := range macro.SegmentedGoalTargets(cur, perception.BackgroundColor(cur)) {
-					ctrl, ok := fm.ControlForCellChange(t.R, t.C, t.Want)
-					if !ok {
+					if has(t) {
 						continue
 					}
-					reward, _ := play(ctrl)
-					acted = true
-					if reward {
-						won, via, steps = true, "goal-derive", actions
+					// single-step first (half ②)
+					if ctrl, ok := fm.ControlForCellChange(t.R, t.C, t.Want); ok {
+						if reward, _ := play(ctrl); reward {
+							won, via, steps = true, "goal-derive", actions
+						}
+						if has(t) || won {
+							acted = true
+							continue
+						}
+					}
+					// stateful fallback (②-live, wired into the driver)
+					if achieveLive(t, 20) {
+						acted = true
+					}
+					if won {
 						break
 					}
 				}

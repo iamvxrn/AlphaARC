@@ -110,3 +110,47 @@ func TestGoalTargets_RefusesBackgroundReference(t *testing.T) {
 		t.Fatalf("a bg-majority reference must be refused (no erase-to-bg goal), got %v", ts)
 	}
 }
+
+// Frame-aware segmentation: a framed tiled workspace with a hole, plus DECORATIONS
+// outside the frame that would blow up the content bbox. Content-bbox derivation is
+// defeated (spans the decorations -> bg majority -> nil); frame-aware crops to the
+// frame interior and finds the hole.
+func TestGoalTargets_FrameAwareSegmentation(t *testing.T) {
+	bg := 7
+	h, w := 12, 12
+	g := make([][]int, h)
+	for r := range g {
+		g[r] = make([]int, w)
+		for c := range g[r] {
+			g[r][c] = bg
+		}
+	}
+	// decorations far outside the frame (blow up the content bbox)
+	g[0][0], g[11][11], g[0][11] = 9, 9, 9
+	// frame of colour 5, border rows 3..8 cols 3..8
+	for r := 3; r <= 8; r++ {
+		g[r][3], g[r][8] = 5, 5
+	}
+	for c := 3; c <= 8; c++ {
+		g[3][c], g[8][c] = 5, 5
+	}
+	// interior rows 4..7 cols 4..7: 2x2 tiled motif [[1,2],[3,4]], one hole
+	motif := [][]int{{1, 2}, {3, 4}}
+	for r := 0; r < 4; r++ {
+		for c := 0; c < 4; c++ {
+			g[4+r][4+c] = motif[r%2][c%2]
+		}
+	}
+	g[5][6] = 0 // hole at interior (5,6): class (1,0) -> want 3
+
+	// content-bbox approach alone is defeated by the decorations
+	r0, c0, r1, c1, _ := ContentBox(g, bg)
+	if len(goalTargetsIn(g, bg, r0, c0, r1, c1)) != 0 {
+		t.Fatalf("content-bbox should be defeated by decorations (bg majority), but returned targets")
+	}
+	// frame-aware finds exactly the interior hole
+	ts := SegmentedGoalTargets(g, bg)
+	if len(ts) != 1 || ts[0].R != 5 || ts[0].C != 6 || ts[0].Want != 3 {
+		t.Fatalf("frame-aware segmentation should find (5,6)->3, got %v", ts)
+	}
+}
