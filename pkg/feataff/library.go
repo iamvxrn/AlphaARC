@@ -16,8 +16,11 @@ func DefaultFeatures() []Feature {
 			return float64(f(g, perception.BackgroundColor(g)))
 		}}
 	}
+	// Each PRIMITIVE is a separate feature (not lumped into one "compression"
+	// max) so the Goal Selector can discover WHICH regularity the reward tracks.
+	// Lumping them (DrivePreference = max) wrongly subsumes correspondence under
+	// compression and makes relational goals inseparable from self-regularity.
 	return []Feature{
-		mk("compression", macro.DrivePreference),
 		mk("reflect", macro.SymmetryPreference),
 		mk("translate", macro.TranslatePreference),
 		mk("count", macro.NumerosityPreference),

@@ -105,6 +105,57 @@ func (m *FeatureMapper) BestControlFor(goal string, dir int) (actuate.Control, f
 	return best, bestGain, found
 }
 
+// PursueToReward closes the loop generically: each step it actuates the control
+// with the strongest positive gain over ANY feature (not fixed to compression),
+// so the goal it chases is whichever feature the world lets it push -- and it
+// switches feature freely. Every step feeds goalsel; on the sparse reward it
+// returns which feature's pursuit reached it. `intrinsicFirst` (e.g.
+// "compression") only breaks ties, as an exploration prior, not a hardcoded goal.
+func PursueToReward(env Env, feats []Feature, fm *FeatureMapper, sel goalselObserver, intrinsicFirst string, budget int) (won bool, via string, steps int) {
+	// Baseline: give goalsel the pre-pursuit feature values so a reward on the
+	// very first step still has a trajectory to attribute the movement over.
+	base := env.Reset()
+	bvals := make(map[string]float64, len(feats))
+	for _, f := range feats {
+		bvals[f.Name] = f.Eval(base)
+	}
+	sel.Observe(bvals, false)
+
+	for steps = 0; steps < budget; steps++ {
+		bestFeat, bestGain := "", 0.0
+		var bestCtrl actuate.Control
+		for _, f := range feats {
+			c, g, ok := fm.BestControlFor(f.Name, +1)
+			if !ok || g <= 0 {
+				continue
+			}
+			// prefer strictly larger gain; on a near-tie prefer the intrinsic prior
+			if g > bestGain+1e-9 || (g > bestGain-1e-9 && f.Name == intrinsicFirst) {
+				bestGain, bestFeat, bestCtrl = g, f.Name, c
+			}
+		}
+		if bestFeat == "" {
+			return false, "", steps // nothing actuatable -> stuck
+		}
+		grid, reward := env.Step(bestCtrl)
+		vals := make(map[string]float64, len(feats))
+		for _, f := range feats {
+			vals[f.Name] = f.Eval(grid)
+		}
+		sel.Observe(vals, reward)
+		if reward {
+			return true, bestFeat, steps
+		}
+	}
+	return false, "", steps
+}
+
+// goalselObserver is the slice of goalsel the pursuit needs (kept as an interface
+// so feataff need not import goalsel just for this signature).
+type goalselObserver interface {
+	Observe(values map[string]float64, reward bool)
+}
+
 // cand is one recorded control reduced to its confounded-feature delta vector.
 type cand struct {
 	vec    []float64

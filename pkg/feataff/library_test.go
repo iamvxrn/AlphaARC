@@ -36,8 +36,8 @@ func TestLibrary_FeaturesAndControlsOnRealStructure(t *testing.T) {
 	for _, f := range feats {
 		byName[f.Name] = f.Eval(g)
 	}
-	if len(feats) != 5 {
-		t.Fatalf("expected 5 default features, got %d", len(feats))
+	if len(feats) != 4 {
+		t.Fatalf("expected 4 default features, got %d", len(feats))
 	}
 	if byName["correspondence"] <= 0 {
 		t.Fatalf("correspondence should read >0 on a matched framed pair, got %v", byName["correspondence"])

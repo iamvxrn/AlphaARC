@@ -125,3 +125,99 @@ func TestBridge_ProbeReturnsSeparatingContrast(t *testing.T) {
 		t.Fatalf("probe should include a reward contrast (T and F), got ivs=%v", ivs)
 	}
 }
+
+// corrGoalEnv: the reward tracks CORRESPONDENCE, not compression. An exemplar +
+// an incomplete copy; a trigger BUTTON fills the copy's missing cell (raising
+// correspondence toward a match); reward fires when the copy is completed. A
+// direct click on the missing cell is inert. A "goal != compression" world.
+type corrGoalEnv struct{ filled bool }
+
+var cgBox = [][]int{
+	{2, 2, 2, 2, 2},
+	{2, 4, 3, 4, 2},
+	{2, 3, 4, 3, 2},
+	{2, 4, 3, 4, 2},
+	{2, 2, 2, 2, 2},
+}
+
+const (
+	cgBG                 = 9
+	cgButtonX, cgButtonY = 0, 14   // trigger button (row 14, col 0)
+	cgMissR, cgMissC     = 11, 8   // copy interior cell (copy top-left is (9,6))
+)
+
+// Boxes are placed OFFSET (exemplar (1,1), copy (9,6)) with NO global
+// periodicity/symmetry, so completing the copy raises CORRESPONDENCE only --
+// reflect/translate/count stay flat (see TestEmergence_SelectsCorrespondence).
+func (e *corrGoalEnv) render() actuate.Grid {
+	g := make(actuate.Grid, 16)
+	for r := range g {
+		g[r] = make([]int, 16)
+		for c := range g[r] {
+			g[r][c] = cgBG
+		}
+	}
+	place := func(top, left int) {
+		for r := range cgBox {
+			for c := range cgBox[r] {
+				g[top+r][left+c] = cgBox[r][c]
+			}
+		}
+	}
+	place(1, 1)
+	place(9, 6)
+	if !e.filled {
+		g[cgMissR][cgMissC] = cgBG
+	}
+	g[cgButtonY][cgButtonX] = 7
+	return g
+}
+
+func (e *corrGoalEnv) Reset() actuate.Grid { e.filled = false; return e.render() }
+
+func (e *corrGoalEnv) Step(c actuate.Control) (actuate.Grid, bool) {
+	newly := false
+	if c.Kind == "click" && c.X == cgButtonX && c.Y == cgButtonY && !e.filled {
+		e.filled = true
+		newly = true
+	}
+	return e.render(), newly
+}
+
+func featureNames(feats []Feature) []string {
+	out := make([]string, 0, len(feats))
+	for _, f := range feats {
+		out = append(out, f.Name)
+	}
+	return out
+}
+
+// GENERALIZATION: the Path-B loop must win a game whose goal is NOT compression,
+// selecting a non-compression feature via an indirect trigger -- proving the
+// selector isn't hardwired to the compression bootstrap.
+func TestPursuit_GeneralizesToNonCompressionGoal(t *testing.T) {
+	env := &corrGoalEnv{}
+	feats := DefaultFeatures()
+	controls := []actuate.Control{
+		{Kind: "click", X: cgButtonX, Y: cgButtonY}, // fill button (indirect)
+		{Kind: "click", X: cgMissC, Y: cgMissR},     // direct click on the cell (inert)
+	}
+	fm := New(feats)
+	fm.Explore(env, controls)
+
+	sel := goalsel.New(featureNames(feats), 3, 0.5)
+	won, via, steps := PursueToReward(env, feats, fm, sel, "translate", 20)
+	if !won {
+		t.Fatalf("Path-B loop should win the correspondence-goal game, didn't (steps=%d)", steps)
+	}
+	// The relational goal must be pursued via correspondence, not a self-
+	// regularity feature -- proving the selector generalizes beyond compression.
+	if via != "correspondence" {
+		t.Fatalf("goal is relational; must win via correspondence, got via=%q", via)
+	}
+	feat, _, ok := sel.Goal()
+	if !ok || feat != "correspondence" {
+		t.Fatalf("goalsel should select correspondence, got %q ok=%v hyps=%v", feat, ok, sel.Hypotheses())
+	}
+	t.Logf("won via %q, goalsel goal=%q, steps=%d", via, feat, steps)
+}
