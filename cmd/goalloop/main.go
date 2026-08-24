@@ -24,6 +24,7 @@ import (
 	"alphaarc/pkg/environment/perception"
 	"alphaarc/pkg/environment/remote"
 	"alphaarc/pkg/feataff"
+	"alphaarc/pkg/goalsel"
 )
 
 // liveEnv adapts a remote game session to feataff.Env.
@@ -120,4 +121,52 @@ func main() {
 		fmt.Println()
 	}
 	fmt.Printf("explored %d controls, %d produced a reward (level_up)\n", len(fm.Records()), rewards)
+
+	// ===== Piece (3): PURSUIT =====
+	// Bootstrap the provisional goal from the intrinsic drive (compression), then
+	// repeatedly actuate the control that most increases it -- from the live
+	// (post-reset) state, letting the effect accumulate toward the sparse reward.
+	// Feed every step to goalsel; on a reward, confirm/select the goal causally.
+	names := make([]string, 0, len(feats))
+	for _, f := range feats {
+		names = append(names, f.Name)
+	}
+	sel := goalsel.New(names, 5, 5.0)
+	goalFeature := "compression" // provisional intrinsic goal (grow compressibility)
+
+	env.Reset()
+	won := false
+	const budget = 60
+	step := 0
+	for ; step < budget; step++ {
+		c, gain, ok := fm.BestControlFor(goalFeature, +1)
+		if !ok || gain <= 0 {
+			fmt.Printf("pursuit: no positive-gain control for %s -- stop at step %d\n", goalFeature, step)
+			break
+		}
+		grid, reward := env.Step(c)
+		vals := make(map[string]float64, len(feats))
+		for _, f := range feats {
+			vals[f.Name] = f.Eval(grid)
+		}
+		sel.Observe(vals, reward)
+		if reward {
+			won = true
+			fmt.Printf("*** LEVEL_UP at pursuit step %d via click(%d,%d) pursuing %q ***\n", step, c.X, c.Y, goalFeature)
+			break
+		}
+	}
+
+	if won {
+		// Confirm the goal causally: the reward credited several coupled features;
+		// disambiguate via the feature mapper (interventions) -- inseparable ones
+		// merge, honestly.
+		sel.Disambiguate(fm)
+		if f, d, ok := sel.Goal(); ok {
+			fmt.Printf("goalsel confirmed goal: %s dir=%+d  merged=%v\n", f, d, sel.Merged())
+		}
+		fmt.Println("RESULT: vc33 L1 solved through the Path-B stack (features -> pursuit -> reward -> causal goal).")
+	} else {
+		fmt.Printf("no level_up within %d pursuit steps\n", budget)
+	}
 }

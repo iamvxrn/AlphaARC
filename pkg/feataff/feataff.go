@@ -90,6 +90,21 @@ func (m *FeatureMapper) eval(g actuate.Grid) map[string]float64 {
 	return v
 }
 
+// BestControlFor returns the recorded control that most moves `goal` in
+// direction `dir` (+1 up / -1 down), and its gain. ok is false if no recorded
+// control moves it that way -- the pursuit engine uses this to actuate a
+// provisional goal-feature before any reward has confirmed it.
+func (m *FeatureMapper) BestControlFor(goal string, dir int) (actuate.Control, float64, bool) {
+	var best actuate.Control
+	bestGain, found := 0.0, false
+	for _, o := range m.obs {
+		if g := float64(dir) * o.deltas[goal]; g > bestGain {
+			bestGain, best, found = g, o.ctrl, true
+		}
+	}
+	return best, bestGain, found
+}
+
 // cand is one recorded control reduced to its confounded-feature delta vector.
 type cand struct {
 	vec    []float64

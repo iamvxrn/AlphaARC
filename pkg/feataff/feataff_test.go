@@ -68,6 +68,30 @@ func TestBridge_FeatureMapperDrivesCausalDisambiguation(t *testing.T) {
 	}
 }
 
+// BestControlFor picks the control that most increases the provisional goal
+// feature -- the pursuit engine's actuator selection.
+func TestBridge_BestControlForGoal(t *testing.T) {
+	cGrow := actuate.Control{Kind: "click", X: 1, Y: 1}
+	cShrink := actuate.Control{Kind: "click", X: 2, Y: 2}
+	env := &entangledEnv{
+		dfk:    map[actuate.Control]float64{cGrow: 5, cShrink: -5},
+		dfdist: map[actuate.Control]float64{cGrow: 0, cShrink: 0},
+		thr:    1e9, // never reward here; we only test control selection
+	}
+	feats := []Feature{{Name: "fk", Eval: func(actuate.Grid) float64 { return env.fkVal }}}
+	fm := New(feats)
+	fm.Explore(env, []actuate.Control{cGrow, cShrink})
+	c, gain, ok := fm.BestControlFor("fk", +1)
+	if !ok || c != cGrow || gain <= 0 {
+		t.Fatalf("should pick the grow control to increase fk, got %+v gain=%.1f ok=%v", c, gain, ok)
+	}
+	// and the opposite direction picks shrink
+	c2, _, ok2 := fm.BestControlFor("fk", -1)
+	if !ok2 || c2 != cShrink {
+		t.Fatalf("decreasing fk should pick shrink, got %+v", c2)
+	}
+}
+
 // Probe returns a spread of separating interventions (varied ratios) with a
 // reward contrast, from the recorded controls.
 func TestBridge_ProbeReturnsSeparatingContrast(t *testing.T) {
