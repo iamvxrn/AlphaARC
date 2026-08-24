@@ -701,3 +701,76 @@ func TestNonClickAction_SolvesWhatClicksCannot(t *testing.T) {
 	}
 	t.Logf("won via %q using a non-click simple action", via)
 }
+
+// motorEnv has an AVATAR (colour 2) moved by simple actions 1=up 2=down 3=left
+// 4=right, and a fixed MARKER (colour 8). Reward fires when the avatar reaches the
+// marker. No single action solves it; the agent must learn the motor model and
+// navigate. Nothing about direction or avatar colour is given to the agent.
+type motorEnv struct{ ar, ac int }
+
+const motorStartR, motorStartC = 1, 1
+const motorGoalR, motorGoalC = 4, 4
+
+func (e *motorEnv) render() actuate.Grid {
+	g := make(actuate.Grid, 6)
+	for r := range g {
+		g[r] = make([]int, 6)
+	}
+	g[motorGoalR][motorGoalC] = 8
+	g[e.ar][e.ac] = 2 // avatar drawn last (on top if coincident)
+	return g
+}
+func (e *motorEnv) Reset() actuate.Grid { e.ar, e.ac = motorStartR, motorStartC; return e.render() }
+func (e *motorEnv) Step(c actuate.Control) (actuate.Grid, bool) {
+	if c.Kind == "action" {
+		nr, nc := e.ar, e.ac
+		switch c.ActionID {
+		case 1:
+			nr--
+		case 2:
+			nr++
+		case 3:
+			nc--
+		case 4:
+			nc++
+		}
+		if nr >= 0 && nr < 6 && nc >= 0 && nc < 6 {
+			e.ar, e.ac = nr, nc
+		}
+	}
+	return e.render(), e.ar == motorGoalR && e.ac == motorGoalC
+}
+
+func TestMotor_LearnsModelAndNavigatesToGoal(t *testing.T) {
+	bg := 0
+	actions := []actuate.Control{
+		{Kind: "action", ActionID: 1}, {Kind: "action", ActionID: 2},
+		{Kind: "action", ActionID: 3}, {Kind: "action", ActionID: 4},
+	}
+	// no single action reaches the goal
+	for _, a := range actions {
+		env := &motorEnv{}
+		env.Reset()
+		if _, r := env.Step(a); r {
+			t.Fatalf("single action %v must not win", a)
+		}
+	}
+	// learn the motor model
+	model := DiscoverMotor(&motorEnv{}, bg, actions)
+	if len(model.Disp) != 4 || model.AvatarColor != 2 {
+		t.Fatalf("motor model should learn 4 displacements + avatar colour 2, got disp=%v color=%d", model.Disp, model.AvatarColor)
+	}
+	// displacements must be the four unit directions (discovered, not told)
+	want := map[int][2]int{1: {-1, 0}, 2: {1, 0}, 3: {0, -1}, 4: {0, 1}}
+	for aid, d := range want {
+		if model.Disp[aid] != d {
+			t.Fatalf("action %d should map to %v, got %v", aid, d, model.Disp[aid])
+		}
+	}
+	// navigate to the marker
+	won, steps := model.NavigateToTarget(&motorEnv{}, bg, 30)
+	if !won {
+		t.Fatalf("navigation should reach the goal, didn't (steps=%d)", steps)
+	}
+	t.Logf("learned motor model %v and navigated to goal in %d steps", model.Disp, steps)
+}

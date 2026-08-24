@@ -234,6 +234,32 @@ func main() {
 		}
 	}
 
+	// Phase B.5 -- GOAL-DIRECTED MOTOR NAVIGATION. If the game has an avatar moved by
+	// simple actions, the motor model is built FOR FREE from the Phase A action probes
+	// (their before/after grids), then the avatar is driven greedily toward the nearest
+	// other object, all in the same episode. This is what ls20-class needs: reach a
+	// place, not press once.
+	if !won && actions < budget && !env.dead {
+		mm := fm.MotorModel(bg)
+		if mm.Known() {
+			fmt.Printf("phase B.5: motor model %v (avatar colour %d) -- navigating\n", mm.Disp, mm.AvatarColor)
+			for actions < budget && !env.dead && !won {
+				c, ok := mm.NextAction(cur, bg)
+				if !ok {
+					break
+				}
+				reward, changed := play(c)
+				if reward {
+					won, via, steps = true, "motor-nav", actions
+					break
+				}
+				if !changed {
+					break // blocked (wall) -- greedy nav can't make progress
+				}
+			}
+		}
+	}
+
 	// ===== Phase C: LIVE SEQUENCE ACTUATION (single-episode, forward pruning) =====
 	// Single-step pursuit is exhausted -> the game is likely STATEFUL. One continuous
 	// episode, no Reset (can't backtrack on a cumulative budget), so we search action
