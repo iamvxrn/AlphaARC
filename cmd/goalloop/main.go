@@ -242,20 +242,37 @@ func main() {
 	if !won && actions < budget && !env.dead {
 		mm := fm.MotorModel(bg)
 		if mm.Known() {
-			fmt.Printf("phase B.5: motor model %v (avatar colour %d) -- navigating\n", mm.Disp, mm.AvatarColor)
+			fmt.Printf("phase B.5: motor model %v (avatar colour %d) -- navigating goal hypotheses\n", mm.Disp, mm.AvatarColor)
+			tried := map[[2]int]bool{}
 			for actions < budget && !env.dead && !won {
-				c, ok := mm.NextAction(cur, bg)
-				if !ok {
-					break
+				// pick the nearest untried object as the current goal HYPOTHESIS.
+				var target [2]int
+				have := false
+				for _, t := range mm.TargetCandidates(cur, bg) {
+					if !tried[t] {
+						target, have = t, true
+						break
+					}
 				}
-				reward, changed := play(c)
-				if reward {
-					won, via, steps = true, "motor-nav", actions
-					break
+				if !have {
+					break // every object visited, none was the goal
 				}
-				if !changed {
-					break // blocked (wall) -- greedy nav can't make progress
+				// drive toward it until arrived/blocked, watching for the reward.
+				for actions < budget && !env.dead {
+					c, ok := mm.NextActionToward(cur, target[0], target[1])
+					if !ok {
+						break // arrived at / blocked from this hypothesis
+					}
+					reward, changed := play(c)
+					if reward {
+						won, via, steps = true, "motor-nav", actions
+						break
+					}
+					if !changed {
+						break // blocked
+					}
 				}
+				tried[target] = true // arrived, no reward -> not the goal, prune it
 			}
 		}
 	}

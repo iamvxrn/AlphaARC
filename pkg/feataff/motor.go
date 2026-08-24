@@ -1,6 +1,8 @@
 package feataff
 
 import (
+	"sort"
+
 	"alphaarc/pkg/actuate"
 	"alphaarc/pkg/macro"
 )
@@ -213,6 +215,101 @@ func (m MotorModel) NextAction(cur actuate.Grid, bg int) (actuate.Control, bool)
 		return actuate.Control{}, false
 	}
 	return actuate.Control{Kind: "action", ActionID: bestA}, true
+}
+
+// TargetCandidates returns the centroids of the non-avatar objects, ordered
+// nearest-first from the avatar -- the ordered set of GOAL HYPOTHESES to navigate
+// to (nearest is only the exploration order, not the assumed goal).
+func (m MotorModel) TargetCandidates(cur actuate.Grid, bg int) [][2]int {
+	ar, ac, n := centroidOfColor(cur, m.AvatarColor)
+	if n == 0 {
+		return nil
+	}
+	type cand struct {
+		r, c, d int
+	}
+	var cs []cand
+	for _, p := range macro.ObjectTargets(cur, bg, 32) {
+		if cur[p.Y][p.X] == m.AvatarColor {
+			continue
+		}
+		cs = append(cs, cand{p.Y, p.X, abs(p.Y-ar) + abs(p.X-ac)})
+	}
+	sort.Slice(cs, func(i, j int) bool { return cs[i].d < cs[j].d })
+	out := make([][2]int, len(cs))
+	for i, c := range cs {
+		out[i] = [2]int{c.r, c.c}
+	}
+	return out
+}
+
+// NextActionToward returns the action that STRICTLY reduces the avatar's distance
+// to a SPECIFIC target (tr,tc). ok is false when no action makes progress -- i.e.
+// the avatar has arrived at / is blocked from the target (the signal to move on to
+// the next goal hypothesis).
+func (m MotorModel) NextActionToward(cur actuate.Grid, tr, tc int) (actuate.Control, bool) {
+	if !m.known {
+		return actuate.Control{}, false
+	}
+	ar, ac, n := centroidOfColor(cur, m.AvatarColor)
+	if n == 0 {
+		return actuate.Control{}, false
+	}
+	curDist := abs(ar-tr) + abs(ac-tc)
+	bestA, bestDist := -1, curDist
+	for aid, d := range m.Disp {
+		nd := abs(ar+d[0]-tr) + abs(ac+d[1]-tc)
+		if nd < bestDist {
+			bestA, bestDist = aid, nd
+		}
+	}
+	if bestA < 0 {
+		return actuate.Control{}, false // no strict progress -> arrived/blocked
+	}
+	return actuate.Control{Kind: "action", ActionID: bestA}, true
+}
+
+// NavigateHypotheses drives the avatar to each candidate object in turn (nearest
+// first), pruning a candidate once the avatar arrives there WITHOUT triggering the
+// reward -- goal-relevant target selection: the goal is the object whose arrival
+// the reward tracks, not merely the nearest. Offline convenience (it Resets); the
+// live driver runs the same loop step-by-step through its own budget/play.
+func (m MotorModel) NavigateHypotheses(env Env, bg, budget int) (won bool, steps int) {
+	if !m.known {
+		return false, 0
+	}
+	cur := env.Reset()
+	tried := map[[2]int]bool{}
+	for steps < budget {
+		var target [2]int
+		have := false
+		for _, t := range m.TargetCandidates(cur, bg) {
+			if !tried[t] {
+				target, have = t, true
+				break
+			}
+		}
+		if !have {
+			return false, steps // every object visited, none was the goal
+		}
+		for steps < budget {
+			c, ok := m.NextActionToward(cur, target[0], target[1])
+			if !ok {
+				break // arrived at / blocked from this hypothesis
+			}
+			after, reward := env.Step(c)
+			steps++
+			if reward {
+				return true, steps
+			}
+			if gridsEqual(cur, after) {
+				break // blocked
+			}
+			cur = after
+		}
+		tried[target] = true // arrived, no reward -> not the goal, try the next
+	}
+	return false, steps
 }
 
 // NavigateToTarget drives the avatar toward the nearest other object using the

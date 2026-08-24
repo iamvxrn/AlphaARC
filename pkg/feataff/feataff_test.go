@@ -801,3 +801,63 @@ func TestMotor_CoherenceFilterRejectsScatter(t *testing.T) {
 		t.Fatalf("a static same-colour cell must break rigidity (rejected), was accepted")
 	}
 }
+
+// decoyMotorEnv: the NEAREST object is a decoy (reaching it does nothing); the real
+// goal is farther. Nearest-only navigation gets stuck on the decoy; goal-relevant
+// hypothesis navigation prunes the decoy (arrived, no reward) and reaches the goal.
+type decoyMotorEnv struct{ ar, ac int }
+
+const dmStartR, dmStartC = 3, 3
+
+func (e *decoyMotorEnv) render() actuate.Grid {
+	g := make(actuate.Grid, 8)
+	for r := range g {
+		g[r] = make([]int, 8)
+	}
+	g[3][5] = 8 // decoy (near the start at 3,3)
+	g[7][0] = 6 // real goal (far)
+	g[e.ar][e.ac] = 2
+	return g
+}
+func (e *decoyMotorEnv) Reset() actuate.Grid { e.ar, e.ac = dmStartR, dmStartC; return e.render() }
+func (e *decoyMotorEnv) Step(c actuate.Control) (actuate.Grid, bool) {
+	if c.Kind == "action" {
+		nr, nc := e.ar, e.ac
+		switch c.ActionID {
+		case 1:
+			nr--
+		case 2:
+			nr++
+		case 3:
+			nc--
+		case 4:
+			nc++
+		}
+		if nr >= 0 && nr < 8 && nc >= 0 && nc < 8 {
+			e.ar, e.ac = nr, nc
+		}
+	}
+	return e.render(), e.ar == 7 && e.ac == 0 // reward ONLY at the real goal
+}
+
+func TestMotor_GoalRelevantTargetBeatsNearest(t *testing.T) {
+	bg := 0
+	actions := []actuate.Control{
+		{Kind: "action", ActionID: 1}, {Kind: "action", ActionID: 2},
+		{Kind: "action", ActionID: 3}, {Kind: "action", ActionID: 4},
+	}
+	model := DiscoverMotor(&decoyMotorEnv{}, bg, actions)
+	if !model.Known() {
+		t.Fatalf("motor model should be learned")
+	}
+	// nearest-only navigation gets stuck on the decoy (never reaches the goal)
+	if won, _ := model.NavigateToTarget(&decoyMotorEnv{}, bg, 40); won {
+		t.Fatalf("nearest-only navigation should NOT win (it fixates on the decoy)")
+	}
+	// goal-relevant hypothesis navigation prunes the decoy and reaches the goal
+	won, steps := model.NavigateHypotheses(&decoyMotorEnv{}, bg, 60)
+	if !won {
+		t.Fatalf("hypothesis navigation should reach the real goal, didn't (steps=%d)", steps)
+	}
+	t.Logf("goal-relevant navigation pruned the decoy and won in %d steps", steps)
+}
