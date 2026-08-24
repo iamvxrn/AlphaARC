@@ -647,3 +647,57 @@ func TestSequence_ZeroChangeBranchIsPrunedInstantly(t *testing.T) {
 		t.Fatalf("unarmed apply must be pruned in 1 probe, got won=%v probes=%d", res.Won, res.Probes)
 	}
 }
+
+// actionEnv is solvable ONLY by a non-click simple action (Action1). Clicks do
+// nothing; the action completes the mirror -> reflect rises -> reward. This proves
+// the whole stack is control-agnostic: an "action" control flows through the
+// affordance model, pursuit, and reward exactly like a click.
+type actionEnv struct{ done bool }
+
+func (e *actionEnv) render() actuate.Grid {
+	g := make(actuate.Grid, 4)
+	for r := range g {
+		g[r] = make([]int, 4)
+	}
+	g[1][0] = 3
+	if e.done {
+		g[1][3] = 3 // mirror partner -> reflect completes
+	}
+	return g
+}
+func (e *actionEnv) Reset() actuate.Grid { e.done = false; return e.render() }
+func (e *actionEnv) Step(c actuate.Control) (actuate.Grid, bool) {
+	if c.Kind == "action" && c.ActionID == 1 && !e.done {
+		e.done = true
+		return e.render(), true
+	}
+	return e.render(), false // clicks and other actions are inert
+}
+
+func TestNonClickAction_SolvesWhatClicksCannot(t *testing.T) {
+	feats := DefaultFeatures()
+	act1 := actuate.Control{Kind: "action", ActionID: 1}
+	controls := []actuate.Control{{Kind: "click", X: 0, Y: 0}, {Kind: "click", X: 3, Y: 3}, act1}
+
+	// no click solves it
+	for _, c := range controls {
+		if c.Kind != "click" {
+			continue
+		}
+		env := &actionEnv{}
+		env.Reset()
+		if _, r := env.Step(c); r {
+			t.Fatalf("no click should reward, %v did", c)
+		}
+	}
+	// the pursuit stack wins via the simple action
+	env := &actionEnv{}
+	fm := New(feats)
+	fm.Explore(env, controls)
+	sel := goalsel.New(featureNames(feats), 3, 0.5)
+	won, via, _ := PursueToReward(env, feats, fm, sel, "reflect", 10)
+	if !won {
+		t.Fatalf("stack should win via the non-click action, didn't")
+	}
+	t.Logf("won via %q using a non-click simple action", via)
+}
