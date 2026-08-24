@@ -383,6 +383,30 @@ func ResidualTargets(grid [][]int, bg, maxN int) []ResidualPoint {
 	return out
 }
 
+// ObjectTargets returns the centroid of each distinct foreground object
+// (4-connected component), smallest first. The interactive control of a game is
+// often a small distinct blob (a button) that is NOT the largest residual
+// anomaly, so object centroids must be offered as click candidates alongside the
+// residual (this is what let the Python agent solve vc33). maxN<=0 = all.
+func ObjectTargets(grid [][]int, bg, maxN int) []ResidualPoint {
+	comps := components(grid, bg)
+	out := make([]ResidualPoint, 0, len(comps))
+	for _, cp := range comps {
+		sumR, sumC := 0, 0
+		for _, c := range cp.cells {
+			sumR += c.R
+			sumC += c.C
+		}
+		n := len(cp.cells)
+		out = append(out, ResidualPoint{X: sumC / n, Y: sumR / n, Size: n})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Size < out[j].Size })
+	if maxN > 0 && len(out) > maxN {
+		out = out[:maxN]
+	}
+	return out
+}
+
 // ResidualTarget returns the centroid of the LARGEST residual cluster (col=x,
 // row=y). ok=false when there is no residual.
 func ResidualTarget(grid [][]int, bg int) (x, y int, ok bool) {

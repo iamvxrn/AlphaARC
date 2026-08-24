@@ -66,6 +66,22 @@ func (m *FeatureMapper) Explore(env Env, controls []actuate.Control) {
 	}
 }
 
+// Record is one recorded control->effect observation (for inspection/telemetry).
+type Record struct {
+	Control actuate.Control
+	Deltas  map[string]float64
+	Reward  bool
+}
+
+// Records exposes what Explore observed (control, per-feature deltas, reward).
+func (m *FeatureMapper) Records() []Record {
+	out := make([]Record, 0, len(m.obs))
+	for _, o := range m.obs {
+		out = append(out, Record{Control: o.ctrl, Deltas: o.deltas, Reward: o.reward})
+	}
+	return out
+}
+
 func (m *FeatureMapper) eval(g actuate.Grid) map[string]float64 {
 	v := make(map[string]float64, len(m.features))
 	for _, f := range m.features {
