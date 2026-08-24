@@ -27,30 +27,57 @@ import (
 	"alphaarc/pkg/goalsel"
 )
 
-// liveEnv adapts a remote game session to feataff.Env.
+// liveEnv adapts a remote game session to feataff.Env. It tracks a `dead` flag:
+// once the session errors (expired / GAME_NOT_STARTED after budget exhaustion),
+// further Step/Reset stop hitting the API and return the last good grid with no
+// reward, so a running pursuit ends cleanly on "nothing changes" instead of
+// spewing 60 identical API errors and recording garbage 1x1 grids.
 type liveEnv struct {
 	sess *remote.Session
 	prev int
+	last actuate.Grid
+	dead bool
+	errN int
+}
+
+func (e *liveEnv) lastOr1x1() actuate.Grid {
+	if e.last == nil {
+		return actuate.Grid{{0}}
+	}
+	return e.last
 }
 
 func (e *liveEnv) Reset() actuate.Grid {
+	if e.dead {
+		return e.lastOr1x1()
+	}
 	f, err := e.sess.Reset()
 	if err != nil {
 		fmt.Println("reset:", err)
-		return actuate.Grid{{0}}
+		e.dead = true
+		return e.lastOr1x1()
 	}
 	e.prev = f.LevelsCompleted
+	e.last = f.Grid
 	return f.Grid
 }
 
 func (e *liveEnv) Step(c actuate.Control) (actuate.Grid, bool) {
+	if e.dead {
+		return e.lastOr1x1(), false
+	}
 	f, err := e.sess.Step(environment.Action{ID: environment.Action6, X: c.X, Y: c.Y})
 	if err != nil {
-		fmt.Println("step:", err)
-		return actuate.Grid{{0}}, false
+		e.errN++
+		if e.errN <= 1 {
+			fmt.Println("step:", err, "(marking session dead; suppressing further errors)")
+		}
+		e.dead = true
+		return e.lastOr1x1(), false
 	}
 	reward := f.LevelsCompleted > e.prev
 	e.prev = f.LevelsCompleted
+	e.last = f.Grid
 	return f.Grid, reward
 }
 

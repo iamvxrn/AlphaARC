@@ -54,18 +54,24 @@ func SweepControls(g actuate.Grid, step int) []actuate.Control {
 }
 
 // ReachableControls returns the subset of cands whose click actually changes the
-// board, each tried once from a fresh reset (clean attribution). This is the
-// game-agnostic answer to "the goal cell is not the clickable trigger": discover
-// the real actuators by causation, not by how salient they look. Order preserved,
-// deduped by the caller's candidate list.
+// board -- the real actuators, discovered by causation rather than by how salient
+// they look (the game-agnostic answer to "the goal cell is not the clickable
+// trigger"). It sweeps SEQUENTIALLY from a SINGLE reset (1 Reset + N Steps, like
+// real play) rather than resetting per candidate: on a live game with a bounded
+// budget the RESET is the expensive/limited op, and a per-candidate reset sweep
+// exhausts the session (observed killing ft09 mid-run). Accumulation is fine for
+// DISCOVERY -- a click that changes the board is reachable regardless of prior
+// state; clean per-feature attribution is done afterwards by a small Explore over
+// just the discovered actuators. Order preserved.
 func ReachableControls(env Env, cands []actuate.Control) []actuate.Control {
+	prev := env.Reset()
 	var out []actuate.Control
 	for _, c := range cands {
-		before := env.Reset()
 		after, _ := env.Step(c)
-		if !gridsEqual(before, after) {
+		if !gridsEqual(prev, after) {
 			out = append(out, c)
 		}
+		prev = after
 	}
 	return out
 }
