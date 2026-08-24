@@ -132,6 +132,25 @@ func main() {
 	}
 	sel := goalsel.New(names, 5, 5.0)
 	won, via, steps := feataff.PursueToReward(env, feats, fm, sel, "translate", 60)
+
+	// Piece (4): if the fixed library is STUCK (nothing pursuable), GROW new
+	// features, re-explore with the expanded library, and retry.
+	if !won && steps == 0 {
+		grown := feataff.GrowFeatures(env.Reset())
+		if len(grown) > 0 {
+			fmt.Printf("library stuck -- grew %d feature(s), retrying\n", len(grown))
+			feats = append(feats, grown...)
+			names2 := make([]string, 0, len(feats))
+			for _, f := range feats {
+				names2 = append(names2, f.Name)
+			}
+			fm = feataff.New(feats)
+			fm.Explore(env, feataff.ResidualControls(env.Reset(), 12))
+			sel = goalsel.New(names2, 5, 5.0)
+			won, via, steps = feataff.PursueToReward(env, feats, fm, sel, "translate", 60)
+		}
+	}
+
 	if won {
 		fmt.Printf("*** LEVEL_UP at pursuit step %d, pursued via %q ***\n", steps, via)
 		sel.Disambiguate(fm)

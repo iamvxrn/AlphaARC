@@ -142,8 +142,8 @@ var cgBox = [][]int{
 
 const (
 	cgBG                 = 9
-	cgButtonX, cgButtonY = 0, 14   // trigger button (row 14, col 0)
-	cgMissR, cgMissC     = 11, 8   // copy interior cell (copy top-left is (9,6))
+	cgButtonX, cgButtonY = 0, 14 // trigger button (row 14, col 0)
+	cgMissR, cgMissC     = 11, 8 // copy interior cell (copy top-left is (9,6))
 )
 
 // Boxes are placed OFFSET (exemplar (1,1), copy (9,6)) with NO global
@@ -220,4 +220,83 @@ func TestPursuit_GeneralizesToNonCompressionGoal(t *testing.T) {
 		t.Fatalf("goalsel should select correspondence, got %q ok=%v hyps=%v", feat, ok, sel.Hypotheses())
 	}
 	t.Logf("won via %q, goalsel goal=%q, steps=%d", via, feat, steps)
+}
+
+// rot180Env: the reward tracks 180-degree ROTATIONAL symmetry -- a regularity
+// the FIXED library (reflect=mirror, translate=period, count, correspondence)
+// does not capture. A button completes the point-symmetry; direct clicks inert.
+// Feature-growth must invent the discovered-transform feature to win.
+type rot180Env struct{ filled bool }
+
+func (e *rot180Env) render() actuate.Grid {
+	g := make(actuate.Grid, 8)
+	for r := range g {
+		g[r] = make([]int, 8)
+	}
+	// A pattern that is rot180-symmetric ONLY once the partners are filled; it is
+	// NOT mirror-symmetric or periodic (so reflect/translate stay ~0).
+	g[1][1], g[1][2], g[2][1] = 1, 2, 3 // top-left marks
+	if e.filled {
+		g[6][6], g[6][5], g[5][6] = 1, 2, 3 // rot180 partners: (r,c)->(7-r,7-c)
+	}
+	g[7][0] = 7 // the trigger button
+	return g
+}
+
+func (e *rot180Env) Reset() actuate.Grid { e.filled = false; return e.render() }
+
+func (e *rot180Env) Step(c actuate.Control) (actuate.Grid, bool) {
+	newly := false
+	if c.Kind == "click" && c.X == 0 && c.Y == 7 && !e.filled {
+		e.filled = true
+		newly = true
+	}
+	return e.render(), newly
+}
+
+// Piece (4) capstone: the fixed library CANNOT pursue this game (no feature
+// moves), but growing the discovered-transform feature closes the gap and the
+// loop wins via it -- feature growth reaching a goal the fixed set couldn't.
+func TestGrowth_InventsFeatureToWinWhenLibraryStuck(t *testing.T) {
+	button := actuate.Control{Kind: "click", X: 0, Y: 7}
+	direct := actuate.Control{Kind: "click", X: 6, Y: 6}
+	controls := []actuate.Control{button, direct}
+
+	// 1) FIXED library is stuck: nothing to pursue.
+	fixed := DefaultFeatures()
+	env1 := &rot180Env{}
+	fm1 := New(fixed)
+	fm1.Explore(env1, controls)
+	sel1 := goalsel.New(featureNames(fixed), 3, 0.5)
+	won, _, steps := PursueToReward(env1, fixed, fm1, sel1, "translate", 20)
+	if won {
+		t.Fatal("fixed library should NOT be able to win the rot180 game")
+	}
+	if steps != 0 {
+		t.Fatalf("fixed library should be stuck immediately (no pursuable feature), pursued %d", steps)
+	}
+
+	// 2) GROW features on the grid, retry -> now it wins via the invented feature.
+	env2 := &rot180Env{}
+	grown := append(DefaultFeatures(), GrowFeatures(env2.render())...)
+	hasGrown := false
+	for _, f := range grown {
+		if f.Name == "discovered-transform" {
+			hasGrown = true
+		}
+	}
+	if !hasGrown {
+		t.Fatal("GrowFeatures should have invented the discovered-transform feature")
+	}
+	fm2 := New(grown)
+	fm2.Explore(env2, controls)
+	sel2 := goalsel.New(featureNames(grown), 3, 0.5)
+	won2, via, steps2 := PursueToReward(env2, grown, fm2, sel2, "translate", 20)
+	if !won2 {
+		t.Fatalf("with the grown feature the loop should win, didn't (steps=%d)", steps2)
+	}
+	if via != "discovered-transform" {
+		t.Fatalf("should win via the invented feature, got via=%q", via)
+	}
+	t.Logf("feature growth closed the gap: won via %q after fixed library was stuck", via)
 }

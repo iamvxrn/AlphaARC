@@ -28,6 +28,25 @@ func DefaultFeatures() []Feature {
 	}
 }
 
+// GrowFeatures is feature-growth rung 1: when the fixed library explains a grid
+// poorly / has nothing to pursue, INVENT new candidate features that capture
+// structure the fixed primitives miss -- discovered from the grid, not
+// hardcoded. Rung 1 offers a self-parameterizing "discovered-transform" feature
+// (macro.DiscoverTransform searches involutions -- rot180/transpose/
+// antitranspose -- that Reflect/Translate/Count don't), included only when it
+// actually finds a regularity on this grid. Deeper rungs grow color-permutation,
+// legend-mapping, and scale-aware relational features.
+func GrowFeatures(g actuate.Grid) []Feature {
+	// Offer the discovered-transform family unconditionally: its value may be 0 on
+	// the CURRENT (e.g. incomplete) grid yet become pursuable once a control moves
+	// toward the structure -- the mapper measures that during exploration. The
+	// caller grows parsimoniously by only invoking this when the fixed library is
+	// STUCK (nothing pursuable), not by gating on the current reading.
+	return []Feature{{Name: "discovered-transform", Eval: func(gg actuate.Grid) float64 {
+		return float64(macro.DiscoverTransformPreference(gg, perception.BackgroundColor(gg)))
+	}}}
+}
+
 // ResidualControls turns perception into REAL candidate controls: the union of
 // residual-cluster centroids (the cells that break the best regularity) AND
 // object centroids (distinct blobs / buttons). The interactive actuator is often
