@@ -199,42 +199,6 @@ func main() {
 		}
 	}
 
-	// Phase G -- GOAL DERIVATION (half ①): read what the grid WANTS -- the cells
-	// that break its dominant regularity and the colour that completes it -- and try
-	// to actuate each with a control already observed to achieve it (half ②). On
-	// stateful games nothing single-step will, which is the honest derive/actuate
-	// split: we can read the goal but not (yet) realise it.
-	if !won && !env.dead {
-		targets := macro.GoalTargets(cur, perception.BackgroundColor(cur))
-		if len(targets) > 0 {
-			actuatable := 0
-			for _, t := range targets {
-				if _, ok := fm.ControlForCellChange(t.R, t.C, t.Want); ok {
-					actuatable++
-				}
-			}
-			fmt.Printf("phase G: goal-deriver -> %d target cells, %d actuatable from observations\n", len(targets), actuatable)
-			for actions < budget && !env.dead && !won {
-				acted := false
-				for _, t := range macro.GoalTargets(cur, perception.BackgroundColor(cur)) {
-					ctrl, ok := fm.ControlForCellChange(t.R, t.C, t.Want)
-					if !ok {
-						continue
-					}
-					reward, _ := play(ctrl)
-					acted = true
-					if reward {
-						won, via, steps = true, "goal-derive", actions
-						break
-					}
-				}
-				if !acted || won {
-					break
-				}
-			}
-		}
-	}
-
 	// Phase B -- single-step pursuit: press the strongest actuatable feature-gain
 	// repeatedly (this is how vc33's grow button wins). A control that stops paying
 	// off is blocked so we don't loop on it.
@@ -267,6 +231,46 @@ func main() {
 			recs := fm.Records()
 			if last := recs[len(recs)-1]; last.Deltas[feat] <= 0 {
 				blocked[ctrl] = true
+			}
+		}
+	}
+
+	// Phase G -- GOAL DERIVATION (half ①), a FALLBACK after single-step pursuit (so it
+	// never preempts what already works, e.g. vc33's grow). Read what the grid WANTS --
+	// the cells that break its dominant regularity and the colour that completes each --
+	// and actuate any target with a control already observed to achieve it (half ②). It
+	// only ACTS on a SMALL, localized target set (a real fixable goal); a huge set means
+	// the deriver ran on the whole grid without workspace segmentation (bg-as-reference)
+	// and is not trustworthy -- reported, not acted on. On stateful games nothing is
+	// single-step actuatable: the honest derive-vs-actuate split live.
+	if !won && actions < budget && !env.dead {
+		targets := macro.GoalTargets(cur, perception.BackgroundColor(cur))
+		if n := len(targets); n > 0 {
+			actuatable := 0
+			for _, t := range targets {
+				if _, ok := fm.ControlForCellChange(t.R, t.C, t.Want); ok {
+					actuatable++
+				}
+			}
+			localized := n <= 64 // else: no workspace segmentation -> untrustworthy
+			fmt.Printf("phase G: goal-deriver -> %d target cells, %d actuatable (localized=%v)\n", n, actuatable, localized)
+			for localized && actions < budget && !env.dead && !won {
+				acted := false
+				for _, t := range macro.GoalTargets(cur, perception.BackgroundColor(cur)) {
+					ctrl, ok := fm.ControlForCellChange(t.R, t.C, t.Want)
+					if !ok {
+						continue
+					}
+					reward, _ := play(ctrl)
+					acted = true
+					if reward {
+						won, via, steps = true, "goal-derive", actions
+						break
+					}
+				}
+				if !acted || won {
+					break
+				}
 			}
 		}
 	}
