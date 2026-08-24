@@ -94,3 +94,40 @@ func TestDiscover_ColorPermSymmetry(t *testing.T) {
 		t.Fatalf("blank must be 0, got %d", s)
 	}
 }
+
+// P6: periodicity up to a colour permutation. A row that repeats in SHAPE with a
+// per-tile recolour (and a repeated colour that breaks mirror symmetry) -> exact
+// Translate and the involution color-perm both score 0, but the periodic family
+// finds the shift+relabel.
+func TestDiscover_PeriodicColorPerm(t *testing.T) {
+	// tiles [x, 2] repeated with a per-tile recolour of x (1->3->5, 4->6->8); the
+	// interleaved repeated colour 2 is the background here (as perception would
+	// pick it) and breaks mirror symmetry. Exact Translate and Reflect score 0;
+	// the periodic family is the strongest explanation.
+	bg := 2
+	g := [][]int{
+		{1, 2, 3, 2, 5, 2},
+		{4, 2, 6, 2, 8, 2},
+	}
+	if s := TranslatePreference(g, bg); s != 0 {
+		t.Fatalf("exact translate should be 0 on a per-tile recolour, got %d", s)
+	}
+	if s := SymmetryPreference(g, bg); s != 0 {
+		t.Fatalf("exact reflect should be 0, got %d", s)
+	}
+	if PeriodicColorPerm(g, bg) <= ColorPermSymmetry(g, bg) {
+		t.Fatalf("periodic-color-perm (%d) should dominate the involution color-perm (%d) on a periodic-recolour grid",
+			PeriodicColorPerm(g, bg), ColorPermSymmetry(g, bg))
+	}
+	if s := PeriodicColorPerm(g, bg); s <= 0 {
+		t.Fatalf("periodic-color-perm should be >0, got %d", s)
+	}
+	if s := PeriodicColorPerm([][]int{{0, 0, 0, 0, 0, 0}}, 0); s != 0 {
+		t.Fatalf("blank must be 0, got %d", s)
+	}
+	// injectivity guard: a many-to-one colour collapse must not be credited
+	collapse := [][]int{{1, 2, 9, 9, 9, 9}} // period-2 maps 1->9 and 2->9 (collapse)
+	if s := colorPermPeriodSavings(collapse, 0, 0, 2); s != 0 {
+		t.Fatalf("non-injective (collapsing) colour map must score 0, got %d", s)
+	}
+}

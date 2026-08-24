@@ -475,3 +475,64 @@ func TestExploreSequential_CatchesRewardWithinBudget(t *testing.T) {
 	}
 	t.Logf("sequential sweep caught reward at step %d/%d (1 reset + %d steps)", at, len(sweep), at+1)
 }
+
+// periodicEnv: reward tracks PERIODICITY up to a colour permutation. Tile0 (cols
+// 0-1) is present; a button fills two more tiles, each a consistent recolour of
+// the base shape (with a repeated colour that breaks mirror symmetry). Exact
+// Translate and the involution color-perm both stay flat; only periodic-color-perm
+// rises -- the tn36 "legend-painted field" class, as a general family.
+type periodicEnv struct{ filled bool }
+
+func (e *periodicEnv) render() actuate.Grid {
+	g := actuate.Grid{{0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0}}
+	g[0][0], g[0][1] = 1, 2
+	g[1][0], g[1][1] = 4, 2
+	if e.filled {
+		g[0][2], g[0][3], g[0][4], g[0][5] = 3, 2, 5, 2
+		g[1][2], g[1][3], g[1][4], g[1][5] = 6, 2, 8, 2
+	}
+	return g
+}
+
+func (e *periodicEnv) Reset() actuate.Grid { e.filled = false; return e.render() }
+
+func (e *periodicEnv) Step(c actuate.Control) (actuate.Grid, bool) {
+	newly := false
+	if c.Kind == "click" && c.X == 3 && c.Y == 0 && !e.filled {
+		e.filled = true
+		newly = true
+	}
+	return e.render(), newly
+}
+
+// Growable family #3 closes the periodic-recolour (tn36-like) gap: fixed library
+// stuck, wins specifically via periodic-color-perm (dominating even the involution
+// color-perm family).
+func TestGrowth_PeriodicColorPermClosesLegendGap(t *testing.T) {
+	button := actuate.Control{Kind: "click", X: 3, Y: 0}
+	direct := actuate.Control{Kind: "click", X: 0, Y: 0}
+	controls := []actuate.Control{button, direct}
+
+	env1 := &periodicEnv{}
+	fixed := DefaultFeatures()
+	fm1 := New(fixed)
+	fm1.Explore(env1, controls)
+	sel1 := goalsel.New(featureNames(fixed), 3, 0.5)
+	if won, _, steps := PursueToReward(env1, fixed, fm1, sel1, "translate", 20); won || steps != 0 {
+		t.Fatalf("fixed library should be stuck on the periodic-recolour game (won=%v steps=%d)", won, steps)
+	}
+
+	env2 := &periodicEnv{}
+	grown := append(DefaultFeatures(), GrowFeatures(env2.render())...)
+	fm2 := New(grown)
+	fm2.Explore(env2, controls)
+	sel2 := goalsel.New(featureNames(grown), 3, 0.5)
+	won, via, steps := PursueToReward(env2, grown, fm2, sel2, "translate", 20)
+	if !won {
+		t.Fatalf("with the periodic-color-perm family the loop should win, didn't (steps=%d)", steps)
+	}
+	if via != "periodic-color-perm" {
+		t.Fatalf("must win via the periodic-color-perm family (not %q) -- the gap-closer here", via)
+	}
+	t.Logf("periodic-color-perm growth closed the legend gap: won via %q", via)
+}

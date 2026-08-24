@@ -49,6 +49,9 @@ func GrowFeatures(g actuate.Grid) []Feature {
 		{Name: "color-perm-symmetry", Eval: func(gg actuate.Grid) float64 {
 			return float64(macro.ColorPermSymmetry(gg, perception.BackgroundColor(gg)))
 		}},
+		{Name: "periodic-color-perm", Eval: func(gg actuate.Grid) float64 {
+			return float64(macro.PeriodicColorPerm(gg, perception.BackgroundColor(gg)))
+		}},
 	}
 }
 
