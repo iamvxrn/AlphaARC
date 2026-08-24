@@ -17,7 +17,7 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
+	"strconv"
 
 	"alphaarc/pkg/actuate"
 	"alphaarc/pkg/environment"
@@ -104,100 +104,148 @@ func main() {
 	bg := perception.BackgroundColor(grid)
 	fmt.Printf("=== %s  %dx%d bg=%d ===\n", game, len(grid), len(grid[0]), bg)
 
-	// (1) live feature readouts on the real grid.
-	feats := feataff.DefaultFeatures()
+	// SINGLE-EPISODE, BUDGETED driver. The live wall isn't the mechanism, it's
+	// exploration economy: budget-capped games (ft09 ~150 actions, NOT refreshed by
+	// RESET) die if the driver resets per candidate. So we play ONE continuous game
+	// from ONE reset, feeding every real step to the affordance model, and never
+	// reset again. Feature growth is FREE (pure functions of the grid), so the full
+	// family library -- fixed primitives + grown families (discovered-transform,
+	// color-perm-symmetry, periodic-color-perm) -- is present from the start.
+	feats := append(feataff.DefaultFeatures(), feataff.GrowFeatures(grid)...)
+	names := make([]string, 0, len(feats))
 	fmt.Print("live features: ")
 	for _, f := range feats {
 		fmt.Printf("%s=%.0f  ", f.Name, f.Eval(grid))
+		names = append(names, f.Name)
 	}
 	fmt.Println()
 
-	// (2) real candidate controls from perception (residual).
-	controls := feataff.ResidualControls(grid, 12)
-	fmt.Printf("residual controls: %d\n", len(controls))
-	if len(controls) == 0 {
-		fmt.Println("no candidate controls -- nothing to explore")
-		return
+	budget := 100
+	if b := os.Getenv("BUDGET"); b != "" {
+		if v, err := strconv.Atoi(b); err == nil && v > 0 {
+			budget = v
+		}
 	}
 
-	// Run the feature-affordance exploration on the live game.
 	fm := feataff.New(feats)
-	fm.Explore(env, controls)
+	sel := goalsel.New(names, 5, 5.0)
+	sel.Observe(featureVals(feats, grid), false) // baseline for first-step attribution
 
-	// Report the actual per-feature effect of each real control.
-	rewards := 0
-	fmt.Println("control -> per-feature deltas (reward):")
-	for _, r := range fm.Records() {
-		if r.Reward {
-			rewards++
+	cur := grid
+	actions := 0
+	won, via, steps := false, "", 0
+	// play applies one control from the CURRENT state (no reset), records it, and
+	// feeds goalsel. Returns whether the sparse reward fired.
+	play := func(c actuate.Control) bool {
+		before := cur
+		after, reward := env.Step(c)
+		actions++
+		fm.ObserveStep(before, after, c, reward)
+		sel.Observe(featureVals(feats, after), reward)
+		cur = after
+		return reward
+	}
+
+	// Phase A -- probe salient (residual + object) controls sequentially.
+	salient := feataff.ResidualControls(grid, 12)
+	fmt.Printf("phase A: probing %d salient controls (budget %d)\n", len(salient), budget)
+	for _, c := range salient {
+		if actions >= budget {
+			break
 		}
-		names := make([]string, 0, len(r.Deltas))
-		for n := range r.Deltas {
-			names = append(names, n)
+		if play(c) {
+			won, via, steps = true, "salient-probe", actions
+			break
 		}
-		sort.Strings(names)
-		fmt.Printf("  click(%2d,%2d):", r.Control.X, r.Control.Y)
-		for _, n := range names {
-			if d := r.Deltas[n]; d != 0 {
-				fmt.Printf(" %s%+.0f", n, d)
+	}
+
+	// Phase B -- generalized pursuit: chase whichever feature has the strongest
+	// actuatable gain seen so far, applying it from the CURRENT state. A control
+	// that stops paying off (path-dependent effects in a shared episode) is blocked
+	// so we don't loop on it.
+	if !won {
+		blocked := map[actuate.Control]bool{}
+		// pick scans everything observed for the max positive per-feature gain among
+		// controls not yet blocked.
+		pick := func() (string, actuate.Control, float64) {
+			best, bg := "", 0.0
+			var bc actuate.Control
+			for _, r := range fm.Records() {
+				if blocked[r.Control] {
+					continue
+				}
+				for name, d := range r.Deltas {
+					if d > bg {
+						bg, best, bc = d, name, r.Control
+					}
+				}
+			}
+			return best, bc, bg
+		}
+		for actions < budget {
+			feat, ctrl, gain := pick()
+			if feat == "" || gain <= 0 {
+				break // nothing pursuable -> fall through to the sweep
+			}
+			if play(ctrl) {
+				won, via, steps = true, feat, actions
+				break
+			}
+			recs := fm.Records()
+			if last := recs[len(recs)-1]; last.Deltas[feat] <= 0 {
+				blocked[ctrl] = true // re-applying it no longer helps this feature
 			}
 		}
-		if r.Reward {
-			fmt.Print("  [REWARD]")
-		}
-		fmt.Println()
 	}
-	fmt.Printf("explored %d controls, %d produced a reward (level_up)\n", len(fm.Records()), rewards)
 
-	// ===== Piece (3): generalized PURSUIT =====
-	// Chase whichever feature has the strongest actuatable gain (not fixed to any
-	// one) until the sparse reward; feed goalsel each step; on reward confirm the
-	// goal causally. `translate` only breaks ties as an exploration prior.
-	names := make([]string, 0, len(feats))
-	for _, f := range feats {
-		names = append(names, f.Name)
-	}
-	sel := goalsel.New(names, 5, 5.0)
-	won, via, steps := feataff.PursueToReward(env, feats, fm, sel, "translate", 60)
-
-	// STUCK -> expand on TWO axes before retrying:
-	//   (reachability) the perceptual control set may miss the real actuator (the
-	//     trigger isn't salient: vc33's off-pattern button, ft09's inert block) --
-	//     discover controls by CAUSATION (coarse sweep, keep clicks that change the
-	//     board), and
-	//   (feature growth, piece 4) the fixed library may lack the rewarded feature
-	//     -- GROW new candidate families (discovered-transform, color-perm-symmetry).
-	if !won && steps == 0 {
-		grown := feataff.GrowFeatures(grid)
-		feats = append(feats, grown...)
-		names2 := make([]string, 0, len(feats))
-		for _, f := range feats {
-			names2 = append(names2, f.Name)
-		}
-		// Budget-fitting causal discovery: ONE sequential coarse sweep from a single
-		// reset (1 Reset + N Steps), NOT a reset-per-candidate sweep -- the latter
-		// exhausts a bounded live budget (ft09's ~150-action cap kills it mid-sweep).
-		// The sweep both finds real actuators (a swept control that moves a grown
-		// feature) and can catch the sparse reward mid-sweep if a control triggers it.
-		fm = feataff.New(feats)
-		sweep := feataff.SweepControls(grid, 8)
-		fmt.Printf("stuck -- grew %d feature(s), budget-fitting sequential sweep of %d controls\n", len(grown), len(sweep))
-		if rew, at := fm.ExploreSequential(env, sweep); rew {
-			won, via, steps = true, "sweep-trigger", at
-		} else {
-			sel = goalsel.New(names2, 5, 5.0)
-			won, via, steps = feataff.PursueToReward(env, feats, fm, sel, "translate", 40)
+	// Phase C -- if still stuck and budget remains, a budgeted coarse sweep in the
+	// SAME episode: it both discovers real actuators and can trip the reward.
+	if !won && actions < budget {
+		remaining := budget - actions
+		step := sweepStep(len(grid[0]), len(grid), remaining)
+		sweep := feataff.SweepControls(grid, step)
+		fmt.Printf("phase C: stuck -- budgeted sweep step=%d (%d controls, %d actions left)\n", step, len(sweep), remaining)
+		for _, c := range sweep {
+			if actions >= budget {
+				break
+			}
+			if play(c) {
+				won, via, steps = true, "sweep-trigger", actions
+				break
+			}
 		}
 	}
 
+	fmt.Printf("used %d/%d actions\n", actions, budget)
 	if won {
-		fmt.Printf("*** LEVEL_UP at pursuit step %d, pursued via %q ***\n", steps, via)
+		fmt.Printf("*** LEVEL_UP at action %d, via %q ***\n", steps, via)
 		sel.Disambiguate(fm)
 		if f, d, ok := sel.Goal(); ok {
 			fmt.Printf("goalsel confirmed goal: %s dir=%+d  merged=%v\n", f, d, sel.Merged())
 		}
-		fmt.Printf("RESULT: %s L1 solved through the Path-B stack (features -> pursuit -> reward -> causal goal).\n", game)
+		fmt.Printf("RESULT: %s L1 solved through the single-episode Path-B stack.\n", game)
 	} else {
-		fmt.Printf("no level_up within budget (pursued %d steps)\n", steps)
+		fmt.Printf("no level_up within the action budget (single episode)\n")
 	}
+}
+
+// featureVals reads every feature on a grid into a name->value map.
+func featureVals(feats []feataff.Feature, g actuate.Grid) map[string]float64 {
+	v := make(map[string]float64, len(feats))
+	for _, f := range feats {
+		v[f.Name] = f.Eval(g)
+	}
+	return v
+}
+
+// sweepStep picks a sweep spacing so the coarse grid fits within `budget` clicks.
+func sweepStep(w, h, budget int) int {
+	if budget < 1 {
+		budget = 1
+	}
+	s := 1
+	for (w/s+1)*(h/s+1) > budget {
+		s++
+	}
+	return s
 }

@@ -536,3 +536,27 @@ func TestGrowth_PeriodicColorPermClosesLegendGap(t *testing.T) {
 	}
 	t.Logf("periodic-color-perm growth closed the legend gap: won via %q", via)
 }
+
+// Growth costs no actions: AddFeatures back-fills the new feature's delta on
+// already-played steps from the kept grids, so BestControlFor can find it.
+func TestAddFeatures_FreeGrowthBackfills(t *testing.T) {
+	env := &periodicEnv{}
+	before := env.Reset()
+	trigger := actuate.Control{Kind: "click", X: 3, Y: 0}
+	after, reward := env.Step(trigger)
+
+	fm := New(DefaultFeatures())
+	fm.ObserveStep(before, after, trigger, reward)
+	if _, _, ok := fm.BestControlFor("periodic-color-perm", +1); ok {
+		t.Fatal("periodic-color-perm should be unknown before growth")
+	}
+	fm.AddFeatures(GrowFeatures(before))
+	c, g, ok := fm.BestControlFor("periodic-color-perm", +1)
+	if !ok || g <= 0 {
+		t.Fatalf("free growth should back-fill a positive periodic-color-perm gain, ok=%v g=%v", ok, g)
+	}
+	if c != trigger {
+		t.Fatalf("gain should attribute to the trigger, got %v", c)
+	}
+	t.Logf("free growth back-filled periodic-color-perm gain %+.0f on the played step", g)
+}

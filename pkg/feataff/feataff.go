@@ -34,9 +34,10 @@ type Env interface {
 }
 
 type observation struct {
-	ctrl   actuate.Control
-	deltas map[string]float64 // per-feature change this control caused
-	reward bool
+	ctrl          actuate.Control
+	deltas        map[string]float64 // per-feature change this control caused
+	reward        bool
+	before, after actuate.Grid // kept so newly-grown features can be back-filled for free
 }
 
 // FeatureMapper records control -> per-feature-delta (+reward) and answers the
@@ -62,7 +63,7 @@ func (m *FeatureMapper) Explore(env Env, controls []actuate.Control) {
 		for _, f := range m.features {
 			d[f.Name] = avals[f.Name] - bvals[f.Name]
 		}
-		m.obs = append(m.obs, observation{ctrl: c, deltas: d, reward: reward})
+		m.obs = append(m.obs, observation{ctrl: c, deltas: d, reward: reward, before: before, after: after})
 	}
 }
 
@@ -76,8 +77,8 @@ func (m *FeatureMapper) Explore(env Env, controls []actuate.Control) {
 // that raises a feature still shows a positive incremental delta. Returns true
 // (and the reward step) if the sparse reward fired during the sweep itself.
 func (m *FeatureMapper) ExploreSequential(env Env, controls []actuate.Control) (rewarded bool, atStep int) {
-	before := env.Reset()
-	bvals := m.eval(before)
+	prev := env.Reset()
+	bvals := m.eval(prev)
 	for i, c := range controls {
 		after, reward := env.Step(c)
 		avals := m.eval(after)
@@ -85,13 +86,45 @@ func (m *FeatureMapper) ExploreSequential(env Env, controls []actuate.Control) (
 		for _, f := range m.features {
 			d[f.Name] = avals[f.Name] - bvals[f.Name]
 		}
-		m.obs = append(m.obs, observation{ctrl: c, deltas: d, reward: reward})
+		m.obs = append(m.obs, observation{ctrl: c, deltas: d, reward: reward, before: prev, after: after})
 		bvals = avals
+		prev = after
 		if reward {
 			return true, i
 		}
 	}
 	return false, -1
+}
+
+// ObserveStep records one played step (before -> after via ctrl, with reward) into
+// the same store Explore uses, computing the per-feature deltas. This is the live
+// single-episode driver's primitive: it plays ONE continuous game (one Reset) and
+// feeds each real step here, so the affordance model is learned within the action
+// budget instead of by a reset-per-candidate sweep that exhausts it.
+func (m *FeatureMapper) ObserveStep(before, after actuate.Grid, ctrl actuate.Control, reward bool) {
+	bvals, avals := m.eval(before), m.eval(after)
+	d := make(map[string]float64, len(m.features))
+	for _, f := range m.features {
+		d[f.Name] = avals[f.Name] - bvals[f.Name]
+	}
+	m.obs = append(m.obs, observation{ctrl: ctrl, deltas: d, reward: reward, before: before, after: after})
+}
+
+// AddFeatures grows the library WITHOUT spending any actions: it appends the new
+// features and back-fills their deltas on every stored observation from the kept
+// before/after grids. So "grow when stuck" costs nothing on a live budget -- the
+// grown families are re-scored against everything already seen this episode.
+func (m *FeatureMapper) AddFeatures(newFeats []Feature) {
+	for _, nf := range newFeats {
+		m.features = append(m.features, nf)
+		for i := range m.obs {
+			o := &m.obs[i]
+			if o.before == nil || o.after == nil {
+				continue
+			}
+			o.deltas[nf.Name] = nf.Eval(o.after) - nf.Eval(o.before)
+		}
+	}
 }
 
 // Record is one recorded control->effect observation (for inspection/telemetry).
