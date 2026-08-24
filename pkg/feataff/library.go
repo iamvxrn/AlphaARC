@@ -42,9 +42,14 @@ func GrowFeatures(g actuate.Grid) []Feature {
 	// toward the structure -- the mapper measures that during exploration. The
 	// caller grows parsimoniously by only invoking this when the fixed library is
 	// STUCK (nothing pursuable), not by gating on the current reading.
-	return []Feature{{Name: "discovered-transform", Eval: func(gg actuate.Grid) float64 {
-		return float64(macro.DiscoverTransformPreference(gg, perception.BackgroundColor(gg)))
-	}}}
+	return []Feature{
+		{Name: "discovered-transform", Eval: func(gg actuate.Grid) float64 {
+			return float64(macro.DiscoverTransformPreference(gg, perception.BackgroundColor(gg)))
+		}},
+		{Name: "color-perm-symmetry", Eval: func(gg actuate.Grid) float64 {
+			return float64(macro.ColorPermSymmetry(gg, perception.BackgroundColor(gg)))
+		}},
+	}
 }
 
 // ResidualControls turns perception into REAL candidate controls: the union of

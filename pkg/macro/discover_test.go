@@ -72,3 +72,25 @@ func TestDiscover_NoFakeSymmetry(t *testing.T) {
 		t.Fatalf("an asymmetric grid must discover nothing, got %q=%d", name, s)
 	}
 }
+
+// P5: color-permutation symmetry -- a grid that is horizontally mirror-symmetric
+// only AFTER a colour swap (1<->5, 2<->6). Exact Reflect scores 0; the
+// color-perm family must find it.
+func TestDiscover_ColorPermSymmetry(t *testing.T) {
+	bg := 0
+	// left half {1,2}, right half is its mirror recoloured to {5,6}.
+	g := [][]int{
+		{1, 2, 6, 5},
+		{2, 1, 5, 6},
+	}
+	if s := SymmetryPreference(g, bg); s != 0 {
+		t.Fatalf("exact reflect should be 0 on a colour-swapped mirror, got %d", s)
+	}
+	if s := ColorPermSymmetry(g, bg); s <= 0 {
+		t.Fatalf("color-perm symmetry should be >0 on a colour-swapped mirror, got %d", s)
+	}
+	// blank stays 0 (dark-room-proof)
+	if s := ColorPermSymmetry([][]int{{0, 0, 0, 0}}, bg); s != 0 {
+		t.Fatalf("blank must be 0, got %d", s)
+	}
+}

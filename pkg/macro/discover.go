@@ -122,3 +122,76 @@ func DiscoverTransformPreference(grid [][]int, bg int) int {
 	_, s := DiscoverTransform(grid, bg)
 	return s
 }
+
+// --- Growable family #2: symmetry UP TO A COLOUR PERMUTATION ---
+//
+// The fixed Reflect/DiscoverTransform require the mirrored cell to be the SAME
+// colour. Many grids are symmetric only after a consistent RECOLOURING (a legend
+// maps one colour set to another -- the tn36 class). This family discovers, for
+// each involution, the majority colour map sigma between paired cells and counts
+// the foreground pairs matched under it. It subsumes exact symmetry (sigma =
+// identity) and additionally captures colour-swapped symmetry that the exact
+// primitives score as 0. Guards: bg is pinned (a hole is a deletion, not a
+// recolour), pairs counted once, blank -> 0.
+
+func colorPermSavings(grid [][]int, bg int, inv involution) int {
+	h, w := rectDims(grid)
+	if h == 0 || w == 0 || !inv.applies(h, w) {
+		return 0
+	}
+	type pair struct{ a, b int }
+	var pairs []pair
+	tally := map[int]map[int]int{} // a -> (b -> count), majority vote for sigma(a)
+	for r := 0; r < h; r++ {
+		for c := 0; c < w; c++ {
+			r2, c2 := inv.mapRC(r, c, h, w)
+			if r2 == r && c2 == c {
+				continue // fixed point
+			}
+			if r2 < r || (r2 == r && c2 < c) {
+				continue // count each pair once from the canonical endpoint
+			}
+			a, b := grid[r][c], grid[r2][c2]
+			pairs = append(pairs, pair{a, b})
+			if a != bg {
+				if tally[a] == nil {
+					tally[a] = map[int]int{}
+				}
+				tally[a][b]++
+			}
+		}
+	}
+	sigma := map[int]int{bg: bg}
+	for a, counts := range tally {
+		best, bn := a, -1
+		for b, n := range counts {
+			if b == bg {
+				continue // a foreground colour may not map onto bg
+			}
+			if n > bn || (n == bn && b < best) {
+				best, bn = b, n
+			}
+		}
+		sigma[a] = best
+	}
+	saved := 0
+	for _, p := range pairs {
+		if p.a != bg && sigma[p.a] == p.b {
+			saved++
+		}
+	}
+	return saved
+}
+
+// ColorPermSymmetry is the best colour-permutation symmetry saving over the
+// involution family -- a growable feature capturing "symmetric once recoloured",
+// which the exact-match primitives miss.
+func ColorPermSymmetry(grid [][]int, bg int) int {
+	best := 0
+	for _, inv := range discoverInvolutions {
+		if s := colorPermSavings(grid, bg, inv); s > best {
+			best = s
+		}
+	}
+	return best
+}

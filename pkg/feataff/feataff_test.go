@@ -300,3 +300,71 @@ func TestGrowth_InventsFeatureToWinWhenLibraryStuck(t *testing.T) {
 	}
 	t.Logf("feature growth closed the gap: won via %q after fixed library was stuck", via)
 }
+
+// colorPermEnv: reward tracks symmetry UP TO A COLOUR SWAP. Left marks {1,2};
+// a button fills the mirror partners RECOLOURED to {5,6} (1<->5, 2<->6), so the
+// grid becomes reflect-symmetric only after recolouring. Exact reflect and the
+// discovered-transform (exact involutions) stay 0; only color-perm-symmetry rises.
+type colorPermEnv struct{ filled bool }
+
+func (e *colorPermEnv) render() actuate.Grid {
+	g := make(actuate.Grid, 6)
+	for r := range g {
+		g[r] = make([]int, 6)
+	}
+	// left block (cols 1,2)
+	g[1][1], g[1][2] = 1, 2
+	g[2][1], g[2][2] = 2, 1
+	if e.filled {
+		// mirror partners (cols 4,3) recoloured 1->5, 2->6
+		g[1][4], g[1][3] = 5, 6
+		g[2][4], g[2][3] = 6, 5
+	}
+	g[5][0] = 7 // button
+	return g
+}
+
+func (e *colorPermEnv) Reset() actuate.Grid { e.filled = false; return e.render() }
+
+func (e *colorPermEnv) Step(c actuate.Control) (actuate.Grid, bool) {
+	newly := false
+	if c.Kind == "click" && c.X == 0 && c.Y == 5 && !e.filled {
+		e.filled = true
+		newly = true
+	}
+	return e.render(), newly
+}
+
+// The NEW growable family closes a gap that neither the fixed library nor the
+// first grown family (discovered-transform, exact involutions) can: symmetry up
+// to a colour permutation.
+func TestGrowth_ColorPermFamilyClosesTn36LikeGap(t *testing.T) {
+	button := actuate.Control{Kind: "click", X: 0, Y: 5}
+	direct := actuate.Control{Kind: "click", X: 4, Y: 1}
+	controls := []actuate.Control{button, direct}
+
+	// fixed library is stuck
+	env1 := &colorPermEnv{}
+	fixed := DefaultFeatures()
+	fm1 := New(fixed)
+	fm1.Explore(env1, controls)
+	sel1 := goalsel.New(featureNames(fixed), 3, 0.5)
+	if won, _, steps := PursueToReward(env1, fixed, fm1, sel1, "translate", 20); won || steps != 0 {
+		t.Fatalf("fixed library should be stuck on the colour-perm game (won=%v steps=%d)", won, steps)
+	}
+
+	// grow -> wins specifically via color-perm-symmetry (not discovered-transform)
+	env2 := &colorPermEnv{}
+	grown := append(DefaultFeatures(), GrowFeatures(env2.render())...)
+	fm2 := New(grown)
+	fm2.Explore(env2, controls)
+	sel2 := goalsel.New(featureNames(grown), 3, 0.5)
+	won, via, steps := PursueToReward(env2, grown, fm2, sel2, "translate", 20)
+	if !won {
+		t.Fatalf("with the color-perm family the loop should win, didn't (steps=%d)", steps)
+	}
+	if via != "color-perm-symmetry" {
+		t.Fatalf("must win via the color-perm family (not %q) -- it's the gap-closer here", via)
+	}
+	t.Logf("color-perm growth closed the tn36-like gap: won via %q", via)
+}
