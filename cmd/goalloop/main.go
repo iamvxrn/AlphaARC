@@ -135,10 +135,19 @@ func main() {
 	actions := 0
 	won, via, steps := false, "", 0
 	// play applies one control from the CURRENT state (no reset), records it, and
-	// feeds goalsel. Returns whether the sparse reward fired.
+	// feeds goalsel. Returns whether the sparse reward fired. If the session has
+	// died (budget exhausted server-side), it is a no-op and does NOT advance the
+	// action counter -- so `actions` reflects REAL API steps and reveals the game's
+	// true live budget.
 	play := func(c actuate.Control) bool {
+		if env.dead {
+			return false
+		}
 		before := cur
 		after, reward := env.Step(c)
+		if env.dead {
+			return false // the step itself failed; don't count it
+		}
 		actions++
 		fm.ObserveStep(before, after, c, reward)
 		sel.Observe(featureVals(feats, after), reward)
@@ -150,7 +159,7 @@ func main() {
 	salient := feataff.ResidualControls(grid, 12)
 	fmt.Printf("phase A: probing %d salient controls (budget %d)\n", len(salient), budget)
 	for _, c := range salient {
-		if actions >= budget {
+		if actions >= budget || env.dead {
 			break
 		}
 		if play(c) {
@@ -182,7 +191,7 @@ func main() {
 			}
 			return best, bc, bg
 		}
-		for actions < budget {
+		for actions < budget && !env.dead {
 			feat, ctrl, gain := pick()
 			if feat == "" || gain <= 0 {
 				break // nothing pursuable -> fall through to the sweep
@@ -206,7 +215,7 @@ func main() {
 		sweep := feataff.SweepControls(grid, step)
 		fmt.Printf("phase C: stuck -- budgeted sweep step=%d (%d controls, %d actions left)\n", step, len(sweep), remaining)
 		for _, c := range sweep {
-			if actions >= budget {
+			if actions >= budget || env.dead {
 				break
 			}
 			if play(c) {
@@ -216,6 +225,9 @@ func main() {
 		}
 	}
 
+	if env.dead {
+		fmt.Printf("session ended (server budget) after %d real actions\n", actions)
+	}
 	fmt.Printf("used %d/%d actions\n", actions, budget)
 	if won {
 		fmt.Printf("*** LEVEL_UP at action %d, via %q ***\n", steps, via)
