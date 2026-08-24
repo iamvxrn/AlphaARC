@@ -560,3 +560,90 @@ func TestAddFeatures_FreeGrowthBackfills(t *testing.T) {
 	}
 	t.Logf("free growth back-filled periodic-color-perm gain %+.0f on the played step", g)
 }
+
+// seqEnv is STATEFUL: an "arm" click (A) sets a visible indicator (a measurable
+// change but no reward); an "apply" click (B) completes the mirror ONLY when armed
+// (-> reward); a decoy (Z) does nothing. No single click ever rewards; only the
+// sequence A -> B does. This is the arm-then-apply class the live scan implicates.
+type seqEnv struct{ armed bool }
+
+var (
+	seqA = actuate.Control{Kind: "click", X: 0, Y: 0} // arm
+	seqB = actuate.Control{Kind: "click", X: 5, Y: 5} // apply
+	seqZ = actuate.Control{Kind: "click", X: 5, Y: 0} // decoy (inert)
+)
+
+func (e *seqEnv) render(applied bool) actuate.Grid {
+	g := make(actuate.Grid, 6)
+	for r := range g {
+		g[r] = make([]int, 6)
+	}
+	// left mark present; its mirror partner appears only once applied
+	g[2][1] = 3
+	if e.armed {
+		g[0][1] = 8 // visible arm indicator (the measurable delta of step A)
+	}
+	if applied {
+		g[2][4] = 3 // mirror partner -> reflect completes
+	}
+	return g
+}
+
+func (e *seqEnv) Reset() actuate.Grid { e.armed = false; return e.render(false) }
+
+func (e *seqEnv) Step(c actuate.Control) (actuate.Grid, bool) {
+	switch {
+	case c == seqA:
+		e.armed = true
+		return e.render(false), false
+	case c == seqB && e.armed:
+		e.armed = false
+		return e.render(true), true // completes only when armed -> reward
+	default:
+		return e.render(false), false // B unarmed, Z, anything else: inert
+	}
+}
+
+func TestSequence_ArmThenApplyWhenNoSingleClickWins(t *testing.T) {
+	feats := DefaultFeatures()
+	cands := []actuate.Control{seqA, seqB, seqZ}
+
+	// no single click rewards
+	for _, c := range cands {
+		env := &seqEnv{}
+		env.Reset()
+		if _, r := env.Step(c); r {
+			t.Fatalf("single click %v must not reward", c)
+		}
+	}
+
+	// depth 1 cannot solve it
+	if res := DiscoverSequence(&seqEnv{}, feats, cands, 1); res.Won {
+		t.Fatalf("depth-1 search must NOT win a stateful game, got %v", res.Steps)
+	}
+
+	// depth 2 solves it via the sequence A -> B
+	res := DiscoverSequence(&seqEnv{}, feats, cands, 2)
+	if !res.Won {
+		t.Fatalf("depth-2 search should find the arm->apply sequence, didn't")
+	}
+	if len(res.Steps) != 2 || res.Steps[0] != seqA || res.Steps[1] != seqB {
+		t.Fatalf("winning sequence should be [A,B], got %v", res.Steps)
+	}
+	t.Logf("sequence actuation won via %v in %d probes", res.Steps, res.Probes)
+}
+
+// The pruning rule: a zero-change first step costs exactly ONE probe and its
+// subtree is never explored -- this is what keeps the branching factor (and the
+// live action budget) bounded.
+func TestSequence_ZeroChangeBranchIsPrunedInstantly(t *testing.T) {
+	feats := DefaultFeatures()
+	// Z is inert -> exactly one probe, no extension, no win, at any depth.
+	if res := DiscoverSequence(&seqEnv{}, feats, []actuate.Control{seqZ}, 3); res.Won || res.Probes != 1 {
+		t.Fatalf("inert decoy branch must cost 1 probe and not win, got won=%v probes=%d", res.Won, res.Probes)
+	}
+	// B alone (unarmed) is also zero-change as a first step -> pruned in one probe.
+	if res := DiscoverSequence(&seqEnv{}, feats, []actuate.Control{seqB}, 3); res.Won || res.Probes != 1 {
+		t.Fatalf("unarmed apply must be pruned in 1 probe, got won=%v probes=%d", res.Won, res.Probes)
+	}
+}
