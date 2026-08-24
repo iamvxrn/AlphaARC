@@ -26,63 +26,86 @@ type MotorModel struct {
 // Known reports whether at least one action's displacement was learned.
 func (m MotorModel) Known() bool { return m.known }
 
-// avatarShift infers the avatar's move between two grids: cells that a colour
-// vacated (present before, gone after) vs took (absent before, present after). The
-// displacement is the centroid shift; the avatar colour is the moved colour. ok is
-// false if no single-colour translation is visible.
+// avatarShift infers the avatar's move between two grids, with a COHERENCE filter:
+// a colour X counts as an avatar only if ALL of its cells translated by ONE shared
+// vector -- i.e. the set of X-cells after equals the set before shifted by (dr,dc).
+// A scattered/partial change (X-cells moving by different amounts, or some static)
+// is NOT a rigid body and is rejected -- this kills the noisy false "avatars" that
+// a centroid-only estimate produced on ls20. The avatar colour is the largest such
+// coherently-translated blob. ok is false if no colour translates coherently.
 func avatarShift(before, after actuate.Grid, bg int) (dr, dc, color int, ok bool) {
-	// group changed cells by the colour involved, tracking vacated vs taken.
-	type acc struct{ vr, vc, vn, tr, tc, tn int }
-	byColor := map[int]*acc{}
-	get := func(c int) *acc {
-		if byColor[c] == nil {
-			byColor[c] = &acc{}
-		}
-		return byColor[c]
-	}
-	for r := range before {
-		if r >= len(after) {
-			break
-		}
-		for c := range before[r] {
-			if c >= len(after[r]) {
-				break
-			}
-			b, a := before[r][c], after[r][c]
-			if b == a {
-				continue
-			}
-			if b != bg { // b vacated this cell
-				g := get(b)
-				g.vr += r
-				g.vc += c
-				g.vn++
-			}
-			if a != bg { // a took this cell
-				g := get(a)
-				g.tr += r
-				g.tc += c
-				g.tn++
+	cellsOf := func(g actuate.Grid, x int) map[[2]int]bool {
+		s := map[[2]int]bool{}
+		for r := range g {
+			for c := range g[r] {
+				if g[r][c] == x {
+					s[[2]int{r, c}] = true
+				}
 			}
 		}
+		return s
 	}
-	// the avatar colour is the one that both vacated and took cells (it moved).
-	best, bestN := -1, 0
-	for col, g := range byColor {
-		if g.vn > 0 && g.tn > 0 && g.vn+g.tn > bestN {
-			best, bestN = col, g.vn+g.tn
+	centroid := func(s map[[2]int]bool) (int, int) {
+		sr, sc := 0, 0
+		for p := range s {
+			sr += p[0]
+			sc += p[1]
+		}
+		n := len(s)
+		return sr / n, sc / n
+	}
+	setsEqual := func(a, b map[[2]int]bool) bool {
+		if len(a) != len(b) {
+			return false
+		}
+		for p := range a {
+			if !b[p] {
+				return false
+			}
+		}
+		return true
+	}
+
+	// colours that appear anywhere (foreground only)
+	colors := map[int]bool{}
+	for _, g := range []actuate.Grid{before, after} {
+		for r := range g {
+			for c := range g[r] {
+				if g[r][c] != bg {
+					colors[g[r][c]] = true
+				}
+			}
 		}
 	}
-	if best < 0 {
-		return 0, 0, 0, false
+
+	bestN := 0
+	found := false
+	for x := range colors {
+		sb := cellsOf(before, x)
+		sa := cellsOf(after, x)
+		if len(sb) == 0 || len(sb) != len(sa) || setsEqual(sb, sa) {
+			continue // gone/appeared/resized, or didn't move
+		}
+		// candidate rigid shift = centroid difference (exact for a true translation)
+		br, bc := centroid(sb)
+		ar, ac := centroid(sa)
+		vr, vc := ar-br, ac-bc
+		if vr == 0 && vc == 0 {
+			continue
+		}
+		// COHERENCE: every X-cell must move by exactly (vr,vc).
+		shifted := make(map[[2]int]bool, len(sb))
+		for p := range sb {
+			shifted[[2]int{p[0] + vr, p[1] + vc}] = true
+		}
+		if !setsEqual(shifted, sa) {
+			continue // not a rigid translation -> not an avatar
+		}
+		if len(sb) > bestN {
+			bestN, dr, dc, color, found = len(sb), vr, vc, x, true
+		}
 	}
-	g := byColor[best]
-	dr = g.tr/g.tn - g.vr/g.vn
-	dc = g.tc/g.tn - g.vc/g.vn
-	if dr == 0 && dc == 0 {
-		return 0, 0, 0, false
-	}
-	return dr, dc, best, true
+	return dr, dc, color, found
 }
 
 // centroidOfColor returns the integer centroid of a colour's cells (and count).

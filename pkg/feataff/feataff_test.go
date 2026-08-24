@@ -774,3 +774,30 @@ func TestMotor_LearnsModelAndNavigatesToGoal(t *testing.T) {
 	}
 	t.Logf("learned motor model %v and navigated to goal in %d steps", model.Disp, steps)
 }
+
+// The coherence filter: a rigid single-cell/blob translation is accepted; a
+// scattered change where same-colour cells move by DIFFERENT vectors is rejected
+// (no rigid body -> not an avatar). This kills the noisy false avatars ls20 gave.
+func TestMotor_CoherenceFilterRejectsScatter(t *testing.T) {
+	bg := 0
+	// (a) rigid: a 2-cell color-5 blob shifts right by 1
+	beforeR := actuate.Grid{{5, 5, 0, 0}, {0, 0, 0, 0}}
+	afterR := actuate.Grid{{0, 5, 5, 0}, {0, 0, 0, 0}}
+	if dr, dc, col, ok := avatarShift(beforeR, afterR, bg); !ok || dr != 0 || dc != 1 || col != 5 {
+		t.Fatalf("rigid translation should be accepted as (0,+1) colour 5, got dr=%d dc=%d col=%d ok=%v", dr, dc, col, ok)
+	}
+	// (b) scatter: two color-7 cells move by DIFFERENT vectors -> rejected
+	beforeS := actuate.Grid{{7, 0, 0, 0}, {0, 0, 0, 7}}
+	afterS := actuate.Grid{{0, 7, 0, 0}, {7, 0, 0, 0}} // one went right, one jumped far-left
+	if _, _, _, ok := avatarShift(beforeS, afterS, bg); ok {
+		t.Fatalf("incoherent scatter must be rejected as an avatar, was accepted")
+	}
+	// (c) a static duplicate of the avatar colour also breaks rigidity -> rejected
+	beforeD := actuate.Grid{{3, 0, 0, 9}, {0, 0, 0, 0}} // 3 avatar + 9 elsewhere (control)
+	// two 3s where one moves and one stays:
+	beforeD = actuate.Grid{{3, 0, 3, 0}, {0, 0, 0, 0}}
+	afterD := actuate.Grid{{0, 3, 3, 0}, {0, 0, 0, 0}} // left 3 moved right, right 3 stayed
+	if _, _, _, ok := avatarShift(beforeD, afterD, bg); ok {
+		t.Fatalf("a static same-colour cell must break rigidity (rejected), was accepted")
+	}
+}
