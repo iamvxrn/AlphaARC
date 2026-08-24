@@ -34,11 +34,12 @@ import (
 // reward, so a running pursuit ends cleanly on "nothing changes" instead of
 // spewing 60 identical API errors and recording garbage 1x1 grids.
 type liveEnv struct {
-	sess *remote.Session
-	prev int
-	last actuate.Grid
-	dead bool
-	errN int
+	sess  *remote.Session
+	prev  int
+	last  actuate.Grid
+	dead  bool
+	errN  int
+	avail []environment.ActionID // actions the game reports as available
 }
 
 func (e *liveEnv) lastOr1x1() actuate.Grid {
@@ -60,6 +61,7 @@ func (e *liveEnv) Reset() actuate.Grid {
 	}
 	e.prev = f.LevelsCompleted
 	e.last = f.Grid
+	e.avail = f.AvailableActions
 	return f.Grid
 }
 
@@ -67,7 +69,13 @@ func (e *liveEnv) Step(c actuate.Control) (actuate.Grid, bool) {
 	if e.dead {
 		return e.lastOr1x1(), false
 	}
-	f, err := e.sess.Step(environment.Action{ID: environment.Action6, X: c.X, Y: c.Y})
+	// A "click" control is Action6 (needs X/Y); an "action" control is a simple
+	// non-coordinate action (Action1-5) the game exposes -- arrows, buttons, etc.
+	act := environment.Action{ID: environment.Action6, X: c.X, Y: c.Y}
+	if c.Kind == "action" {
+		act = environment.Action{ID: environment.ActionID(c.ActionID)}
+	}
+	f, err := e.sess.Step(act)
 	if err != nil {
 		e.errN++
 		if e.errN <= 1 {
@@ -79,7 +87,24 @@ func (e *liveEnv) Step(c actuate.Control) (actuate.Grid, bool) {
 	reward := f.LevelsCompleted > e.prev
 	e.prev = f.LevelsCompleted
 	e.last = f.Grid
+	if len(f.AvailableActions) > 0 {
+		e.avail = f.AvailableActions
+	}
 	return f.Grid, reward
+}
+
+// simpleActionControls turns the game's available non-click actions (Action1-5)
+// into candidate controls. Reset/Undo and the click action are excluded (click is
+// handled by the coordinate candidates). Games like su15/lf52/ls20 expose these
+// and CANNOT be actuated by clicks alone.
+func (e *liveEnv) simpleActionControls() []actuate.Control {
+	var cs []actuate.Control
+	for _, a := range e.avail {
+		if a >= environment.Action1 && a <= environment.Action5 {
+			cs = append(cs, actuate.Control{Kind: "action", ActionID: int(a)})
+		}
+	}
+	return cs
 }
 
 func main() {
@@ -157,9 +182,12 @@ func main() {
 		return r, changed
 	}
 
-	// Phase A -- probe salient (residual + object) controls once each.
-	salient := feataff.ResidualControls(grid, 12)
-	fmt.Printf("phase A: probing %d salient controls (budget %d)\n", len(salient), budget)
+	// Phase A -- probe the game's simple (non-click) actions FIRST, then salient
+	// coordinate controls. Simple actions are few and are often the whole mechanic on
+	// games that can't be actuated by clicks (su15/lf52/ls20).
+	simpleActions := env.simpleActionControls()
+	salient := append(simpleActions, feataff.ResidualControls(grid, 12)...)
+	fmt.Printf("phase A: %d simple actions + salient = %d controls (budget %d)\n", len(simpleActions), len(salient), budget)
 	for _, c := range salient {
 		if actions >= budget || env.dead {
 			break
@@ -241,7 +269,8 @@ func main() {
 		}
 		// candidate set from THIS state: salient controls + every known state-changer,
 		// minus what we've already tried from this exact state.
-		pool := feataff.ResidualControls(cur, 12)
+		pool := env.simpleActionControls() // simple actions retried from every new state
+		pool = append(pool, feataff.ResidualControls(cur, 12)...)
 		pool = append(pool, feataff.SweepControls(cur, sweepStepN)...)
 		for c := range changer {
 			pool = append(pool, c)
