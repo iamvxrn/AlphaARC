@@ -368,3 +368,90 @@ func TestGrowth_ColorPermFamilyClosesTn36LikeGap(t *testing.T) {
 	}
 	t.Logf("color-perm growth closed the tn36-like gap: won via %q", via)
 }
+
+// hiddenTriggerEnv: a partial reflect-symmetric grid whose actuator is a HIDDEN
+// bg cell far from the pattern (like vc33's off-pattern grow button / ft09's
+// inert mismatched block). Clicking the trigger completes the mirror -> reflect
+// rises -> reward. Every other cell is inert. The trigger is NOT a residual or
+// object centroid, so the perceptual control set can never offer it.
+type hiddenTriggerEnv struct{ filled bool }
+
+const htTrigX, htTrigY = 8, 8 // bg cell, off the pattern; hit by a step-4 sweep
+
+func (e *hiddenTriggerEnv) render() actuate.Grid {
+	g := make(actuate.Grid, 12)
+	for r := range g {
+		g[r] = make([]int, 12)
+	}
+	// left vertical bar col 1, rows 1..4 (colour 3)
+	for r := 1; r <= 4; r++ {
+		g[r][1] = 3
+	}
+	if e.filled {
+		// mirror partner col 10 (reflectH: c <-> 11-c) -> exact reflect symmetry
+		for r := 1; r <= 4; r++ {
+			g[r][10] = 3
+		}
+	}
+	return g
+}
+
+func (e *hiddenTriggerEnv) Reset() actuate.Grid { e.filled = false; return e.render() }
+
+func (e *hiddenTriggerEnv) Step(c actuate.Control) (actuate.Grid, bool) {
+	newly := false
+	if c.Kind == "click" && c.X == htTrigX && c.Y == htTrigY && !e.filled {
+		e.filled = true
+		newly = true
+	}
+	return e.render(), newly
+}
+
+// Reachability capstone: the perceptual control set leaves the loop STUCK (the
+// trigger isn't salient), but causal control discovery (sweep -> keep clicks that
+// actually change the board) finds the real actuator and the loop wins.
+func TestReachability_CausalControlDiscoveryWinsWhenTriggerNotSalient(t *testing.T) {
+	feats := DefaultFeatures()
+
+	// The trigger must NOT be in the perceptual control set (the crux).
+	env0 := &hiddenTriggerEnv{}
+	unfilled := env0.Reset()
+	for _, c := range ResidualControls(unfilled, 12) {
+		if c.X == htTrigX && c.Y == htTrigY {
+			t.Fatalf("test invalid: trigger IS a perceptual control; it must be hidden")
+		}
+	}
+
+	// (A) perceptual controls only -> stuck
+	envA := &hiddenTriggerEnv{}
+	fmA := New(feats)
+	fmA.Explore(envA, ResidualControls(envA.Reset(), 12))
+	selA := goalsel.New(featureNames(feats), 3, 0.5)
+	if won, _, steps := PursueToReward(envA, feats, fmA, selA, "reflect", 20); won || steps != 0 {
+		t.Fatalf("perceptual controls should leave the loop stuck (won=%v steps=%d)", won, steps)
+	}
+
+	// (B) causal control discovery finds the hidden trigger -> win
+	envB := &hiddenTriggerEnv{}
+	reach := ReachableControls(envB, SweepControls(envB.Reset(), 4))
+	if len(reach) == 0 {
+		t.Fatalf("causal discovery found no reachable control")
+	}
+	foundTrigger := false
+	for _, c := range reach {
+		if c.X == htTrigX && c.Y == htTrigY {
+			foundTrigger = true
+		}
+	}
+	if !foundTrigger {
+		t.Fatalf("causal discovery missed the trigger; reach=%v", reach)
+	}
+	fmB := New(feats)
+	fmB.Explore(envB, reach)
+	selB := goalsel.New(featureNames(feats), 3, 0.5)
+	won, via, steps := PursueToReward(envB, feats, fmB, selB, "reflect", 20)
+	if !won {
+		t.Fatalf("with causal control discovery the loop should win, didn't (steps=%d)", steps)
+	}
+	t.Logf("reachability closed it: %d reachable of swept, won via %q at step %d", len(reach), via, steps)
+}

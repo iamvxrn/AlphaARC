@@ -133,19 +133,27 @@ func main() {
 	sel := goalsel.New(names, 5, 5.0)
 	won, via, steps := feataff.PursueToReward(env, feats, fm, sel, "translate", 60)
 
-	// Piece (4): if the fixed library is STUCK (nothing pursuable), GROW new
-	// features, re-explore with the expanded library, and retry.
+	// STUCK -> expand on TWO axes before retrying:
+	//   (reachability) the perceptual control set may miss the real actuator (the
+	//     trigger isn't salient: vc33's off-pattern button, ft09's inert block) --
+	//     discover controls by CAUSATION (coarse sweep, keep clicks that change the
+	//     board), and
+	//   (feature growth, piece 4) the fixed library may lack the rewarded feature
+	//     -- GROW new candidate families (discovered-transform, color-perm-symmetry).
 	if !won && steps == 0 {
+		reach := feataff.ReachableControls(env, feataff.SweepControls(env.Reset(), 4))
 		grown := feataff.GrowFeatures(env.Reset())
-		if len(grown) > 0 {
-			fmt.Printf("library stuck -- grew %d feature(s), retrying\n", len(grown))
+		if len(reach) > 0 || len(grown) > 0 {
+			fmt.Printf("stuck -- discovered %d reachable control(s), grew %d feature(s), retrying\n", len(reach), len(grown))
 			feats = append(feats, grown...)
 			names2 := make([]string, 0, len(feats))
 			for _, f := range feats {
 				names2 = append(names2, f.Name)
 			}
+			// union of perceptual + causally-discovered controls
+			controls2 := append(feataff.ResidualControls(env.Reset(), 12), reach...)
 			fm = feataff.New(feats)
-			fm.Explore(env, feataff.ResidualControls(env.Reset(), 12))
+			fm.Explore(env, controls2)
 			sel = goalsel.New(names2, 5, 5.0)
 			won, via, steps = feataff.PursueToReward(env, feats, fm, sel, "translate", 60)
 		}
