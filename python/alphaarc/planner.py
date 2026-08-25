@@ -256,6 +256,10 @@ class HybridPolicy:
     def __init__(self, switch_after: int = 25, rng: Optional[random.Random] = None,
                  policy=None, planner=None):
         rng = rng or random.Random()
+        # The engine adapter falls back to a random simple action when no click is
+        # available -- keyboard-only games take that path on every step -- and it
+        # reaches for `.rng`. Every policy the adapter can hold must expose one.
+        self.rng = rng
         self.switch_after = switch_after
         self.policy = policy if policy is not None else Policy(rng=rng)
         self.planner = planner if planner is not None else RunPlanner(rng=rng)

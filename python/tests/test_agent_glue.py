@@ -131,6 +131,21 @@ def test_the_agent_still_returns_a_click():
     assert action is GameAction.ACTION6 and action.data is not None, action
 
 
+
+def test_every_policy_the_adapter_can_hold_exposes_an_rng():
+    """The adapter's fallback path -- no click available, pick a random simple
+    action -- reaches for `.rng`. Keyboard-only games take that path on EVERY step,
+    and the quick split is all click games, so only the full split caught this:
+    a train run died on g50t with AttributeError after five games."""
+    import random as _random
+    from alphaarc.planner import HybridPolicy, RunPlanner
+    from alphaarc.policy import Policy
+    for cls in (Policy, RunPlanner, HybridPolicy):
+        agent = cls(rng=_random.Random(0))
+        assert hasattr(agent, "rng"), f"{cls.__name__} has no .rng"
+        assert agent.rng.choice([1, 2, 3]) in (1, 2, 3)
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):
