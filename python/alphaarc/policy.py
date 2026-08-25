@@ -26,12 +26,23 @@ class Policy:
         residual_bonus: float = 0.15,
         explore: float = 0.2,
         max_candidates: int = 8,
+        state_bucket: int = 16,
         rng: Optional[random.Random] = None,
     ):
         self.w = drive_gain_weight
         self.residual_bonus = residual_bonus
         self.explore = explore
         self.max_candidates = max_candidates
+        # The transition model is keyed by (control, levels), and raw levels are too
+        # FINE to be a key: a game's move budget ticks inside the compression
+        # measurement, so the vector drifts a little every single action and no key
+        # ever repeats. Measured on re86 -- 15 presses, 15 distinct keys, zero
+        # reuse: the model was accumulating singletons and predicting nothing.
+        # Quantising the KEY (never the measurement -- cropping the board moves
+        # Reflect by +68 and was measured much worse) collapses the drift while
+        # leaving real mode differences apart: re86's two modes read Count 82 and
+        # 78, which stay in different buckets at 16.
+        self.state_bucket = max(1, state_bucket)
         self.rng = rng or random.Random()
         self.drive_gain: Dict[str, float] = {}   # EMA of observed compression delta per token
         # A one-step world model: what the compression levels BECAME, last time this
@@ -67,6 +78,11 @@ class Policy:
     def _tok(x: int, y: int) -> str:
         return "%d,%d" % (x, y)
 
+    def _key(self, levels: List[float]) -> Tuple[int, ...]:
+        """The state signature the transition model is keyed on: coarse on purpose."""
+        b = self.state_bucket
+        return tuple(int(v) // b for v in levels)
+
     @staticmethod
     def _levels(grid: Grid, bg: int) -> List[float]:
         """Savings of EVERY primitive, not just the winner.
@@ -101,7 +117,7 @@ class Policy:
         prev = self._prev_levels or [0.0] * len(level)
         d = max((n - o for n, o in zip(level, prev)), key=abs, default=0.0)
         self.drive_gain[self._last_token] = 0.6 * self.drive_gain.get(self._last_token, 0.0) + 0.4 * d
-        self.succ[(self._last_token, tuple(prev))] = list(level)
+        self.succ[(self._last_token, self._key(prev))] = list(level)
         if grid == self._prev_grid:  # the click changed nothing -> taboo it a while
             self.dead[self._last_token] = self.dead.get(self._last_token, 0.0) + 1.0
         # decay all taboos slightly (inhibition of return fades)
@@ -142,7 +158,7 @@ class Policy:
             # What this control did LAST TIME FROM HERE. Signed on purpose: a
             # toggle is worth clicking from its bad state and worth avoiding from
             # its good one, and only a state-keyed prediction can tell them apart.
-            nxt = self.succ.get((tok, tuple(level)))
+            nxt = self.succ.get((tok, self._key(level)))
             predicted = 0.0 if nxt is None else max(
                 (n - c for n, c in zip(nxt, level)), key=abs, default=0.0
             )

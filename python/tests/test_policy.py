@@ -161,8 +161,8 @@ def test_the_ema_alone_really_does_cancel_on_a_toggle():
 
     spread = max(abs(a - b) for a, b in zip(lo, hi))
     assert abs(p.drive_gain[tok]) < spread, "the EMA should largely cancel -- the defect"
-    assert p.succ[(tok, tuple(lo))] == hi, "but the transition FROM the bad state is remembered"
-    assert p.succ[(tok, tuple(hi))] == lo, "and so is the one from the good state"
+    assert p.succ[(tok, p._key(lo))] == hi, "the transition FROM the bad state is remembered"
+    assert p.succ[(tok, p._key(hi))] == lo, "and so is the one from the good state"
 
 
 
@@ -214,6 +214,35 @@ def test_a_replaced_board_keeps_what_was_learned():
     assert p.drive_gain == learned_gain, "reinforcement was thrown away with the board"
     assert p.tries == learned_tries, "try counts were thrown away with the board"
     assert p._prev_grid is None and p._last_token is None and p._prev_levels is None
+
+
+
+def test_the_state_key_is_coarse_enough_to_ever_repeat():
+    """Measured on re86: 15 presses produced 15 DISTINCT (control, levels) keys and
+    zero reuse, because the move budget ticks inside the compression measurement and
+    drifts the vector every action. A world model keyed that finely accumulates
+    singletons and predicts nothing."""
+    p = Policy(state_bucket=16, rng=random.Random(0))
+    drifting = [[45, 130, 82, 56], [44, 129, 82, 56], [42, 128, 82, 56]]
+    keys = {p._key(lv) for lv in drifting}
+    assert len(keys) == 1, f"clock drift still splits one state into {len(keys)} keys"
+
+
+def test_the_state_key_still_separates_a_real_mode():
+    """re86's two modes read Count 82 and 78. Coarsening must not lump those."""
+    p = Policy(state_bucket=16, rng=random.Random(0))
+    assert p._key([45, 130, 82, 56]) != p._key([45, 130, 78, 56]), \
+        "the two modes collapsed into one key -- the model can no longer tell them apart"
+
+
+def test_the_measurement_itself_is_untouched():
+    """Only the KEY is coarsened. Cropping or rescaling the levels themselves moves
+    Reflect by tens of bits and was measured much worse (see bench README)."""
+    bg = 9
+    g = _bg_grid(7, 14, bg)
+    _place(g, 1, 1, SYM_BOX)
+    p = Policy(state_bucket=16, rng=random.Random(0))
+    assert p._levels(g, bg) == Policy._levels(g, bg)
 
 
 if __name__ == "__main__":
