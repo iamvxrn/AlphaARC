@@ -1,0 +1,193 @@
+"""Value a RUN of presses, not a single click.
+
+Five attempts at improving one-step credit returned zero or worse (see
+python/bench/README.md, "Tried and rejected"), while the games we understand best
+fail for one measured reason: their reward is not visible one step ahead.
+
+  - vc33's scalar pays off on the THIRD press and the first press looks harmful:
+    Reflect goes 308 -> 200 -> 256 -> 364.
+  - ft09's tiles are involutive, so signed one-step deltas cancel to ~0.
+  - tn36's controls are period-2 toggles of amplitude 3.
+  - r11l's controls fire once and are then inert.
+
+All four are served by the same idea: learn, for each control, what the board
+becomes after n presses, then commit to the n that pays. That is the smallest
+honest form of "learn a model, plan against it" -- the plans are runs of one
+control rather than arbitrary programs, which is exactly what these games need.
+
+Budget arithmetic, from `reference_arc_scoring_function`: a level's score is
+(baseline/actions)^2 weighted by the level INDEX, so spending actions on level 1
+(weight 1 of ~28) to learn the mechanic and then executing levels 2+ near
+baseline is what the metric actually rewards.
+"""
+
+from __future__ import annotations
+
+import random
+from typing import Dict, List, Optional, Tuple
+
+from .mdl import PRIMITIVES, Grid
+from .perception import background_color
+from .residual import object_targets, residual_targets
+
+
+def _gain(now: List[float], later: List[float]) -> float:
+    """Signed biggest-mover between two level vectors.
+
+    Per primitive, never collapsed to the winner: two boards can both read 16
+    because Reflect dominates each while Translate reads 16 against 8, and that
+    difference is the whole effect of the control.
+    """
+    return max((b - a for a, b in zip(now, later)), key=abs, default=0.0)
+
+
+class RunPlanner:
+    def __init__(
+        self,
+        run_length: int = 3,
+        max_candidates: int = 8,
+        explore: float = 0.1,
+        rng: Optional[random.Random] = None,
+    ):
+        # vc33's payoff is at press 3, so a run shorter than that cannot see it.
+        self.run_length = run_length
+        self.max_candidates = max_candidates
+        self.explore = explore
+        self.rng = rng or random.Random()
+
+        # token -> level vectors observed after 0, 1, 2, ... presses of that
+        # control, measured from the board we started the run on.
+        self.profiles: Dict[str, List[List[float]]] = {}
+        self.inert: set[str] = set()
+        self.ran: set[str] = set()       # controls already given a full run
+        self.tries: Dict[str, int] = {}
+
+        self._plan: List[Tuple[int, int]] = []   # queued clicks of the current run
+        self._run_token: Optional[str] = None
+        self._prev_grid: Optional[Grid] = None
+        self._prev_levels: Optional[List[float]] = None
+
+    # ------------------------------------------------------------- bookkeeping
+
+    @staticmethod
+    def _tok(x: int, y: int) -> str:
+        return "%d,%d" % (x, y)
+
+    @staticmethod
+    def _levels(grid: Grid, bg: int) -> List[float]:
+        return [float(p.savings(grid, bg)) for p in PRIMITIVES]
+
+    def board_replaced(self) -> None:
+        """A reset, a game over, or a level transition: the board we were reasoning
+        about is gone. What we learned about controls survives -- the mechanic does
+        not change with the scenery -- but the run in flight is abandoned, and the
+        profiles are re-anchored because they are measured relative to a board."""
+        self._plan.clear()
+        self._run_token = None
+        self._prev_grid = None
+        self._prev_levels = None
+        self.profiles.clear()
+        self.ran.clear()
+
+    reset_episode = board_replaced
+
+    def _observe(self, grid: Grid, levels: List[float]) -> None:
+        """Extend the profile of the control whose run we are inside."""
+        if self._run_token is None or self._prev_grid is None:
+            return
+        if grid == self._prev_grid:
+            self.inert.add(self._run_token)
+            self._plan.clear()          # a dead control: stop spending on it
+            return
+        prof = self.profiles.setdefault(self._run_token, [self._prev_levels or levels])
+        prof.append(levels)
+
+    # ------------------------------------------------------------- deciding
+
+    def _candidates(self, grid: Grid, bg: int):
+        pts = list(residual_targets(grid, bg, self.max_candidates))
+        seen = {(p.x, p.y) for p in pts}
+        for p in object_targets(grid, bg, self.max_candidates):
+            if (p.x, p.y) not in seen:
+                seen.add((p.x, p.y))
+                pts.append(p)
+        return pts
+
+    def _best_run(self, token: str) -> Tuple[float, int]:
+        """(value, presses) of the best point along this control's known profile."""
+        prof = self.profiles.get(token)
+        if not prof or len(prof) < 2:
+            return 0.0, 0
+        start = prof[0]
+        best_v, best_n = 0.0, 0
+        for n in range(1, len(prof)):
+            v = _gain(start, prof[n])
+            if v > best_v:
+                best_v, best_n = v, n
+        return best_v, best_n
+
+    def choose_click(self, grid: Grid, bg: Optional[int] = None) -> Optional[Tuple[int, int]]:
+        if bg is None:
+            bg = background_color(grid)
+        levels = self._levels(grid, bg)
+        self._observe(grid, levels)
+
+        # Inside a run: keep going. The whole point is not to abandon a control
+        # because its first press looked bad.
+        if self._plan:
+            xy = self._plan.pop(0)
+            self._prev_grid = [row[:] for row in grid]
+            self._prev_levels = levels
+            self.tries[self._tok(*xy)] = self.tries.get(self._tok(*xy), 0) + 1
+            return xy
+
+        pts = self._candidates(grid, bg)
+        if not pts:
+            self._prev_grid = [row[:] for row in grid]
+            self._run_token = None
+            return None
+
+        # Budget policy, and it is the whole difference between this helping and
+        # hurting. Probing every candidate with a full run costs run_length actions
+        # each; vc33's level 1 has a baseline of SEVEN, so eight controls x three
+        # presses spends the level's entire score before exploiting anything
+        # (measured: vc33 4.34 -> 0.05, while lp85 -- whose control genuinely needs
+        # repetition -- went 0.08 -> 0.78). So: try a control ONCE first, and pay
+        # for a run only where a single press moved the board without paying off.
+        # That is where a valley can hide; a control that does nothing, or that
+        # already pays, needs no run.
+        unprobed = [p for p in pts
+                    if self._tok(p.x, p.y) not in self.profiles
+                    and self._tok(p.x, p.y) not in self.inert]
+        escalate = [p for p in pts
+                    if self._tok(p.x, p.y) in self.profiles
+                    and self._tok(p.x, p.y) not in self.inert
+                    and self._tok(p.x, p.y) not in self.ran
+                    and self._best_run(self._tok(p.x, p.y))[0] <= 0]
+        if unprobed and self.rng.random() > self.explore:
+            target = unprobed[0]                       # learn: one press, cheaply
+            presses = 1
+        elif escalate:
+            target = escalate[0]                       # it moved but did not pay:
+            presses = self.run_length                  # maybe the payoff is deeper
+            self.ran.add(self._tok(target.x, target.y))
+        else:
+            scored = [(self._best_run(self._tok(p.x, p.y))[0], p) for p in pts
+                      if self._tok(p.x, p.y) not in self.inert]
+            scored = [s for s in scored if s[0] > 0]
+            if scored:
+                scored.sort(key=lambda s: -s[0])        # exploit the best known run
+                target = scored[0][1]
+                presses = max(1, self._best_run(self._tok(target.x, target.y))[1])
+            else:
+                target = self.rng.choice(pts)           # nothing known pays: sample
+                presses = self.run_length
+
+        self._run_token = self._tok(target.x, target.y)
+        self.profiles.pop(self._run_token, None)        # re-anchor from HERE
+        self._plan = [(target.x, target.y)] * presses
+        xy = self._plan.pop(0)
+        self._prev_grid = [row[:] for row in grid]
+        self._prev_levels = levels
+        self.tries[self._run_token] = self.tries.get(self._run_token, 0) + 1
+        return xy

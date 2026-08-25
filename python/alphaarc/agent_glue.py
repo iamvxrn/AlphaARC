@@ -23,6 +23,7 @@ from agents.agent import Agent
 
 from .mdl import Grid
 from .perception import background_color
+from .planner import RunPlanner
 from .policy import Policy
 
 
@@ -50,7 +51,14 @@ class MyAgent(Agent):
         # sample, and the scorecard keeps a game's BEST run).
         pinned = os.environ.get("ARC_AGENT_SEED")
         base = int(pinned) if pinned else int(time.time() * 1_000_000)
-        self._policy = Policy(rng=random.Random(_stable_seed(base, self.game_id)))
+        seed = _stable_seed(base, self.game_id)
+        # ARC_PLANNER=1 swaps the one-step policy for the run-planner. Kept as a
+        # switch so the two can be A/B'd on the real games, which is the only place
+        # the question has ever been settled.
+        if os.environ.get("ARC_PLANNER") == "1":
+            self._policy = RunPlanner(rng=random.Random(seed))
+        else:
+            self._policy = Policy(rng=random.Random(seed))
         self._levels_done = 0
 
     @property
