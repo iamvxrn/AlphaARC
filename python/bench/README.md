@@ -163,3 +163,37 @@ Two things follow, and they outlive this experiment:
 2. The HUD drift is **common-mode** — it hits every candidate click equally, so it
    never changed the ranking it appeared to be corrupting. The thing that looked
    like noise in the signal was not noise in the DECISION.
+
+## What the decoded games are
+
+Eight of the twenty-five, via `make decode GAME=xx`. Decoding is not hardcoding:
+the output is a specification for a general mechanism, and the frozen holdout is
+what judges whether the generalization was real.
+
+| game | controls | budget strip | needs |
+|---|---|---|---|
+| vc33 | two squares = +/- on one scalar, exact inverses, saturating at 3; the scene rescales wholesale | row 0 | a valley: Reflect 308→200→256→**364** |
+| ft09 | 3×3 panel, click toggles a 6×6 tile; 2^8 states against 32 moves | row 63 | involution; the target must be inferred |
+| r11l | a path scene; each control fires **once** | column 0 | one-shot controls |
+| tn36 | period-2 toggles, amplitude 3 against a −1/action drift | none | a toggle with a weak signal |
+| lp85 | a palette of 4×4 swatches with selection brackets | column 0 | select-then-apply |
+| ls20 | keyboard only; 3 of 4 keys move an avatar ~52 cells | — | a GOAL and a route |
+| g50t | keyboard; **3 of 5 keys inert** | row 63 | movement, mostly-dead keys |
+| sp80 | ACTION2 moves 162 cells a press, ACTION4 34, ACTION5 inert | row 0 and rows 60-63 | a profile that RISES then FALLS |
+
+Facts that generalize, and that cost something to learn:
+
+- **Budget strips sit on a board edge and tick on nearly every action.** Do not
+  crop them: the primitives are not invariant to grid dimensions (cropping one
+  line moves Reflect by +68 on a synthetic board), and the drift is common-mode,
+  so it never changed a ranking it appeared to corrupt.
+- **A profile can peak in the middle as easily as it can dip.** vc33 pays on the
+  third press; sp80's ACTION4 pays on the second and then declines. `_best_run`
+  takes the maximum of a profile rather than its last value, which is what covers
+  both — worth knowing before anyone "simplifies" it into a hill-climb.
+- **Dead controls are everywhere** — whole key sets on g50t, the entire top row on
+  lp85 — and one press each is the cheapest way to find out.
+- **`object_targets` ranks HUD fragments ahead of real controls**, because HUD
+  segments are small and numerous and the rule is smallest-first. Widening the
+  candidate set to compensate was the worst change measured (−0.16); handing over
+  to the planner on a streak of dead clicks is what worked.
