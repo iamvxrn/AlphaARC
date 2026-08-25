@@ -5,6 +5,7 @@
 #   make bench    bundle + play the TRAIN split offline, print the official score
 #   make holdout  the same on the FROZEN holdout -- to measure, never to tune
 #   make census   classify each TRAIN game's transition kinds (what to model next)
+#   make decode   GAME=xx -- follow each control of one game, find where reward hides
 #   make test     Go + Python suites
 #
 # The Kaggle number is `mean over games of  sum(level_score_i * i) / sum(i over
@@ -24,7 +25,7 @@ VS       ?=
 BENCH_ARGS = --kit $(KIT) --max-steps $(STEPS) --repeats $(REPEATS) --seed $(SEED) \
              $(if $(OUT),--out $(OUT)) $(if $(VS),--vs $(VS))
 
-.PHONY: help quick bundle bench bench-all holdout census test test-go test-py check-bundle
+.PHONY: help quick decode bundle bench bench-all holdout census test test-go test-py check-bundle
 
 help:
 	@sed -n '2,12p' $(MAKEFILE_LIST)
@@ -52,6 +53,9 @@ holdout: bundle ## the frozen generalization set -- measurement only
 census: ## Phase 1: probe the TRAIN games and classify their transition kinds
 	$(PY) python/bench/census.py --split train --clicks 40 --repeats 3 \
 	    --out python/bench/runs/census_train.json
+
+decode: ## reverse-engineer one game's controls: make decode GAME=r11l
+	$(PY) python/bench/decode.py --game $(GAME) --render
 
 test: test-go test-py
 

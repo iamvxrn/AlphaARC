@@ -129,3 +129,37 @@ So both of our best-understood games fail for the same measurable reason: the
 reward is not visible one step ahead. That is not something a fifth heuristic term
 fixes — four have been tried and returned zero (see "Tried and rejected"). It is
 what lookahead over a learned model is for.
+
+### Rejected #3: masking the move-budget HUD
+
+Three of the four decoded games draw their move budget as a strip on the board
+edge — row 0 in vc33, column 0 in r11l, row 63 in ft09 — and it ticks on every
+single action. Compression measured over the raw grid therefore measures the
+clock as well as the puzzle, and on tn36-sized signal (±3) a −1-per-action drift
+buries it. Detecting such a strip (a border row/column involved in ≥80% of
+transitions) and cropping it out looked like pure noise removal — the opposite of
+the dilution mistake above.
+
+**Measured worse: 1.3368 → 1.1821 on the quick split.** r11l 0.922 → 0.369,
+lp85 0.082 → 0.016, vc33 unchanged.
+
+The reason, measured offline on a synthetic periodic board:
+
+```
+primitive        full   minus row0   minus col0
+Reflect            16           84           99
+Translate         584          560          583
+```
+
+**Cropping one line moves Reflect by +68 and +83** — many times the per-step
+puzzle signal. So masking does not subtract a small noise term; it relocates the
+whole measurement basis, and levels either side of the crop are not comparable.
+
+Two things follow, and they outlive this experiment:
+
+1. **The primitives are not invariant to grid dimensions.** Any future
+   segmentation, masking or windowing must fix a basis once and keep it, never
+   change the frame mid-episode and compare across the change.
+2. The HUD drift is **common-mode** — it hits every candidate click equally, so it
+   never changed the ranking it appeared to be corrupting. The thing that looked
+   like noise in the signal was not noise in the DECISION.
