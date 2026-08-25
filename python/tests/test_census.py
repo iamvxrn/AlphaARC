@@ -61,7 +61,7 @@ def test_global_repaint_beats_the_other_labels():
     assert classify(a, b, BG) == "global"
 
 
-def test_probe_points_put_the_smallest_object_first():
+def test_probe_points_lead_with_the_smallest_object():
     """Interactive controls are usually small; the sweep must not bury them."""
     g = blank(16, 16)
     for r in range(1, 6):
@@ -70,6 +70,26 @@ def test_probe_points_put_the_smallest_object_first():
     g[12][12] = 3                # a one-cell button
     pts = probe_points(g, BG, 20)
     assert pts[0] == (12, 12), pts[:3]
+
+
+def test_probe_points_still_sweep_when_objects_are_many():
+    """ft09's regression: dozens of components must not starve the coordinate
+    sweep, or a live region containing no small object is never probed."""
+    g = blank(32, 32)
+    for i in range(40):                      # 40 scattered one-cell components
+        g[(i * 3) % 30][(i * 7) % 30] = 2
+    pts = probe_points(g, BG, 20)
+    assert max(r for _, r in pts) >= 20, f"probes never reach the lower board: {pts}"
+    assert max(c for c, _ in pts) >= 20, f"probes never reach the right board: {pts}"
+
+
+def test_probe_prefix_covers_the_whole_board():
+    """ft09's live region starts at row 36 of 64. A truncated row-major sweep never
+    got there, so the game was recorded as inert. Any prefix must cover the board."""
+    g = blank(64, 64)
+    pts = probe_points(g, BG, 12)
+    assert max(r for _, r in pts) >= 40, f"prefix stays at the top: {pts}"
+    assert min(r for _, r in pts) <= 24, f"prefix stays at the bottom: {pts}"
 
 
 def test_summarize_flags_a_stateful_action():

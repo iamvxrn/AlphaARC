@@ -83,11 +83,12 @@
    ]
   },
   "click_probes": 40,
-  "click_live": 26,
-  "click_density": 0.65,
+  "click_live": 25,
+  "click_density": 0.625,
   "click_labels": {
-   "noop": 14,
-   "remote_edit": 26
+   "noop": 15,
+   "remote_edit": 24,
+   "local_edit": 1
   },
   "toggle": "cycle",
   "verbose_clicks": null,
@@ -96,6 +97,7 @@
   ],
   "classes": [
    "cell-cycle",
+   "click-local-edit",
    "click-remote-effect",
    "keyed-edit"
   ],
@@ -128,11 +130,11 @@
    ]
   },
   "click_probes": 40,
-  "click_live": 21,
-  "click_density": 0.525,
+  "click_live": 20,
+  "click_density": 0.5,
   "click_labels": {
-   "remote_edit": 21,
-   "noop": 19
+   "remote_edit": 20,
+   "noop": 20
   },
   "toggle": "cycle",
   "verbose_clicks": null,
@@ -150,19 +152,23 @@
  },
  "ft09": {
   "animated_suspect": false,
-  "actions_spent": 41,
+  "actions_spent": 43,
   "levels_completed_during_probe": 0,
   "simple_actions": {},
   "click_probes": 40,
-  "click_live": 0,
-  "click_density": 0.0,
+  "click_live": 4,
+  "click_density": 0.1,
   "click_labels": {
-   "noop": 40
+   "noop": 36,
+   "remote_edit": 4
   },
-  "toggle": null,
+  "toggle": "cycle",
   "verbose_clicks": null,
   "tags": [],
-  "classes": [],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect"
+  ],
   "varies": false
  },
  "g50t": {
@@ -262,25 +268,21 @@
  },
  "lp85": {
   "animated_suspect": false,
-  "actions_spent": 43,
+  "actions_spent": 41,
   "levels_completed_during_probe": 0,
   "simple_actions": {},
   "click_probes": 40,
-  "click_live": 2,
-  "click_density": 0.05,
+  "click_live": 0,
+  "click_density": 0.0,
   "click_labels": {
-   "noop": 38,
-   "remote_edit": 2
+   "noop": 40
   },
-  "toggle": "cycle",
+  "toggle": null,
   "verbose_clicks": null,
   "tags": [
    "click"
   ],
-  "classes": [
-   "cell-cycle",
-   "click-remote-effect"
-  ],
+  "classes": [],
   "varies": false
  },
  "ls20": {
@@ -385,21 +387,41 @@
   "click_density": 1.0,
   "click_labels": {
    "translate(-9,15)": 1,
-   "remote_edit": 21,
-   "translate(1,2)": 1,
-   "translate(0,-3)": 1,
-   "translate(0,3)": 2,
+   "translate(7,-3)": 1,
+   "translate(-7,4)": 1,
+   "translate(15,4)": 1,
+   "translate(-14,-5)": 1,
+   "translate(14,-11)": 1,
+   "translate(-14,13)": 1,
+   "translate(-2,3)": 1,
+   "translate(2,-6)": 1,
+   "translate(-2,-10)": 1,
+   "translate(2,13)": 1,
+   "remote_edit": 5,
    "translate(1,-3)": 1,
-   "translate(1,-2)": 1,
-   "translate(0,2)": 1,
-   "translate(0,-2)": 1,
-   "translate(6,-15)": 1,
-   "translate(2,1)": 2,
-   "translate(2,2)": 3,
-   "translate(-9,-7)": 1,
-   "translate(4,4)": 1,
-   "translate(-12,-12)": 1,
-   "translate(-13,18)": 1
+   "translate(17,2)": 1,
+   "translate(-17,1)": 1,
+   "translate(17,-9)": 1,
+   "translate(-16,7)": 1,
+   "translate(16,-15)": 1,
+   "translate(-16,17)": 1,
+   "translate(8,7)": 1,
+   "translate(-8,-9)": 1,
+   "translate(8,1)": 1,
+   "translate(-8,0)": 1,
+   "translate(8,-8)": 1,
+   "translate(-2,-8)": 1,
+   "translate(2,0)": 1,
+   "translate(-8,24)": 1,
+   "translate(8,-23)": 1,
+   "translate(-8,7)": 1,
+   "translate(10,-5)": 1,
+   "translate(-10,-3)": 1,
+   "translate(10,3)": 1,
+   "translate(-18,13)": 1,
+   "translate(20,-11)": 1,
+   "translate(-20,3)": 1,
+   "translate(21,-2)": 1
   },
   "toggle": "cycle",
   "verbose_clicks": null,
@@ -469,8 +491,7 @@
   "click_live": 40,
   "click_density": 1.0,
   "click_labels": {
-   "remote_edit": 39,
-   "local_edit": 1
+   "remote_edit": 40
   },
   "toggle": "cycle",
   "verbose_clicks": null,
@@ -479,7 +500,6 @@
   ],
   "classes": [
    "cell-cycle",
-   "click-local-edit",
    "click-remote-effect",
    "exogenous-dynamics?"
   ],
@@ -512,12 +532,12 @@
    ]
   },
   "click_probes": 40,
-  "click_live": 9,
-  "click_density": 0.225,
+  "click_live": 10,
+  "click_density": 0.25,
   "click_labels": {
-   "noop": 31,
+   "noop": 30,
    "local_edit": 4,
-   "remote_edit": 5
+   "remote_edit": 6
   },
   "toggle": "cycle",
   "verbose_clicks": null,
@@ -595,19 +615,18 @@
    ]
   },
   "click_probes": 40,
-  "click_live": 29,
-  "click_density": 0.725,
+  "click_live": 32,
+  "click_density": 0.8,
   "click_labels": {
-   "remote_edit": 29,
-   "noop": 11
+   "remote_edit": 32,
+   "noop": 8
   },
-  "toggle": "cycle",
+  "toggle": "sticky",
   "verbose_clicks": null,
   "tags": [
    "click"
   ],
   "classes": [
-   "cell-cycle",
    "click-remote-effect"
   ],
   "varies": false
@@ -615,13 +634,14 @@
  "tn36": {
   "animated_suspect": true,
   "actions_spent": 43,
-  "levels_completed_during_probe": 0,
+  "levels_completed_during_probe": 1,
   "simple_actions": {},
   "click_probes": 40,
   "click_live": 40,
   "click_density": 1.0,
   "click_labels": {
-   "remote_edit": 40
+   "remote_edit": 39,
+   "global": 1
   },
   "toggle": "cycle",
   "verbose_clicks": null,
@@ -631,7 +651,8 @@
   "classes": [
    "cell-cycle",
    "click-remote-effect",
-   "exogenous-dynamics?"
+   "exogenous-dynamics?",
+   "global-repaint"
   ],
   "varies": false
  },

@@ -100,22 +100,48 @@ def classify(before: Grid, after: Grid, bg: int, click: Optional[tuple[int, int]
 
 
 def probe_points(grid: Grid, bg: int, limit: int) -> list[tuple[int, int]]:
-    """Click targets: one per object (smallest first -- controls tend to be small),
-    then a coarse sweep so we do not only ever see the objects we already model."""
-    pts: list[tuple[int, int]] = []
-    comps = sorted(_components(grid, bg), key=lambda kv: len(kv[1]))
-    for _, cells in comps:
+    """Click targets: object centroids INTERLEAVED with a coarse sweep.
+
+    Objects first sounds right -- controls are usually small -- but a board with
+    dozens of components then eats the whole budget and the sweep never runs. That
+    is exactly how ft09 was recorded as "nothing responds to anything" when in
+    fact its whole bottom-right panel is clickable: the live region held no small
+    components, so no probe ever landed there. Interleave so neither source can
+    starve the other.
+    """
+    objs: list[tuple[int, int]] = []
+    for _, cells in sorted(_components(grid, bg), key=lambda kv: len(kv[1])):
         r = sum(c[0] for c in cells) // len(cells)
         c = sum(x[1] for x in cells) // len(cells)
-        if (c, r) not in pts:
-            pts.append((c, r))
+        objs.append((c, r))
+
+    # Coarse-to-fine, so that ANY prefix of the sweep still covers the whole board.
+    # Row-major order truncated by the probe limit only ever samples the top of a
+    # 64x64 grid -- the second half of the ft09 blind spot: its live region starts
+    # at row 36 and no prefix of a row-major sweep ever reached it.
+    sweep: list[tuple[int, int]] = []
     h, w = len(grid), len(grid[0]) if grid else 0
     stride = max(4, max(h, w) // 8)
-    for r in range(stride // 2, h, stride):
-        for c in range(stride // 2, w, stride):
-            if (c, r) not in pts:
-                pts.append((c, r))
-    return pts[:limit]
+    step = 1
+    while stride * step < max(h, w) * 2:
+        s = stride * step
+        for r in range(s // 2, h, s):
+            for c in range(s // 2, w, s):
+                if (c, r) not in sweep:
+                    sweep.append((c, r))
+        step *= 2
+    sweep.reverse()  # coarsest lattice first
+
+    out: list[tuple[int, int]] = []
+    seen: set[tuple[int, int]] = set()
+    for i in range(max(len(objs), len(sweep))):
+        for src in (objs, sweep):
+            if i < len(src) and src[i] not in seen:
+                seen.add(src[i])
+                out.append(src[i])
+                if len(out) >= limit:
+                    return out
+    return out
 
 
 # ------------------------------------------------------------------- probing
