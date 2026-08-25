@@ -131,8 +131,9 @@ def main() -> None:
                     help="Kaggle starter-kit checkout (owns .venv + environment_files)")
     ap.add_argument("--agent", type=Path, default=None,
                     help="agent file defining MyAgent (default: <kit>/agent/my_agent.py)")
-    ap.add_argument("--split", default="train", choices=["train", "holdout", "all"],
-                    help="which frozen split to run (default: train)")
+    ap.add_argument("--split", default="train", choices=["scoring", "train", "holdout", "all"],
+                    help="scoring = the 4 games that ever score (~5 min, the inner loop); "
+                         "train = all 17 (~40 min, confirmation); holdout = the frozen set")
     ap.add_argument("--games", default=None, help="comma-separated ids, overrides --split")
     ap.add_argument("--max-steps", type=int, default=250, help="per-game action cap")
     ap.add_argument("--repeats", type=int, default=1,

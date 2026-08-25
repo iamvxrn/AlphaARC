@@ -98,3 +98,34 @@ we might be missing costs more than the control is worth. Anything that widens
 exploration has to pay for itself in found levels, and neither did. A cheaper
 control-discovery path — one that does not spend real actions on candidates the
 drive has no reason to prefer — is the open problem.
+
+## The inner loop
+
+`make quick` plays only the four train games that have ever scored (vc33, r11l,
+lp85, tn36): **127 s against ~2400 s** for the full train split, with identical
+per-game numbers. A change that moves nothing here moved nothing anywhere, so
+iterate on `quick`, confirm on `make bench`, and only then spend holdout evidence.
+
+Most of the first day of this push was lost to running the 40-minute suite on
+every micro-idea. Don't.
+
+## What reverse-engineering the games has taught the mechanism
+
+Decoding a game is not hardcoding it — the point is to find which TRANSITION CLASS
+it needs, then build that class generally and let the holdout judge whether the
+generalization was real. Two games are decoded so far, and both landed on the same
+structural problem:
+
+- **ft09** — a 3x3 panel of tiles, each click toggling one; a 32-move budget drawn
+  on row 63; 2^8 states against 32 moves, so the target must be inferred, not
+  searched. A toggle is involutive, so an average of signed one-step deltas
+  cancels on it.
+- **vc33** — the two colour-9 squares are + and - on ONE SCALAR and are exact
+  inverses; the scene rescales wholesale on each press; row 0 is the move budget.
+  Reflect savings along the up-direction go 308 -> 200 -> 256 -> 364: **the payoff
+  needs three presses in one direction and the first press looks harmful.**
+
+So both of our best-understood games fail for the same measurable reason: the
+reward is not visible one step ahead. That is not something a fifth heuristic term
+fixes — four have been tried and returned zero (see "Tried and rejected"). It is
+what lookahead over a learned model is for.

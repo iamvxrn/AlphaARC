@@ -1,6 +1,7 @@
 # AlphaARC -- the score loop.
 #
 #   make bundle   python/alphaarc/ -> the kit's single-file agent/my_agent.py
+#   make quick    INNER LOOP: the 4 games that ever score (~5 min, not ~40)
 #   make bench    bundle + play the TRAIN split offline, print the official score
 #   make holdout  the same on the FROZEN holdout -- to measure, never to tune
 #   make census   classify each TRAIN game's transition kinds (what to model next)
@@ -23,7 +24,7 @@ VS       ?=
 BENCH_ARGS = --kit $(KIT) --max-steps $(STEPS) --repeats $(REPEATS) --seed $(SEED) \
              $(if $(OUT),--out $(OUT)) $(if $(VS),--vs $(VS))
 
-.PHONY: help bundle bench bench-all holdout census test test-go test-py check-bundle
+.PHONY: help quick bundle bench bench-all holdout census test test-go test-py check-bundle
 
 help:
 	@sed -n '2,12p' $(MAKEFILE_LIST)
@@ -34,7 +35,10 @@ bundle: ## flatten the package into the kit's agent/my_agent.py
 check-bundle: ## fail if the built agent is stale w.r.t. the package
 	python3 python/bench/bundle.py --kit $(KIT) --check
 
-bench: bundle ## train split
+quick: bundle ## INNER LOOP: only the games that ever score (~5 min, not ~40)
+	$(PY) python/bench/bench.py --split scoring $(BENCH_ARGS)
+
+bench: bundle ## train split -- confirmation, after `quick` says something moved
 	$(PY) python/bench/bench.py --split train $(BENCH_ARGS)
 
 bench-all: bundle ## every public game (train + holdout); holdout stays unread
