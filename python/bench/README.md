@@ -65,3 +65,36 @@ self-contained file. `bundle.py` builds it from `python/alphaarc/`, which is
 therefore canonical; `make check-bundle` fails if the built file is stale, and
 `python/tests/test_bundle.py` pins that the bundle is import-free and computes
 the same numbers as the package.
+
+## Tried and rejected (do not re-litigate without new evidence)
+
+Both of these were built for the census's headline finding — that the dominant
+mechanic, 12 of 17 train games, is a click whose effect lands somewhere the click
+is not — and both were **measured worse** than the policy they replaced. The runs
+are kept in `runs/` as evidence.
+
+| change | train aggregate | verdict |
+|---|---|---|
+| baseline (`succ_model.json`) | **0.3145** | kept |
+| \+ aim-at-the-anomaly and known controls as candidates (`remote_effect.json`) | 0.2708 | rejected |
+| \+ spatially spread object candidates, alone (`spread_only.json`) | 0.1522 | rejected |
+
+**Aim at the anomaly.** Track where each control's effect lands, then score a
+candidate by how close that effect is to the residual the drive wants fixed.
+Sound in principle; it moved nothing in three synthetic worlds, and on real games
+it cost 0.044 — vc33 dropped from level 2 to level 1.
+
+**Spread the candidates.** `object_targets` returns the smallest components first,
+and a patterned board breaks into dozens of equal-size ones, so the whole
+candidate budget is spent in one corner and a lone button elsewhere is never
+offered. Selecting the farthest-apart members of each size tier fixes exactly
+that — and is the single worst change measured so far, −0.16. vc33 still reached
+level 2 but took 4.6x baseline on level 1 instead of 0.9x, collapsing its score
+from 4.34 to 1.14.
+
+The lesson both share: candidate DILUTION is expensive. The scoring function
+punishes wasted actions quadratically, so widening the search to find a control
+we might be missing costs more than the control is worth. Anything that widens
+exploration has to pay for itself in found levels, and neither did. A cheaper
+control-discovery path — one that does not spend real actions on candidates the
+drive has no reason to prefer — is the open problem.
