@@ -48,6 +48,21 @@ Harness: `make bench` / `bench-all` / `holdout` (see `python/bench/README.md`).
 `python/bench/splits.json` freezes 8 never-probed games as a holdout — running it
 requires `ARC_HOLDOUT_OK=1`; it is for measuring, never for tuning.
 
+## Session 2026-08-25 result: 0.21 -> 0.40 on train (+ ls20)
+Built and CONFIRMED: `make quick` (127 s inner loop over the 4 scoring games,
+predicts the full split to the percent), `make decode GAME=xx` (follow every
+control AND key for N presses, print the compression profile, flag the ones that
+dip before they climb), and the **HybridPolicy** default -- one-step credit for
+the opening, run-planning once the level proves long (25 actions) or the clicks
+prove dead (5 in a row). Keys are controls too, and `rigid_move` + the residual
+give movement games a goal; **ls20 scored for the first time**.
+Seven earlier attempts at improving one-step credit returned zero or worse and are
+catalogued in `python/bench/README.md` "Tried and rejected" -- read it before
+proposing an eighth. The through-line behind everything that DID pay: reward is
+routinely invisible one step ahead. Game-by-game facts: memory
+`reference_decoded_games`.
+**Holdout is still untouched.** Until it is run, "generalizes" is a word.
+
 ## Immediate next task
 Found and fixed a THIRD aggregation blind spot (commit 925880c): `ResidualCells` (the click-candidate source) had no case for Correspondence residual at all, so a click that would fix a template/legend mismatch was only ever offered by coincidence, on ANY game — not just the hard ones. Added `CorrespondenceResidual` + wired it into `ResidualCells` unconditionally. Offline-proven, vc33 regression-checked clean. Live-tested on the blind-tested **ft09-0d8bbf25** (a 6th pure-click game, never touched before this session — see calibration correction above): still 0/150. Narrowed why: `CorrespondenceResidual` DOES find a real 4x4 mismatched block on ft09, but clicking directly on one of those cells does **nothing** to the board (cells=0) — so ft09's actual clickable trigger is NOT the same pixel as its compression-relevant cell (same lesson as vc33-L2, different game). Next: sweep ft09 broadly for ANY click that raises Correspondence, the way vc33's grow button was found — not yet done. Also still open: s5i5 (scale), tn36 (Correspondence=0 even at fine resolution — a representational gap, not aggregation), and lp85/r11l haven't been re-verified live since the reinforcement/candidate changes. See `project_protaxon_resume.md` for the full trace.
 
