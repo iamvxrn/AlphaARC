@@ -165,5 +165,56 @@ def test_the_ema_alone_really_does_cancel_on_a_toggle():
     assert p.succ[(tok, tuple(hi))] == lo, "and so is the one from the good state"
 
 
+
+def test_no_credit_is_carried_across_a_replaced_board():
+    """Completing a level swaps the board. Crediting the last click with the delta
+    across that seam invents a huge reward and writes a junk transition, exactly
+    where the score starts paying."""
+    bg = 9
+    board_a = _bg_grid(7, 14, bg)
+    _place(board_a, 1, 1, SYM_BOX)
+    _place(board_a, 1, 8, SYM_BOX)
+    board_b = _bg_grid(7, 14, bg)          # an unrelated next level
+    _place(board_b, 1, 1, SYM_BOX)
+
+    def run(tell_the_policy):
+        p = Policy(explore=0.0, rng=random.Random(0))
+        p.choose_click(board_a, bg)        # leaves a trace pointing at board A
+        if tell_the_policy:
+            p.board_replaced()
+        p.choose_click(board_b, bg)        # first click of the new level
+        return p
+
+    seamed = run(tell_the_policy=False)
+    clean = run(tell_the_policy=True)
+
+    assert seamed.succ, "fixture is wrong: the seam should have written a transition"
+    assert not clean.succ, f"a transition was still learned across the seam: {clean.succ}"
+    assert not any(clean.drive_gain.values()), \
+        f"a click was still credited across the seam: {clean.drive_gain}"
+
+
+def test_a_replaced_board_keeps_what_was_learned():
+    """Only the trace is dropped -- the mechanic did not change with the scenery."""
+    bg = 9
+    g = _bg_grid(7, 14, bg)
+    _place(g, 1, 1, SYM_BOX)
+    _place(g, 1, 8, SYM_BOX)
+    g[3][10] = bg
+
+    p = Policy(explore=0.0, rng=random.Random(0))
+    p.choose_click(g, bg)
+    g[3][10] = SYM_BOX[2][2]               # the click fixed the anomaly
+    p.choose_click(g, bg)
+    learned_gain = dict(p.drive_gain)
+    learned_tries = dict(p.tries)
+    assert learned_gain, "fixture is wrong: nothing was learned to preserve"
+
+    p.board_replaced()
+    assert p.drive_gain == learned_gain, "reinforcement was thrown away with the board"
+    assert p.tries == learned_tries, "try counts were thrown away with the board"
+    assert p._prev_grid is None and p._last_token is None and p._prev_levels is None
+
+
 if __name__ == "__main__":
     sys.exit(1 if _run() else 0)

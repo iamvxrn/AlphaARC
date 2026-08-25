@@ -51,6 +51,7 @@ class MyAgent(Agent):
         pinned = os.environ.get("ARC_AGENT_SEED")
         base = int(pinned) if pinned else int(time.time() * 1_000_000)
         self._policy = Policy(rng=random.Random(_stable_seed(base, self.game_id)))
+        self._levels_done = 0
 
     @property
     def name(self) -> str:
@@ -71,8 +72,18 @@ class MyAgent(Agent):
 
     def choose_action(self, frames: List[FrameData], latest_frame: FrameData) -> GameAction:
         if latest_frame.state in (GameState.NOT_PLAYED, GameState.GAME_OVER):
-            self._policy.reset_episode()
+            self._levels_done = 0
+            self._policy.board_replaced()
             return GameAction.RESET
+
+        # Completing a level swaps the whole board. Tell the policy, or it credits
+        # its last click with the compression delta ACROSS that seam -- a large
+        # arbitrary number, plus a junk entry in the transition model, at exactly
+        # the point where the score starts paying (level i is weighted by i).
+        done = int(getattr(latest_frame, "levels_completed", 0) or 0)
+        if done > self._levels_done:
+            self._levels_done = done
+            self._policy.board_replaced()
 
         grid = self._current_grid(latest_frame)
         avail = set(latest_frame.available_actions or [])

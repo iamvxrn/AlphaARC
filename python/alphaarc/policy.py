@@ -43,16 +43,25 @@ class Policy:
         self._prev_levels: Optional[List[float]] = None
         self._last_token: Optional[str] = None
 
-    def reset_episode(self) -> None:
-        """Drop the per-episode trace after a RESET/GAME_OVER.
+    def board_replaced(self) -> None:
+        """The board was swapped out: a RESET, a GAME_OVER, or a LEVEL TRANSITION.
 
-        What the policy LEARNED about clicks (drive_gain, tries) survives -- the
-        mechanic does not change when the board does. Only the transition trace
-        is dropped, so the first click of the new episode is not credited with a
-        delta measured against a stale board.
+        What the policy LEARNED about clicks (drive_gain, succ, tries) survives --
+        the mechanic does not change when the board does. Only the transition trace
+        is dropped, so the next click is not credited with a compression delta
+        measured across the seam between two unrelated boards. Without this the
+        first click of a new level receives a large arbitrary credit and writes a
+        junk entry into the transition model, precisely at the moment that matters
+        most: level 2 onward is where the score actually is.
         """
         self._prev_grid = None
+        self._prev_levels = None
         self._last_token = None
+
+    # A level change and a reset are the same event from the policy's point of
+    # view: the board it was reasoning about is gone. Kept as an alias so the
+    # engine adapter can name whichever it actually observed.
+    reset_episode = board_replaced
 
     @staticmethod
     def _tok(x: int, y: int) -> str:
