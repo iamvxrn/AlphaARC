@@ -253,8 +253,8 @@ class HybridPolicy:
     baseline is.
     """
 
-    def __init__(self, switch_after: int = 25, rng: Optional[random.Random] = None,
-                 policy=None, planner=None):
+    def __init__(self, switch_after: int = 25, dead_streak: int = 5,
+                 rng: Optional[random.Random] = None, policy=None, planner=None):
         rng = rng or random.Random()
         # The engine adapter falls back to a random simple action when no click is
         # available -- keyboard-only games take that path on every step -- and it
@@ -263,8 +263,18 @@ class HybridPolicy:
         self.switch_after = switch_after
         self.policy = policy if policy is not None else Policy(rng=rng)
         self.planner = planner if planner is not None else RunPlanner(rng=rng)
+        # Hand over early if the cheap agent is visibly getting nowhere. lp85 puts
+        # a row of six small blocks at the top -- a progress indicator, not a
+        # control -- and "smallest object first" ranks those AHEAD of the 4x4
+        # palette swatches that actually do something. The planner marks them inert
+        # in a few actions and moves on; the one-step policy spends its whole
+        # opening on them. Dead clicks are the evidence, so switch on those rather
+        # than only on a clock.
+        self.dead_streak = dead_streak
         self.since_level = 0
+        self.dead_run = 0
         self.switched = False
+        self._prev_grid: Optional[Grid] = None
 
     @property
     def active(self):
@@ -274,7 +284,9 @@ class HybridPolicy:
         """A new level is a fresh chance for the cheap agent: reset the clock and
         hand control back, because the next level's opening may well be short."""
         self.since_level = 0
+        self.dead_run = 0
         self.switched = False
+        self._prev_grid = None
         self.policy.board_replaced()
         self.planner.board_replaced()
 
@@ -282,6 +294,10 @@ class HybridPolicy:
 
     def choose_click(self, grid: Grid, bg: Optional[int] = None) -> Optional[Tuple[int, int]]:
         self.since_level += 1
-        if not self.switched and self.since_level > self.switch_after:
+        if self._prev_grid is not None:
+            self.dead_run = self.dead_run + 1 if grid == self._prev_grid else 0
+        self._prev_grid = [row[:] for row in grid]
+        if not self.switched and (self.since_level > self.switch_after
+                                  or self.dead_run >= self.dead_streak):
             self.switched = True
         return self.active.choose_click(grid, bg)

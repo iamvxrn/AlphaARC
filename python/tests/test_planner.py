@@ -266,6 +266,39 @@ def test_a_new_level_gives_the_cheap_agent_another_chance():
     assert h.active is h.policy, "stayed expensive into a level that might be cheap"
 
 
+
+def test_the_hybrid_hands_over_early_when_its_clicks_do_nothing():
+    """lp85's regression, as a rule.
+
+    Its top row is a six-block progress indicator, and "smallest object first"
+    ranks those ahead of the 4x4 palette swatches that actually do something. The
+    one-step policy spends its whole opening clicking the indicator. Dead clicks
+    are the evidence that the cheap agent is not working, so they should hand over
+    long before the clock does.
+    """
+    h = HybridPolicy(switch_after=100, dead_streak=3, rng=random.Random(0))
+    g = _blank(9, 24)
+    _place(g, 1, 1, SYM_BOX)
+    for i in range(5):
+        h.choose_click(g, BG)                  # the board never changes
+    assert h.active is h.planner, \
+        f"still cheap after {h.dead_run} dead clicks with a switch_after of 100"
+
+
+def test_a_working_cheap_agent_keeps_control():
+    """vc33's clicks DO change the board, and it clears level 1 in about seven
+    actions. Handing over there costs the level, so a live board must not switch."""
+    h = HybridPolicy(switch_after=100, dead_streak=3, rng=random.Random(0))
+    w = ValleyWorld()
+    # Only while the board is still moving. Once the scalar saturates the board
+    # stops changing, and handing over THEN is correct -- the cheap agent really
+    # has stopped making progress.
+    for _ in range(ValleyWorld.STAGES - 1):
+        xy = h.choose_click(w.grid(), BG)
+        w.click(xy)
+    assert h.active is h.policy, "handed over while the cheap agent was working"
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):
