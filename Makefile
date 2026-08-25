@@ -3,6 +3,7 @@
 #   make bundle   python/alphaarc/ -> the kit's single-file agent/my_agent.py
 #   make bench    bundle + play the TRAIN split offline, print the official score
 #   make holdout  the same on the FROZEN holdout -- to measure, never to tune
+#   make census   classify each TRAIN game's transition kinds (what to model next)
 #   make test     Go + Python suites
 #
 # The Kaggle number is `mean over games of  sum(level_score_i * i) / sum(i over
@@ -22,7 +23,7 @@ VS       ?=
 BENCH_ARGS = --kit $(KIT) --max-steps $(STEPS) --repeats $(REPEATS) --seed $(SEED) \
              $(if $(OUT),--out $(OUT)) $(if $(VS),--vs $(VS))
 
-.PHONY: help bundle bench bench-all holdout test test-go test-py check-bundle
+.PHONY: help bundle bench bench-all holdout census test test-go test-py check-bundle
 
 help:
 	@sed -n '2,12p' $(MAKEFILE_LIST)
@@ -43,6 +44,10 @@ holdout: bundle ## the frozen generalization set -- measurement only
 	@echo ">>> HOLDOUT: this is our stand-in for the hidden Kaggle set."
 	@echo ">>> Read the aggregate. Do NOT open these games to fix a failure."
 	ARC_HOLDOUT_OK=1 $(PY) python/bench/bench.py --split holdout $(BENCH_ARGS)
+
+census: ## Phase 1: probe the TRAIN games and classify their transition kinds
+	$(PY) python/bench/census.py --split train --clicks 40 --repeats 3 \
+	    --out python/bench/runs/census_train.json
 
 test: test-go test-py
 

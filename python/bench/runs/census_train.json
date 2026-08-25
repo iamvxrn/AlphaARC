@@ -1,0 +1,661 @@
+{
+ "ar25": {
+  "animated_suspect": false,
+  "actions_spent": 59,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION2": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION3": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION4": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION5": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION7": [
+    "edit",
+    "edit",
+    "edit"
+   ]
+  },
+  "click_probes": 40,
+  "click_live": 0,
+  "click_density": 0.0,
+  "click_labels": {
+   "noop": 40
+  },
+  "toggle": null,
+  "verbose_clicks": null,
+  "tags": [
+   "keyboard_click"
+  ],
+  "classes": [
+   "keyed-edit"
+  ],
+  "varies": false
+ },
+ "cd82": {
+  "animated_suspect": false,
+  "actions_spent": 58,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "edit",
+    "noop",
+    "edit"
+   ],
+   "ACTION2": [
+    "edit",
+    "noop",
+    "edit"
+   ],
+   "ACTION3": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION4": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION5": [
+    "edit",
+    "edit",
+    "edit"
+   ]
+  },
+  "click_probes": 40,
+  "click_live": 26,
+  "click_density": 0.65,
+  "click_labels": {
+   "noop": 14,
+   "remote_edit": 26
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "keyboard_click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect",
+   "keyed-edit"
+  ],
+  "varies": false
+ },
+ "dc22": {
+  "animated_suspect": false,
+  "actions_spent": 55,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "translate(-2,0)",
+    "noop",
+    "edit"
+   ],
+   "ACTION2": [
+    "translate(2,0)",
+    "translate(2,0)",
+    "noop"
+   ],
+   "ACTION3": [
+    "translate(0,-2)",
+    "noop",
+    "edit"
+   ],
+   "ACTION4": [
+    "translate(0,2)",
+    "translate(0,2)",
+    "noop"
+   ]
+  },
+  "click_probes": 40,
+  "click_live": 21,
+  "click_density": 0.525,
+  "click_labels": {
+   "remote_edit": 21,
+   "noop": 19
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "keyboard_click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect",
+   "keyed-edit",
+   "object-translation",
+   "stateful-mode"
+  ],
+  "varies": true
+ },
+ "ft09": {
+  "animated_suspect": false,
+  "actions_spent": 41,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {},
+  "click_probes": 40,
+  "click_live": 0,
+  "click_density": 0.0,
+  "click_labels": {
+   "noop": 40
+  },
+  "toggle": null,
+  "verbose_clicks": null,
+  "tags": [],
+  "classes": [],
+  "varies": false
+ },
+ "g50t": {
+  "animated_suspect": false,
+  "actions_spent": 16,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "noop",
+    "edit",
+    "noop"
+   ],
+   "ACTION2": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION3": [
+    "noop",
+    "edit",
+    "noop"
+   ],
+   "ACTION4": [
+    "edit",
+    "noop",
+    "edit"
+   ],
+   "ACTION5": [
+    "edit",
+    "edit",
+    "noop"
+   ]
+  },
+  "click_probes": 0,
+  "click_live": 0,
+  "click_density": null,
+  "click_labels": {},
+  "toggle": null,
+  "verbose_clicks": null,
+  "tags": [
+   "keyboard"
+  ],
+  "classes": [
+   "keyed-edit"
+  ],
+  "varies": false
+ },
+ "lf52": {
+  "animated_suspect": true,
+  "actions_spent": 58,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION2": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION3": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION4": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION7": [
+    "edit",
+    "edit",
+    "edit"
+   ]
+  },
+  "click_probes": 40,
+  "click_live": 40,
+  "click_density": 1.0,
+  "click_labels": {
+   "remote_edit": 40
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect",
+   "exogenous-dynamics?",
+   "keyed-edit"
+  ],
+  "varies": false
+ },
+ "lp85": {
+  "animated_suspect": false,
+  "actions_spent": 43,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {},
+  "click_probes": 40,
+  "click_live": 2,
+  "click_density": 0.05,
+  "click_labels": {
+   "noop": 38,
+   "remote_edit": 2
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect"
+  ],
+  "varies": false
+ },
+ "ls20": {
+  "animated_suspect": false,
+  "actions_spent": 13,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "translate(-5,0)",
+    "translate(-5,0)",
+    "translate(-5,0)"
+   ],
+   "ACTION2": [
+    "translate(5,0)",
+    "translate(5,0)",
+    "translate(5,0)"
+   ],
+   "ACTION3": [
+    "translate(0,-5)",
+    "translate(0,-5)",
+    "translate(0,-5)"
+   ],
+   "ACTION4": [
+    "translate(0,5)",
+    "translate(0,5)",
+    "translate(0,5)"
+   ]
+  },
+  "click_probes": 0,
+  "click_live": 0,
+  "click_density": null,
+  "click_labels": {},
+  "toggle": null,
+  "verbose_clicks": null,
+  "tags": [
+   "keyboard"
+  ],
+  "classes": [
+   "object-translation"
+  ],
+  "varies": false
+ },
+ "m0r0": {
+  "animated_suspect": false,
+  "actions_spent": 58,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "translate(-5,0)",
+    "edit",
+    "noop"
+   ],
+   "ACTION2": [
+    "translate(5,0)",
+    "translate(5,0)",
+    "edit"
+   ],
+   "ACTION3": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION4": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION5": [
+    "edit",
+    "noop",
+    "noop"
+   ]
+  },
+  "click_probes": 40,
+  "click_live": 17,
+  "click_density": 0.425,
+  "click_labels": {
+   "remote_edit": 17,
+   "noop": 23
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "keyboard_click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect",
+   "keyed-edit",
+   "object-translation",
+   "stateful-mode"
+  ],
+  "varies": true
+ },
+ "r11l": {
+  "animated_suspect": true,
+  "actions_spent": 43,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {},
+  "click_probes": 40,
+  "click_live": 40,
+  "click_density": 1.0,
+  "click_labels": {
+   "translate(-9,15)": 1,
+   "remote_edit": 21,
+   "translate(1,2)": 1,
+   "translate(0,-3)": 1,
+   "translate(0,3)": 2,
+   "translate(1,-3)": 1,
+   "translate(1,-2)": 1,
+   "translate(0,2)": 1,
+   "translate(0,-2)": 1,
+   "translate(6,-15)": 1,
+   "translate(2,1)": 2,
+   "translate(2,2)": 3,
+   "translate(-9,-7)": 1,
+   "translate(4,4)": 1,
+   "translate(-12,-12)": 1,
+   "translate(-13,18)": 1
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect",
+   "exogenous-dynamics?",
+   "object-translation"
+  ],
+  "varies": false
+ },
+ "re86": {
+  "animated_suspect": false,
+  "actions_spent": 16,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "translate(-3,0)",
+    "translate(-3,0)",
+    "translate(-3,0)"
+   ],
+   "ACTION2": [
+    "translate(3,0)",
+    "translate(3,0)",
+    "translate(3,0)"
+   ],
+   "ACTION3": [
+    "translate(0,-3)",
+    "translate(0,-3)",
+    "translate(0,-3)"
+   ],
+   "ACTION4": [
+    "translate(0,3)",
+    "translate(0,3)",
+    "translate(0,3)"
+   ],
+   "ACTION5": [
+    "translate(-18,-15)",
+    "translate(18,15)",
+    "translate(-18,-15)"
+   ]
+  },
+  "click_probes": 0,
+  "click_live": 0,
+  "click_density": null,
+  "click_labels": {},
+  "toggle": null,
+  "verbose_clicks": null,
+  "tags": [
+   "keyboard_click"
+  ],
+  "classes": [
+   "object-translation",
+   "stateful-mode"
+  ],
+  "varies": true
+ },
+ "s5i5": {
+  "animated_suspect": true,
+  "actions_spent": 43,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {},
+  "click_probes": 40,
+  "click_live": 40,
+  "click_density": 1.0,
+  "click_labels": {
+   "remote_edit": 39,
+   "local_edit": 1
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-local-edit",
+   "click-remote-effect",
+   "exogenous-dynamics?"
+  ],
+  "varies": false
+ },
+ "sc25": {
+  "animated_suspect": false,
+  "actions_spent": 55,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "noop",
+    "edit",
+    "edit"
+   ],
+   "ACTION2": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION3": [
+    "edit",
+    "edit",
+    "edit"
+   ],
+   "ACTION4": [
+    "edit",
+    "edit",
+    "edit"
+   ]
+  },
+  "click_probes": 40,
+  "click_live": 9,
+  "click_density": 0.225,
+  "click_labels": {
+   "noop": 31,
+   "local_edit": 4,
+   "remote_edit": 5
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "keyboard_click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-local-edit",
+   "click-remote-effect",
+   "keyed-edit"
+  ],
+  "varies": false
+ },
+ "sp80": {
+  "animated_suspect": false,
+  "actions_spent": 58,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION1": [
+    "translate(-4,0)",
+    "edit",
+    "edit"
+   ],
+   "ACTION2": [
+    "translate(4,0)",
+    "translate(4,0)",
+    "translate(4,0)"
+   ],
+   "ACTION3": [
+    "translate(0,-4)",
+    "translate(0,-4)",
+    "translate(0,-4)"
+   ],
+   "ACTION4": [
+    "translate(0,4)",
+    "translate(0,4)",
+    "translate(0,4)"
+   ],
+   "ACTION5": [
+    "edit",
+    "edit",
+    "edit"
+   ]
+  },
+  "click_probes": 40,
+  "click_live": 15,
+  "click_density": 0.375,
+  "click_labels": {
+   "remote_edit": 15,
+   "noop": 25
+  },
+  "toggle": "sticky",
+  "verbose_clicks": null,
+  "tags": [
+   "keyboard_click"
+  ],
+  "classes": [
+   "click-remote-effect",
+   "keyed-edit",
+   "object-translation",
+   "stateful-mode"
+  ],
+  "varies": true
+ },
+ "su15": {
+  "animated_suspect": false,
+  "actions_spent": 46,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {
+   "ACTION7": [
+    "noop",
+    "noop",
+    "noop"
+   ]
+  },
+  "click_probes": 40,
+  "click_live": 29,
+  "click_density": 0.725,
+  "click_labels": {
+   "remote_edit": 29,
+   "noop": 11
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect"
+  ],
+  "varies": false
+ },
+ "tn36": {
+  "animated_suspect": true,
+  "actions_spent": 43,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {},
+  "click_probes": 40,
+  "click_live": 40,
+  "click_density": 1.0,
+  "click_labels": {
+   "remote_edit": 40
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect",
+   "exogenous-dynamics?"
+  ],
+  "varies": false
+ },
+ "vc33": {
+  "animated_suspect": true,
+  "actions_spent": 43,
+  "levels_completed_during_probe": 0,
+  "simple_actions": {},
+  "click_probes": 40,
+  "click_live": 40,
+  "click_density": 1.0,
+  "click_labels": {
+   "remote_edit": 40
+  },
+  "toggle": "cycle",
+  "verbose_clicks": null,
+  "tags": [
+   "click"
+  ],
+  "classes": [
+   "cell-cycle",
+   "click-remote-effect",
+   "exogenous-dynamics?"
+  ],
+  "varies": false
+ }
+}
