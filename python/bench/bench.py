@@ -156,9 +156,11 @@ def main() -> None:
         if not p.exists():
             raise SystemExit(f"{what} not found: {p}")
 
-    # Absolutize before the chdir below, so --out/--vs stay relative to the caller.
+    # Absolutize before the chdir below, so every path stays relative to the
+    # caller's directory rather than the kit's.
     args.out = args.out.resolve() if args.out else None
     args.vs = args.vs.resolve() if args.vs else None
+    agent_path = agent_path.resolve()
 
     sys.path.insert(0, str(kit))
     sys.path.insert(0, str(kit / "vendor" / "ARC-AGI-3-Agents"))
