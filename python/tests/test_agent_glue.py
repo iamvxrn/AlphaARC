@@ -89,8 +89,15 @@ def _board(seed_col):
     return g
 
 
-def _agent():
+def _agent(mode="policy"):
+    """Default to the one-step policy: these tests inspect ITS internals to check
+    the adapter's level-seam handling. `mode=None` exercises whatever the shipped
+    default is, which a separate test pins."""
     os.environ["ARC_AGENT_SEED"] = "1"
+    if mode is None:
+        os.environ.pop("ARC_PLANNER", None)
+    else:
+        os.environ["ARC_PLANNER"] = mode
     return MyAgent(card_id="t", game_id="t", agent_name="t", ROOT_URL="http://x",
                    record=False, arc_env=None, tags=[])
 
@@ -144,6 +151,15 @@ def test_every_policy_the_adapter_can_hold_exposes_an_rng():
         agent = cls(rng=_random.Random(0))
         assert hasattr(agent, "rng"), f"{cls.__name__} has no .rng"
         assert agent.rng.choice([1, 2, 3]) in (1, 2, 3)
+
+
+
+def test_the_shipped_default_is_the_hybrid():
+    """The confirmed configuration: +27% on the full train split (0.3145 -> 0.4010).
+    If this ever silently reverts to the one-step policy, the score goes with it."""
+    from alphaarc.planner import HybridPolicy
+    a = _agent(mode=None)
+    assert isinstance(a._policy, HybridPolicy), type(a._policy).__name__
 
 
 if __name__ == "__main__":
