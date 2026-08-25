@@ -187,6 +187,9 @@ what judges whether the generalization was real.
 | ls20 | keyboard only; 3 of 4 keys move an avatar ~52 cells | — | a GOAL and a route |
 | g50t | keyboard; **3 of 5 keys inert** | row 63 | movement, mostly-dead keys |
 | sp80 | ACTION2 moves 162 cells a press, ACTION4 34, ACTION5 inert | row 0 and rows 60-63 | a profile that RISES then FALLS |
+| dc22 | all four keys behave identically: 9 cells once, then only the clock; Count collapses 688→80 | — | a 3×3 **cursor** moved by keys, then applied |
+| m0r0 | 4 of 5 keys move ~100 cells; the board is two halves with two 5×5 markers | — | two-panel comparison |
+| re86 | period-5 blocks: ~61-cell responses alternate with ~53; the mode shows as Count 82 vs 78 | — | `stateful-mode` |
 
 Facts that generalize, and that cost something to learn:
 
@@ -200,6 +203,13 @@ Facts that generalize, and that cost something to learn:
   both — worth knowing before anyone "simplifies" it into a hill-climb.
 - **Dead controls are everywhere** — whole key sets on g50t, the entire top row on
   lp85 — and one press each is the cheapest way to find out.
+- **`stateful-mode` is blocked by the state REPRESENTATION, not by the credit.**
+  dc22's mode is a cursor position, which moves 9 cells out of 4096 -- the
+  per-primitive level vector, which is our entire notion of state, cannot see it.
+  Quantising the model key fixed a real defect (raw levels drift with the clock and
+  never repeat, so the model accumulated singletons) and cannot fix this one: the
+  variable is missing from the representation. The class needs a state that carries
+  WHERE the last small change happened, not only how compressible the board is.
 - **`object_targets` ranks HUD fragments ahead of real controls**, because HUD
   segments are small and numerous and the rule is smallest-first. Widening the
   candidate set to compensate was the worst change measured (−0.16); handing over
