@@ -214,3 +214,23 @@ Facts that generalize, and that cost something to learn:
   segments are small and numerous and the rule is smallest-first. Widening the
   candidate set to compensate was the worst change measured (−0.16); handing over
   to the planner on a streak of dead clicks is what worked.
+
+### Rejected #4: two strikes before a control is written off
+
+Decoding sc25 showed that **every one of its four keys absorbs its first press** and
+only starts working on the second. `RunPlanner` marks a control inert after ONE
+silent press, and `inert` is permanent until the board is replaced, so it writes
+off the entire game after four actions and never returns. The rule looked plainly
+wrong, and requiring two consecutive silences instead is nearly free.
+
+**Measured worse, and worse at its own job.** sc25 stayed at zero -- the one-strike
+rule was not what was blocking it -- and lp85 lost its level, 1.7087 -> 1.7043.
+
+lp85 is a knife-edge case worth knowing about: across six runs it takes its level
+in exactly one repeat of three when it takes it at all, so its 0.018 flips to 0.000
+under small perturbations. That makes it a poor tie-breaker, not a reliable signal.
+
+The lesson repeats one already on this page: a defect being real is not evidence
+that fixing it buys anything. Nine changes have now been measured against the
+board; the ones that paid all came from decoding a game and building exactly what
+the decode specified.
