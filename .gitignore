@@ -30,3 +30,7 @@ CONCEPT.md
 # Python
 __pycache__/
 *.pyc
+
+# arc-agi engine game cache (re-downloaded on demand; lives in the starter kit)
+environment_files/
+python/bench/runs/*.log

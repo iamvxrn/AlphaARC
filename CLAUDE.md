@@ -25,6 +25,29 @@ A Go cognitive architecture that solves **ARC-AGI-3** (interactive games at thre
 - **tn36's wall is NOT aggregation** (new finding): a fine probe sweep (STEP=4, 256 points) found `bestCorrespondenceDelta=+0` everywhere, even the *unmasked* direct Correspondence delta. Correspondence (built for same-shape template *pairs*) likely just doesn't recognize tn36's legend-to-checkerboard relationship at all — a representational gap, not a masking one.
 - **Scale (s5i5-specific, still open):** its two template boxes are different sizes; Correspondence V1 deliberately excludes scale.
 
+## Score measurement (Phase 0, 2026-08-25) — READ BEFORE OPTIMISING ANYTHING
+The leaderboard number is NOT "levels taken". From the installed engine
+(`arc_agi/scorecard.py`): `level_score = min(115,(baseline/actions)^2*100)` if the
+level was completed else 0; `game_score = Σ(level_score_i · i) / Σ(i over ALL the
+game's levels)`; total = mean over games, best run per game. Per-level
+`baseline_actions` and a mechanic `tags` field are handed to us in each game's
+`environment_files/<game>/<ver>/metadata.json`.
+Consequences (computed over the real 25 public games):
+- **Depth dominates**: taking L1 of *every* game at exact baseline = **3.52**, not 10.
+  >10 needs the first two levels everywhere (10.6) or ~3 games solved end to end.
+- **Efficiency is quadratic** and **baseline is the ceiling** (a per-game cap
+  forbids earning more by being faster). Target baseline, don't race it.
+- L1 has the LOWEST weight -> it is the cheapest place to spend a budget learning
+  the mechanic, and levels 2+ repay it. The metric rewards the MBRL plan directly;
+  the world model must survive a level transition.
+- Tags: `keyboard_click` 13, `click` 7, `keyboard` 4 -> **17 of 25 games need
+  non-click actions**, and every win we have is in the 7-game click bucket.
+Harness: `make bench` / `bench-all` / `holdout` (see `python/bench/README.md`).
+`python/alphaarc/` is now CANONICAL and `agent/my_agent.py` is a BUILD PRODUCT
+(`python/bench/bundle.py`; `make check-bundle` fails when stale).
+`python/bench/splits.json` freezes 8 never-probed games as a holdout — running it
+requires `ARC_HOLDOUT_OK=1`; it is for measuring, never for tuning.
+
 ## Immediate next task
 Found and fixed a THIRD aggregation blind spot (commit 925880c): `ResidualCells` (the click-candidate source) had no case for Correspondence residual at all, so a click that would fix a template/legend mismatch was only ever offered by coincidence, on ANY game — not just the hard ones. Added `CorrespondenceResidual` + wired it into `ResidualCells` unconditionally. Offline-proven, vc33 regression-checked clean. Live-tested on the blind-tested **ft09-0d8bbf25** (a 6th pure-click game, never touched before this session — see calibration correction above): still 0/150. Narrowed why: `CorrespondenceResidual` DOES find a real 4x4 mismatched block on ft09, but clicking directly on one of those cells does **nothing** to the board (cells=0) — so ft09's actual clickable trigger is NOT the same pixel as its compression-relevant cell (same lesson as vc33-L2, different game). Next: sweep ft09 broadly for ANY click that raises Correspondence, the way vc33's grow button was found — not yet done. Also still open: s5i5 (scale), tn36 (Correspondence=0 even at fine resolution — a representational gap, not aggregation), and lp85/r11l haven't been re-verified live since the reinforcement/candidate changes. See `project_protaxon_resume.md` for the full trace.
 

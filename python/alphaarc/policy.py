@@ -39,6 +39,17 @@ class Policy:
         self._prev_grid: Optional[Grid] = None
         self._last_token: Optional[str] = None
 
+    def reset_episode(self) -> None:
+        """Drop the per-episode trace after a RESET/GAME_OVER.
+
+        What the policy LEARNED about clicks (drive_gain, tries) survives -- the
+        mechanic does not change when the board does. Only the transition trace
+        is dropped, so the first click of the new episode is not credited with a
+        delta measured against a stale board.
+        """
+        self._prev_grid = None
+        self._last_token = None
+
     @staticmethod
     def _tok(x: int, y: int) -> str:
         return "%d,%d" % (x, y)

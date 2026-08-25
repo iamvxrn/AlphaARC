@@ -1,0 +1,7 @@
+{
+  "_comment": "FROZEN generalization split. Do not edit to chase a number. HOLDOUT games must never be probed, rendered, or read while developing the mechanism -- they are the local stand-in for the hidden Kaggle set. Chosen 2026-08-25 from the games that had NEVER been probed or analysed by then (the contaminated ones are listed below and all live in train). Note: all 7 click-only games were already contaminated, so the holdout covers keyboard / keyboard_click only.",
+  "holdout": ["bp35", "cn04", "ka59", "sb26", "sk48", "tu93", "tr87", "wa30"],
+  "train": ["ar25", "cd82", "dc22", "g50t", "m0r0", "re86", "sc25", "sp80",
+            "ft09", "lf52", "lp85", "ls20", "r11l", "s5i5", "su15", "tn36", "vc33"],
+  "contaminated_at_freeze": ["ft09", "lf52", "lp85", "ls20", "r11l", "s5i5", "su15", "tn36", "vc33"]
+}
