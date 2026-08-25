@@ -23,7 +23,7 @@ from agents.agent import Agent
 
 from .mdl import Grid
 from .perception import background_color
-from .planner import RunPlanner
+from .planner import HybridPolicy, RunPlanner
 from .policy import Policy
 
 
@@ -55,8 +55,11 @@ class MyAgent(Agent):
         # ARC_PLANNER=1 swaps the one-step policy for the run-planner. Kept as a
         # switch so the two can be A/B'd on the real games, which is the only place
         # the question has ever been settled.
-        if os.environ.get("ARC_PLANNER") == "1":
+        mode = os.environ.get("ARC_PLANNER", "")
+        if mode == "1":
             self._policy = RunPlanner(rng=random.Random(seed))
+        elif mode == "hybrid":
+            self._policy = HybridPolicy(rng=random.Random(seed))
         else:
             self._policy = Policy(rng=random.Random(seed))
         self._levels_done = 0

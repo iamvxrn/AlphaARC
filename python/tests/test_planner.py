@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from alphaarc.planner import RunPlanner, _gain  # noqa: E402
+from alphaarc.planner import HybridPolicy, RunPlanner, _gain  # noqa: E402
 from alphaarc.policy import Policy  # noqa: E402
 
 BG = 9
@@ -236,6 +236,34 @@ def test_a_run_follows_its_control_across_a_redraw():
     assert nxt is not None
     assert p._signature(big, BG, *nxt) == sig, \
         f"lost the control across the redraw: {sig} -> {p._signature(big, BG, *nxt)}"
+
+
+
+def test_the_hybrid_spends_the_first_actions_cheaply():
+    """vc33 clears level 1 in about seven actions with one-step credit and never
+    with the planner, because probing costs more than the level is worth. So the
+    cheap agent must own the opening."""
+    h = HybridPolicy(switch_after=5, rng=random.Random(0))
+    g = _blank(9, 24)
+    _place(g, 1, 1, SYM_BOX)
+    _place(g, 1, 8, SYM_BOX)
+    for _ in range(5):
+        h.choose_click(g, BG)
+        assert h.active is h.policy, "handed over before the cheap agent had its chance"
+    h.choose_click(g, BG)
+    assert h.active is h.planner, "never escalated, so long levels stay unsolved"
+
+
+def test_a_new_level_gives_the_cheap_agent_another_chance():
+    """The next level's opening may well be short too, so the clock restarts."""
+    h = HybridPolicy(switch_after=2, rng=random.Random(0))
+    g = _blank(9, 24)
+    _place(g, 1, 1, SYM_BOX)
+    for _ in range(4):
+        h.choose_click(g, BG)
+    assert h.active is h.planner
+    h.board_replaced()
+    assert h.active is h.policy, "stayed expensive into a level that might be cheap"
 
 
 if __name__ == "__main__":

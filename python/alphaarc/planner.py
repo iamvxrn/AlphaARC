@@ -28,6 +28,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .mdl import PRIMITIVES, Grid, _components
 from .perception import background_color
+from .policy import Policy
 from .residual import object_targets, residual_targets
 
 
@@ -230,3 +231,53 @@ class RunPlanner:
         self._prev_levels = levels
         self.tries[self._run_token] = self.tries.get(self._run_token, 0) + 1
         return (target.x, target.y)
+
+
+class HybridPolicy:
+    """One-step credit first; run-planning only once the cheap agent has stalled.
+
+    Measured on the quick split, the two agents win DIFFERENT games:
+
+        vc33 (level-1 baseline 7)   one-step 4.343   planner 0.000
+        lp85 (baseline 17)          one-step 0.082   planner 2.778
+        tn36 (baseline 32)          one-step 0.000   planner 0.338
+
+    and the split is not mysterious. Systematic exploration costs a press per
+    candidate; on a level whose baseline is seven actions that is the whole level,
+    and the score punishes wasted actions quadratically. So spend the first actions
+    the cheap way, and only pay for runs once it is clear the cheap way is not
+    working -- by which point the level is already long and the extra presses cost
+    proportionally little.
+
+    The threshold is in ACTIONS, not baselines: the agent is never told what the
+    baseline is.
+    """
+
+    def __init__(self, switch_after: int = 25, rng: Optional[random.Random] = None,
+                 policy=None, planner=None):
+        rng = rng or random.Random()
+        self.switch_after = switch_after
+        self.policy = policy if policy is not None else Policy(rng=rng)
+        self.planner = planner if planner is not None else RunPlanner(rng=rng)
+        self.since_level = 0
+        self.switched = False
+
+    @property
+    def active(self):
+        return self.planner if self.switched else self.policy
+
+    def board_replaced(self) -> None:
+        """A new level is a fresh chance for the cheap agent: reset the clock and
+        hand control back, because the next level's opening may well be short."""
+        self.since_level = 0
+        self.switched = False
+        self.policy.board_replaced()
+        self.planner.board_replaced()
+
+    reset_episode = board_replaced
+
+    def choose_click(self, grid: Grid, bg: Optional[int] = None) -> Optional[Tuple[int, int]]:
+        self.since_level += 1
+        if not self.switched and self.since_level > self.switch_after:
+            self.switched = True
+        return self.active.choose_click(grid, bg)
