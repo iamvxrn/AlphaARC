@@ -71,9 +71,31 @@ end, and peeking at 0.40/10 would start shaping heuristics around what we saw.
 control class is closed.** "It is only one look" is exactly the argument the rule
 exists to refuse.
 
-## Immediate next task
-Found and fixed a THIRD aggregation blind spot (commit 925880c): `ResidualCells` (the click-candidate source) had no case for Correspondence residual at all, so a click that would fix a template/legend mismatch was only ever offered by coincidence, on ANY game — not just the hard ones. Added `CorrespondenceResidual` + wired it into `ResidualCells` unconditionally. Offline-proven, vc33 regression-checked clean. Live-tested on the blind-tested **ft09-0d8bbf25** (a 6th pure-click game, never touched before this session — see calibration correction above): still 0/150. Narrowed why: `CorrespondenceResidual` DOES find a real 4x4 mismatched block on ft09, but clicking directly on one of those cells does **nothing** to the board (cells=0) — so ft09's actual clickable trigger is NOT the same pixel as its compression-relevant cell (same lesson as vc33-L2, different game). Next: sweep ft09 broadly for ANY click that raises Correspondence, the way vc33's grow button was found — not yet done. Also still open: s5i5 (scale), tn36 (Correspondence=0 even at fine resolution — a representational gap, not aggregation), and lp85/r11l haven't been re-verified live since the reinforcement/candidate changes. See `project_protaxon_resume.md` for the full trace.
+## Immediate next task (handoff, end of 2026-08-25)
+Everything below is committed; tree clean, all suites green, `make check-bundle`
+up to date, no background jobs.
 
-## Deep running log
-Full history, decisions, and the honest-stakes stance live in the auto-memory, now under the **AlphaARC** project path (auto-loads when the session's working dir is this repo):
-`$HOME/.claude/projects/-home-user-extra-git-AlphaARC/memory/` — start with `project_protaxon_resume.md`. (A stale copy remains under the `-Protaxon` project path as backup.) Note: the *codebase* named Protaxon is the older line; **AlphaARC is canonical** — do not sync from it.
+**Where the score is:** train 0.4010 (17 games) + ls20's first level; quick 1.7087
+(4 games, all scoring). Target 10. The L1-everywhere ceiling is 3.52, so the metric
+needs DEPTH, not more first levels.
+
+**The loop that works:** `make decode GAME=xx` -> understand -> build exactly what
+the decode specified -> `make quick` (127 s) -> confirm with `make bench` (~40 min).
+Nine changes have been measured; every one that paid came out of a decode, and
+every one that came from "this looks wrong, fix it" returned zero or worse. Read
+`python/bench/README.md` "Tried and rejected" (four entries) before proposing
+anything that widens exploration or edits the compression measurement.
+
+**Decoded: 14 of 17 train games** — see `python/bench/README.md` and memory
+`reference_decoded_games`. **Left to decode: lf52, s5i5, su15** (all click-only, so
+run decode WITHOUT `--keys-only`).
+
+**Open, in rough order of expected value:**
+1. `stateful-mode` (dc22, m0r0, re86, sp80) is blocked by the STATE REPRESENTATION,
+   not the credit: dc22's mode is a cursor position that moves 9 cells of 4096, and
+   the per-primitive level vector cannot see it. The class needs a state that also
+   carries WHERE the last small change happened.
+2. Movement beyond ls20 — g50t, m0r0, re86, sp80 still zero.
+3. Depth on the four scoring games; vc33 reaches level 2 of 7.
+
+**Do NOT touch the holdout** — sealed by the user, criterion above.
