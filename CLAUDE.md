@@ -61,7 +61,15 @@ catalogued in `python/bench/README.md` "Tried and rejected" -- read it before
 proposing an eighth. The through-line behind everything that DID pay: reward is
 routinely invisible one step ahead. Game-by-game facts: memory
 `reference_decoded_games`.
-**Holdout is still untouched.** Until it is run, "generalizes" is a word.
+**THE HOLDOUT IS SEALED** (user's ruling, 2026-08-25, at train 0.4010). Not
+"untouched by accident" — deliberately locked. Running it now would measure our
+MISSING MECHANICS, not our generalization: four movement games at zero and twelve
+of seventeen never decoded would drag it to ~0.15 and tell us nothing about
+whether the planner transfers. It is the only overfitting detector we get at the
+end, and peeking at 0.40/10 would start shaping heuristics around what we saw.
+**Unlock only when the obvious structural bugs on TRAIN are exhausted and every
+control class is closed.** "It is only one look" is exactly the argument the rule
+exists to refuse.
 
 ## Immediate next task
 Found and fixed a THIRD aggregation blind spot (commit 925880c): `ResidualCells` (the click-candidate source) had no case for Correspondence residual at all, so a click that would fix a template/legend mismatch was only ever offered by coincidence, on ANY game — not just the hard ones. Added `CorrespondenceResidual` + wired it into `ResidualCells` unconditionally. Offline-proven, vc33 regression-checked clean. Live-tested on the blind-tested **ft09-0d8bbf25** (a 6th pure-click game, never touched before this session — see calibration correction above): still 0/150. Narrowed why: `CorrespondenceResidual` DOES find a real 4x4 mismatched block on ft09, but clicking directly on one of those cells does **nothing** to the board (cells=0) — so ft09's actual clickable trigger is NOT the same pixel as its compression-relevant cell (same lesson as vc33-L2, different game). Next: sweep ft09 broadly for ANY click that raises Correspondence, the way vc33's grow button was found — not yet done. Also still open: s5i5 (scale), tn36 (Correspondence=0 even at fine resolution — a representational gap, not aggregation), and lp85/r11l haven't been re-verified live since the reinforcement/candidate changes. See `project_protaxon_resume.md` for the full trace.

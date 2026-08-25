@@ -43,6 +43,13 @@ RNG seed (the agent otherwise seeds from the clock) so a diff means a real chang
 
 ## The splits
 
+**The holdout is SEALED, not merely unused** (ruling of 2026-08-25 at train
+0.4010). Running it while the engine is structurally incomplete measures what we
+cannot play, not how well we generalize — and it is the only overfitting detector
+available at the end, so a single early look starts shaping heuristics around it.
+Unlock only once the obvious structural bugs on `train` are exhausted and every
+control class is closed.
+
 `splits.json` freezes 8 of the 25 public games as a **holdout** — our local
 stand-in for the hidden Kaggle set. They were picked from the games that had
 never been probed or read as of 2026-08-25; the 9 already-studied games all sit
