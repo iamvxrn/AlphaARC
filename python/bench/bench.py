@@ -240,17 +240,33 @@ def main() -> None:
 
     if args.vs:
         old = json.loads(args.vs.read_text())
-        print(f"\nDIFF vs {args.vs} (aggregate {old['aggregate']:.4f} -> {agg:.4f}, "
-              f"{agg - old['aggregate']:+.4f})")
-        for g in games:
-            o = old["games"].get(g)
-            if not o:
-                continue
+        shared = sorted(set(old["games"]) & set(results))
+        if not shared:
+            print(f"\nDIFF vs {args.vs}: no games in common -- nothing to compare.")
+            return
+        # Compare on the INTERSECTION. The aggregate is a mean over games, so
+        # comparing a 17-game run against a 25-game one reads as a large gain that
+        # is purely the different denominator -- which is exactly how this diff
+        # first reported +0.10 for a change that was worth -0.0003.
+        old_agg = sum(old["games"][g]["score"] for g in shared) / len(shared)
+        new_agg = sum(results[g]["score"] for g in shared) / len(shared)
+        note = ""
+        if set(old["games"]) != set(results):
+            note = (f"  [compared on the {len(shared)} shared games; "
+                    f"{args.vs.name} has {len(old['games'])}, this run {len(results)}]")
+        print(f"\nDIFF vs {args.vs} ({old_agg:.4f} -> {new_agg:.4f}, "
+              f"{new_agg - old_agg:+.4f}){note}")
+        moved = False
+        for g in shared:
+            o = old["games"][g]
             dl = results[g]["levels_completed"] - o["levels_completed"]
             ds = results[g]["score"] - o["score"]
             if dl or abs(ds) > 1e-6:
+                moved = True
                 print(f"  {g:6} levels {o['levels_completed']}->{results[g]['levels_completed']} "
                       f"({dl:+d})   score {o['score']:.3f}->{results[g]['score']:.3f} ({ds:+.3f})")
+        if not moved:
+            print("  no game moved")
 
 
 if __name__ == "__main__":

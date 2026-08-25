@@ -95,5 +95,75 @@ def _run():
     return failed
 
 
+
+def _toggle_boards():
+    """Two 4x4 boxes; box B's fill toggles between matching A and not.
+
+    B stays a solid object in BOTH states, so its centroid is always a click
+    candidate -- exactly like an ft09 tile, and unlike a residual that vanishes
+    once fixed. This is the shape of world that defeats an averaged credit.
+    """
+    bg = 9
+    g = [[bg] * 16 for _ in range(8)]
+    for r in range(2, 6):
+        for c in range(2, 6):
+            g[r][c] = 8
+    for r in range(2, 6):
+        for c in range(10, 14):
+            g[r][c] = 3          # start MISmatched
+    return g, bg
+
+
+def _run_toggle_world(model_on, steps=40, seed=0):
+    """Return how many steps the board spent in the compressible state."""
+    grid, bg = _toggle_boards()
+    p = Policy(explore=0.0, rng=random.Random(seed))
+    good = 0
+    for _ in range(steps):
+        if not model_on:
+            p.succ.clear()               # disable the state-keyed prediction
+        xy = p.choose_click(grid, bg)
+        if xy is not None and 2 <= xy[1] < 6 and 10 <= xy[0] < 14:
+            new = 3 if grid[3][11] == 8 else 8
+            for r in range(2, 6):
+                for c in range(10, 14):
+                    grid[r][c] = new
+        good += 1 if grid[3][11] == 8 else 0
+    return good
+
+
+def test_state_keyed_prediction_beats_averaged_credit_on_a_toggle():
+    """ft09's defect, as a differential test: an averaged credit cancels on an
+    involutive control, so the agent flips it forever. Predicting what the control
+    does FROM HERE tells the two states apart."""
+    off = _run_toggle_world(model_on=False)
+    on = _run_toggle_world(model_on=True)
+    assert on > off, f"the prediction bought nothing: {on} vs {off} good steps"
+
+
+def test_the_ema_alone_really_does_cancel_on_a_toggle():
+    """The measurement behind the fix, pinned: +d then -d on one token."""
+    good, bg = _toggle_boards()
+    matched = [row[:] for row in good]
+    for r in range(2, 6):
+        for c in range(10, 14):
+            matched[r][c] = 8
+
+    p = Policy(explore=0.0, rng=random.Random(1))
+    tok = p._tok(11, 3)
+    lo, hi = Policy._levels(good, bg), Policy._levels(matched, bg)
+    assert lo != hi, "fixture must actually change the compression levels"
+
+    p._prev_grid, p._prev_levels, p._last_token = good, lo, tok
+    p._credit_last(matched, bg, hi)
+    p._prev_grid, p._prev_levels, p._last_token = matched, hi, tok
+    p._credit_last(good, bg, lo)
+
+    spread = max(abs(a - b) for a, b in zip(lo, hi))
+    assert abs(p.drive_gain[tok]) < spread, "the EMA should largely cancel -- the defect"
+    assert p.succ[(tok, tuple(lo))] == hi, "but the transition FROM the bad state is remembered"
+    assert p.succ[(tok, tuple(hi))] == lo, "and so is the one from the good state"
+
+
 if __name__ == "__main__":
     sys.exit(1 if _run() else 0)

@@ -14,7 +14,7 @@ from __future__ import annotations
 import random
 from typing import Dict, List, Optional, Tuple
 
-from .mdl import Grid, best_primitive_delta
+from .mdl import PRIMITIVES, Grid
 from .perception import background_color
 from .residual import object_targets, residual_targets
 
@@ -34,9 +34,13 @@ class Policy:
         self.max_candidates = max_candidates
         self.rng = rng or random.Random()
         self.drive_gain: Dict[str, float] = {}   # EMA of observed compression delta per token
+        # A one-step world model: what the compression levels BECAME, last time this
+        # token was used from a board with these levels. Keyed by (token, levels).
+        self.succ: Dict[Tuple[str, Tuple[float, ...]], List[float]] = {}
         self.tries: Dict[str, int] = {}          # optimism for the under-tried
         self.dead: Dict[str, float] = {}         # decaying "did nothing" count (inhibition of return)
         self._prev_grid: Optional[Grid] = None
+        self._prev_levels: Optional[List[float]] = None
         self._last_token: Optional[str] = None
 
     def reset_episode(self) -> None:
@@ -54,12 +58,41 @@ class Policy:
     def _tok(x: int, y: int) -> str:
         return "%d,%d" % (x, y)
 
-    def _credit_last(self, grid: Grid, bg: int) -> None:
-        """Model-free reinforcement: credit the previous click by its observed ΔL."""
+    @staticmethod
+    def _levels(grid: Grid, bg: int) -> List[float]:
+        """Savings of EVERY primitive, not just the winner.
+
+        Collapsing to the argmax hides exactly the differences that matter: two
+        boards can both score 16 because Reflect dominates both, while Translate
+        reads 16 vs 8 -- the real effect of the control. This is the same
+        argmax-of-argmax trap `best_primitive_delta` was written to avoid.
+        """
+        return [float(p.savings(grid, bg)) for p in PRIMITIVES]
+
+    def _credit_last(self, grid: Grid, bg: int, level: List[float]) -> None:
+        """Credit the previous click, and remember WHAT IT DID from where it was.
+
+        The EMA of signed ΔL is kept -- it is fine for a control that pushes the
+        board one way -- but it is blind to an INVOLUTIVE control: a toggle scores
+        +24 then -24 on the same token, so its average decays to ~0 and the control
+        never accumulates value even though one of its two states is genuinely
+        better. That is measured, on ft09, where every control is a toggle.
+
+        Averaging cannot fix this, because the same token is right from one state
+        and wrong from the other. What distinguishes them is the STATE, so record
+        the transition: (token, levels here) -> levels there. One step of a world
+        model, which is also the direction the whole architecture is going.
+        """
         if self._prev_grid is None or self._last_token is None:
             return
-        d = float(best_primitive_delta(self._prev_grid, grid, bg))
+        # The signed biggest-mover delta, derived from the level vectors we already
+        # have instead of re-evaluating every primitive on both grids. This is
+        # exactly what mdl.best_primitive_delta computes, so deriving it here HALVES
+        # the per-step primitive work rather than adding to it.
+        prev = self._prev_levels or [0.0] * len(level)
+        d = max((n - o for n, o in zip(level, prev)), key=abs, default=0.0)
         self.drive_gain[self._last_token] = 0.6 * self.drive_gain.get(self._last_token, 0.0) + 0.4 * d
+        self.succ[(self._last_token, tuple(prev))] = list(level)
         if grid == self._prev_grid:  # the click changed nothing -> taboo it a while
             self.dead[self._last_token] = self.dead.get(self._last_token, 0.0) + 1.0
         # decay all taboos slightly (inhibition of return fades)
@@ -72,7 +105,9 @@ class Policy:
         """Return the (x=col, y=row) to click, or None if no candidate exists."""
         if bg is None:
             bg = background_color(grid)
-        self._credit_last(grid, bg)
+        level = self._levels(grid, bg)
+        self._credit_last(grid, bg, level)
+        self._prev_levels = level
 
         # Candidates = residual anomaly centroids UNION object centroids, deduped
         # (residual first). Object centroids surface small interactive controls
@@ -92,8 +127,19 @@ class Policy:
         best_tok, best_xy, best_v = None, None, -1e18
         for i, p in enumerate(pts):
             tok = self._tok(p.x, p.y)
+            # How much better than NOW is the best state this control has reached?
+            # Zero once we are already there, so a toggle is pursued to its good
+            # state and then left alone instead of being flipped back and forth.
+            # What this control did LAST TIME FROM HERE. Signed on purpose: a
+            # toggle is worth clicking from its bad state and worth avoiding from
+            # its good one, and only a state-keyed prediction can tell them apart.
+            nxt = self.succ.get((tok, tuple(level)))
+            predicted = 0.0 if nxt is None else max(
+                (n - c for n, c in zip(nxt, level)), key=abs, default=0.0
+            )
             v = (
                 self.w * self.drive_gain.get(tok, 0.0)
+                + self.w * 4.0 * predicted               # state-keyed prediction (survives involution)
                 + self.residual_bonus / (i + 1)          # larger clusters (earlier) rank higher
                 + 0.05 / (self.tries.get(tok, 0) + 1)    # optimism for the under-tried
                 - self.dead.get(tok, 0.0)                # inhibition of return
