@@ -32,6 +32,32 @@ from .policy import Policy
 from .residual import object_targets, residual_targets
 
 
+def rigid_move(before: Grid, after: Grid, bg: int) -> Optional[Tuple[int, int, int]]:
+    """(colour, drow, dcol) if exactly one colour's cells moved as a rigid body.
+
+    This is how an avatar announces itself. Everything else on the board -- a
+    budget strip ticking, a counter, scenery being repainted -- fails the test,
+    because a rigid translation preserves the cell COUNT and every offset.
+    """
+    moved = None
+    colours = {v for row in before for v in row} | {v for row in after for v in row}
+    for colour in colours:
+        if colour == bg:
+            continue
+        a = sorted((r, c) for r in range(len(before))
+                   for c in range(len(before[r])) if before[r][c] == colour)
+        b = sorted((r, c) for r in range(len(after))
+                   for c in range(len(after[r])) if after[r][c] == colour)
+        if not a or len(a) != len(b) or a == b:
+            continue
+        dr, dc = b[0][0] - a[0][0], b[0][1] - a[0][1]
+        if all((r + dr, c + dc) == q for (r, c), q in zip(a, b)):
+            if moved is not None:
+                return None          # two bodies moved: not one avatar
+            moved = (colour, dr, dc)
+    return moved
+
+
 def _gain(now: List[float], later: List[float]) -> float:
     """Signed biggest-mover between two level vectors.
 
@@ -61,6 +87,13 @@ class RunPlanner:
         self.profiles: Dict[str, List[List[float]]] = {}
         self.inert: set[str] = set()
         self.ran: set[str] = set()       # controls already given a full run
+        # What each key does to the avatar: key -> (drow, dcol). Learned from the
+        # board, never assumed. Compression rewards a tidier board, not ARRIVAL, so
+        # a movement game needs a goal and a route -- decoding ls20 showed its keys
+        # and its credit are both fine and it still scores zero.
+        self.moves: Dict[str, Tuple[int, int]] = {}
+        self.avatar: Optional[int] = None
+        self._bg: Optional[int] = None
         self.tries: Dict[str, int] = {}
 
         # A plan is "press control S, k more times" -- NOT a list of frozen
@@ -135,6 +168,11 @@ class RunPlanner:
             return
         prof = self.profiles.setdefault(self._run_token, [self._prev_levels or levels])
         prof.append(levels)
+        if self._run_token.startswith("k") and self._bg is not None:
+            got = rigid_move(self._prev_grid, grid, self._bg)
+            if got:
+                self.avatar = got[0]
+                self.moves[self._run_token] = (got[1], got[2])
 
     # ------------------------------------------------------------- deciding
 
@@ -146,6 +184,34 @@ class RunPlanner:
                 seen.add((p.x, p.y))
                 pts.append(p)
         return pts
+
+    def _route(self, grid: Grid, bg: int) -> Optional[str]:
+        """The key that most reduces the avatar's distance to the anomaly, or None.
+
+        Greedy on Manhattan distance rather than a full path: a step that closes
+        the gap is worth taking now, and the model is re-checked every step, so a
+        wall simply shows up as a key that stopped working.
+        """
+        if self.avatar is None or len(self.moves) < 2:
+            return None
+        cells = [(r, c) for r in range(len(grid))
+                 for c in range(len(grid[r])) if grid[r][c] == self.avatar]
+        if not cells:
+            return None
+        ar = sum(r for r, _ in cells) / len(cells)
+        ac = sum(c for _, c in cells) / len(cells)
+        targets = self._candidates(grid, bg)
+        targets = [t for t in targets if grid[t.y][t.x] != self.avatar]
+        if not targets:
+            return None
+        t = min(targets, key=lambda p: abs(p.y - ar) + abs(p.x - ac))
+        here = abs(t.y - ar) + abs(t.x - ac)
+        best, best_d = None, here
+        for key, (dr, dc) in self.moves.items():
+            d = abs(t.y - (ar + dr)) + abs(t.x - (ac + dc))
+            if d < best_d:
+                best, best_d = key, d
+        return best
 
     @staticmethod
     def _as_choice(target):
@@ -181,8 +247,21 @@ class RunPlanner:
         """
         if bg is None:
             bg = background_color(grid)
+        self._bg = bg
         levels = self._levels(grid, bg)
         self._observe(grid, levels)
+
+        # Once the avatar and at least two directions are known, steering it at the
+        # anomaly beats pressing whichever key most tidied the board: the residual
+        # already says WHERE compression fails, and moving there is what a movement
+        # game asks for.
+        route = self._route(grid, bg) if (keys and self.moves) else None
+        if route is not None:
+            self._presses_left = 0
+            self._run_token = route
+            self._prev_grid = [row[:] for row in grid]
+            self._prev_levels = levels
+            return ("key", int(route[1:]))
 
         pts = self._candidates(grid, bg) if clickable else []
         sigs = {(p.x, p.y): self._signature(grid, bg, p.x, p.y) for p in pts}

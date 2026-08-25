@@ -7,7 +7,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from alphaarc.planner import HybridPolicy, RunPlanner, _gain  # noqa: E402
+from alphaarc.planner import HybridPolicy, RunPlanner, _gain, rigid_move  # noqa: E402
 from alphaarc.policy import Policy  # noqa: E402
 
 BG = 9
@@ -337,6 +337,68 @@ def test_the_hybrid_gives_a_keyboard_game_to_the_planner_at_once():
     _place(g, 1, 1, SYM_BOX)
     got = h.choose(g, BG, keys=(1, 2, 3), clickable=False)
     assert got is not None and got[0] == "key", got
+
+
+
+def test_rigid_move_finds_the_avatar_and_ignores_a_ticking_hud():
+    """An avatar announces itself by translating rigidly. A budget strip does not:
+    it changes cells without preserving the count and the offsets."""
+    a = _blank(10, 10)
+    a[4][4] = 7
+    a[4][5] = 7
+    b = [row[:] for row in a]
+    b[4][4] = BG
+    b[4][5] = BG
+    b[5][4] = 7
+    b[5][5] = 7
+    assert rigid_move(a, b, BG) == (7, 1, 0)
+
+    hud = [row[:] for row in a]
+    hud[0][3] = 2                                   # one more cell appears
+    assert rigid_move(a, hud, BG) is None
+
+
+class MoveWorld:
+    """Four keys translate an avatar; one cell elsewhere breaks the symmetry and is
+    therefore what the residual points at. Reaching it is the goal."""
+
+    def __init__(self):
+        self.r, self.c = 2, 2
+        self.reached = False
+
+    def grid(self):
+        g = _blank(12, 12)
+        for r in range(6, 11):
+            for c in range(6, 11):
+                g[r][c] = 3                          # scenery, so the board is not empty
+        g[8][8] = 1                                  # the anomaly: the goal
+        g[self.r][self.c] = 7                        # the avatar
+        return g
+
+    def press(self, key):
+        dr, dc = {1: (-1, 0), 2: (1, 0), 3: (0, -1), 4: (0, 1)}[key]
+        self.r = max(0, min(11, self.r + dr))
+        self.c = max(0, min(11, self.c + dc))
+        if (self.r, self.c) == (8, 8):
+            self.reached = True
+
+
+def test_the_planner_learns_the_keys_and_steers_the_avatar_to_the_anomaly():
+    """The measured gap on ls20: its keys work and its credit is fine, yet it
+    scores zero, because compression rewards a tidier board and not ARRIVAL."""
+    p = RunPlanner(run_length=2, explore=0.0, rng=random.Random(0))
+    w = MoveWorld()
+    for _ in range(40):
+        got = p.choose(w.grid(), BG, keys=(1, 2, 3, 4), clickable=False)
+        if got is None:
+            break
+        assert got[0] == "key"
+        w.press(got[1])
+        if w.reached:
+            break
+    assert p.avatar == 7, f"never identified the avatar: {p.avatar}"
+    assert len(p.moves) >= 2, f"learned too few directions: {p.moves}"
+    assert w.reached, f"never arrived; avatar stopped at {(w.r, w.c)}"
 
 
 if __name__ == "__main__":
