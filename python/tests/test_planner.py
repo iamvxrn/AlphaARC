@@ -299,6 +299,46 @@ def test_a_working_cheap_agent_keeps_control():
     assert h.active is h.policy, "handed over while the cheap agent was working"
 
 
+
+def test_a_key_is_a_control_like_any_other():
+    """Eight of seventeen train games are keyboard-driven and none has ever scored,
+    because neither agent could express a key and the adapter pressed a random one.
+    A key is exactly what this machinery wants: something you can press N times,
+    whose name never moves when the board redraws."""
+    p = RunPlanner(run_length=3, explore=0.0, rng=random.Random(0))
+    g = _blank(9, 24)
+    _place(g, 1, 1, SYM_BOX)
+    got = p.choose(g, BG, keys=(1, 2, 3))
+    assert got is not None and got[0] in ("click", "key"), got
+
+    # With no click candidates at all, only keys remain.
+    blank = _blank(9, 24)
+    got = p.choose(blank, BG, keys=(1, 2, 3))
+    assert got is not None and got[0] == "key" and got[1] in (1, 2, 3), got
+
+
+def test_a_key_run_survives_a_redraw_by_construction():
+    """A key's name is the key. Nothing about the board can move it."""
+    p = RunPlanner(run_length=3, explore=0.0, rng=random.Random(0))
+    small, big = _blank(9, 24), _blank(18, 48)
+    first = p.choose(small, BG, keys=(1, 2))
+    assert first[0] == "key"
+    p._run_token, p._presses_left = "k%d" % first[1], 2
+    p._prev_grid = [row[:] for row in small]
+    again = p.choose(big, BG, keys=(1, 2))
+    assert again == first, f"lost the key across a redraw: {first} -> {again}"
+
+
+def test_the_hybrid_gives_a_keyboard_game_to_the_planner_at_once():
+    """The one-step policy cannot express a key, so waiting out its clock on a
+    keyboard-only game just spends the level on random presses."""
+    h = HybridPolicy(switch_after=100, rng=random.Random(0))
+    g = _blank(9, 24)
+    _place(g, 1, 1, SYM_BOX)
+    got = h.choose(g, BG, keys=(1, 2, 3), clickable=False)
+    assert got is not None and got[0] == "key", got
+
+
 if __name__ == "__main__":
     failures = 0
     for name, fn in sorted(globals().items()):

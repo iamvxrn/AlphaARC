@@ -103,20 +103,30 @@ class MyAgent(Agent):
         grid = self._current_grid(latest_frame)
         avail = set(latest_frame.available_actions or [])
 
-        if grid is not None and GameAction.ACTION6.value in avail:
+        simple = [a for a in GameAction
+                  if a is not GameAction.RESET and not a.is_complex() and a.value in avail]
+        clickable = GameAction.ACTION6.value in avail
+
+        if grid is not None and (clickable or simple):
             bg = background_color(grid)
-            xy = self._policy.choose_click(grid, bg)
-            if xy is not None:
-                x, y = xy
+            keys = tuple(a.value for a in simple)
+            choose = getattr(self._policy, "choose", None)
+            got = (choose(grid, bg, keys, clickable) if choose
+                   else (("click", self._policy.choose_click(grid, bg))
+                         if clickable else None))
+            if got and got[0] == "click" and got[1] is not None:
+                x, y = got[1]
                 action = GameAction.ACTION6
                 action.set_data({"x": int(x), "y": int(y)})
                 action.reasoning = {"why": "compression-residual click"}
                 return action
+            if got and got[0] == "key":
+                for a in simple:
+                    if a.value == got[1]:
+                        a.reasoning = {"why": "compression-driven key"}
+                        return a
 
-        # No click available or no candidate -> a random available simple action,
-        # else RESET. (Pure-click games always offer ACTION6.)
-        simple = [a for a in GameAction
-                  if a is not GameAction.RESET and not a.is_complex() and a.value in avail]
+        # Nothing expressible -> a random simple action, else RESET.
         if simple:
             action = self._policy.rng.choice(simple)
             action.reasoning = "fallback simple action"

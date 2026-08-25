@@ -147,6 +147,10 @@ class RunPlanner:
                 pts.append(p)
         return pts
 
+    @staticmethod
+    def _as_choice(target):
+        return ("key", target[1]) if target[0] == "key" else ("click", target)
+
     def _best_run(self, token: str) -> Tuple[float, int]:
         """(value, presses) of the best point along this control's known profile."""
         prof = self.profiles.get(token)
@@ -161,28 +165,44 @@ class RunPlanner:
         return best_v, best_n
 
     def choose_click(self, grid: Grid, bg: Optional[int] = None) -> Optional[Tuple[int, int]]:
+        got = self.choose(grid, bg, keys=())
+        return got[1] if got and got[0] == "click" else None
+
+    def choose(self, grid: Grid, bg: Optional[int] = None, keys: Tuple[int, ...] = (),
+               clickable: bool = True):
+        """Pick a control: ("click", (x, y)) or ("key", action_value), or None.
+
+        A key IS a control -- something you can press N times and watch -- so it
+        goes through the same profile machinery as a click. Eight of the seventeen
+        train games are keyboard-driven and none of them has ever scored, because
+        neither this nor the one-step policy could express a key at all and the
+        adapter fell through to a random one. Keys also make the BEST controls for
+        this machinery: their names never move when the board redraws.
+        """
         if bg is None:
             bg = background_color(grid)
         levels = self._levels(grid, bg)
         self._observe(grid, levels)
 
-        pts = self._candidates(grid, bg)
+        pts = self._candidates(grid, bg) if clickable else []
         sigs = {(p.x, p.y): self._signature(grid, bg, p.x, p.y) for p in pts}
+        for k in keys:
+            sigs[("key", k)] = "k%d" % k
 
         # Inside a run: find where that control is NOW and keep going. The whole
         # point is not to abandon a control because its first press looked bad --
         # and on a rescaling board, not to lose it because it moved.
         if self._presses_left > 0 and self._run_token is not None:
-            here = [xy for xy, sig in sigs.items() if sig == self._run_token]
+            here = [t for t, sig in sigs.items() if sig == self._run_token]
             if here:
-                xy = here[0]
                 self._presses_left -= 1
                 self._prev_grid = [row[:] for row in grid]
                 self._prev_levels = levels
                 self.tries[self._run_token] = self.tries.get(self._run_token, 0) + 1
-                return xy
+                return self._as_choice(here[0])
             self._presses_left = 0      # the control is gone from the board
-        if not pts:
+        targets = list(sigs)
+        if not targets:
             self._prev_grid = [row[:] for row in grid]
             self._run_token = None
             self._presses_left = 0
@@ -197,40 +217,39 @@ class RunPlanner:
         # for a run only where a single press moved the board without paying off.
         # That is where a valley can hide; a control that does nothing, or that
         # already pays, needs no run.
-        unprobed = [p for p in pts
-                    if sigs[(p.x, p.y)] not in self.profiles
-                    and sigs[(p.x, p.y)] not in self.inert]
-        escalate = [p for p in pts
-                    if sigs[(p.x, p.y)] in self.profiles
-                    and sigs[(p.x, p.y)] not in self.inert
-                    and sigs[(p.x, p.y)] not in self.ran
-                    and self._best_run(sigs[(p.x, p.y)])[0] <= 0]
+        unprobed = [t for t in targets
+                    if sigs[t] not in self.profiles and sigs[t] not in self.inert]
+        escalate = [t for t in targets
+                    if sigs[t] in self.profiles
+                    and sigs[t] not in self.inert
+                    and sigs[t] not in self.ran
+                    and self._best_run(sigs[t])[0] <= 0]
         if unprobed and self.rng.random() > self.explore:
             target = unprobed[0]                       # learn: one press, cheaply
             presses = 1
         elif escalate:
             target = escalate[0]                       # it moved but did not pay:
             presses = self.run_length                  # maybe the payoff is deeper
-            self.ran.add(sigs[(target.x, target.y)])
+            self.ran.add(sigs[target])
         else:
-            scored = [(self._best_run(sigs[(p.x, p.y)])[0], p) for p in pts
-                      if sigs[(p.x, p.y)] not in self.inert]
-            scored = [s for s in scored if s[0] > 0]
+            scored = [(self._best_run(sigs[t])[0], t) for t in targets
+                      if sigs[t] not in self.inert]
+            scored = [x for x in scored if x[0] > 0]
             if scored:
-                scored.sort(key=lambda s: -s[0])        # exploit the best known run
+                scored.sort(key=lambda x: -x[0])        # exploit the best known run
                 target = scored[0][1]
-                presses = max(1, self._best_run(sigs[(target.x, target.y)])[1])
+                presses = max(1, self._best_run(sigs[target])[1])
             else:
-                target = self.rng.choice(pts)           # nothing known pays: sample
+                target = self.rng.choice(targets)       # nothing known pays: sample
                 presses = self.run_length
 
-        self._run_token = sigs[(target.x, target.y)]
+        self._run_token = sigs[target]
         self.profiles.pop(self._run_token, None)        # re-anchor from HERE
         self._presses_left = presses - 1
         self._prev_grid = [row[:] for row in grid]
         self._prev_levels = levels
         self.tries[self._run_token] = self.tries.get(self._run_token, 0) + 1
-        return (target.x, target.y)
+        return self._as_choice(target)
 
 
 class HybridPolicy:
@@ -293,6 +312,20 @@ class HybridPolicy:
     reset_episode = board_replaced
 
     def choose_click(self, grid: Grid, bg: Optional[int] = None) -> Optional[Tuple[int, int]]:
+        got = self.choose(grid, bg, keys=())
+        return got[1] if got and got[0] == "click" else None
+
+    def choose(self, grid: Grid, bg: Optional[int] = None, keys: Tuple[int, ...] = (),
+               clickable: bool = True):
+        """Same contract as RunPlanner.choose.
+
+        One asymmetry decides the routing: the one-step policy cannot express a
+        key at all. So when the board offers keys and no click, the planner takes
+        it regardless of the clock -- otherwise the adapter falls through to a
+        RANDOM key, which is what eight of seventeen games have been getting.
+        """
+        if keys and not clickable:
+            return self.planner.choose(grid, bg, keys, clickable=False)
         self.since_level += 1
         if self._prev_grid is not None:
             self.dead_run = self.dead_run + 1 if grid == self._prev_grid else 0
@@ -300,4 +333,7 @@ class HybridPolicy:
         if not self.switched and (self.since_level > self.switch_after
                                   or self.dead_run >= self.dead_streak):
             self.switched = True
-        return self.active.choose_click(grid, bg)
+        if self.switched:
+            return self.planner.choose(grid, bg, keys, clickable=clickable)
+        xy = self.policy.choose_click(grid, bg)
+        return ("click", xy) if xy is not None else None
