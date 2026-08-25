@@ -48,6 +48,8 @@ def main() -> None:
                     help="how far to follow each control (the vc33 payoff was at 3)")
     ap.add_argument("--controls", type=int, default=8, help="candidate controls to try")
     ap.add_argument("--render", action="store_true", help="print the opening board")
+    ap.add_argument("--keys-only", action="store_true",
+                    help="skip click probing (for keyboard games, or to save budget)")
     args = ap.parse_args()
 
     splits = json.loads((REPO / "python" / "bench" / "splits.json").read_text())
@@ -114,6 +116,51 @@ def main() -> None:
         return [p.savings(body, bg) for p in PRIMITIVES]
 
     names = [p.name for p in PRIMITIVES]
+    # Simple actions first: 8 of the 17 train games need them and we have never
+    # scored on any of those, so a control that is a KEY is at least as interesting
+    # as one that is a place on the board.
+    simple = [a for a in GameAction
+              if a is not GameAction.RESET and not a.is_complex()
+              and a.value in (fr.available_actions or [])]
+    if simple:
+        print(f"\n{len(simple)} simple actions available; following each for "
+              f"{args.presses} presses from a fresh board.")
+        for act in simple:
+            agent, fr = fresh()
+            g = grid_of(fr)
+            prof, deltas, cleared = [levels(g, True)], [], None
+            for i in range(args.presses):
+                act.reasoning = {"why": "decode"}
+                fr = agent.take_action(act)
+                n = grid_of(fr)
+                if n is None:
+                    deltas.append("GAME_OVER")
+                    break
+                deltas.append(sum(1 for r in range(min(len(g), len(n)))
+                                  for c in range(min(len(g[r]), len(n[r])))
+                                  if g[r][c] != n[r][c]))
+                g = n
+                prof.append(levels(g, True))
+                if fr.levels_completed:
+                    cleared = i + 1
+                    break
+            moved = [d for d in deltas if d not in (0, "GAME_OVER")]
+            tag = "INERT" if not moved else ("CLEARS L1" if cleared else "live")
+            print(f"{act.name:>9}  {tag}" + (f" in {cleared}" if cleared else ""))
+            if moved:
+                print(f"    cells changed per press: {deltas}")
+                for k, name in enumerate(names):
+                    series = [p[k] for p in prof]
+                    if len(set(series)) > 1:
+                        dip = any(series[i] < series[0] for i in range(1, len(series)))
+                        best_at = max(range(len(series)), key=lambda i: series[i])
+                        note = ("   <-- DIPS then peaks at press %d: needs lookahead" % best_at
+                                if dip and best_at > 1 else "")
+                        print(f"    {name:>14}: {series}{note}")
+
+    if args.keys_only:
+        return
+
     print(f"\nFollowing each control for {args.presses} presses from a FRESH board.")
     print("A control whose profile dips before it climbs is invisible to one-step credit.\n")
     for (cx, cy, col, size) in cands:
