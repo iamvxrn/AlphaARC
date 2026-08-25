@@ -130,22 +130,24 @@ def test_a_control_that_moved_but_did_not_pay_is_escalated_to_a_run():
     _place(g, 1, 8, SYM_BOX)
 
     first = p.choose_click(g, BG)
-    assert len(p._plan) == 0, f"a first press should cost one action, queued {len(p._plan) + 1}"
+    assert p._presses_left == 0, \
+        f"a first press should cost one action, queued {p._presses_left + 1}"
 
     # Cheap breadth comes first by design, so mark the rest as already tried and
     # paying nothing; only then is there a reason to spend a run on anything.
     here = p._levels(g, BG)
     for c in p._candidates(g, BG):
-        p.profiles[p._tok(c.x, c.y)] = [here, list(here)]      # moved, gained nothing
-    tok = p._tok(*first)
+        sig = p._signature(g, BG, c.x, c.y)
+        p.profiles[sig] = [here, list(here)]                   # moved, gained nothing
+    tok = p._signature(g, BG, *first)
     p.profiles[tok] = [here, [v - 5 for v in here]]            # this one LOST ground
     p._run_token = None
     p._prev_grid = None
 
     again = p.choose_click(g, BG)
-    assert len(p._plan) == p.run_length - 1, \
-        f"nothing was escalated to a full run: queued {len(p._plan) + 1} of {p.run_length}"
-    assert p._tok(*again) in p.ran, "the escalated control was not recorded"
+    assert p._presses_left == p.run_length - 1, \
+        f"nothing was escalated to a full run: queued {p._presses_left + 1} of {p.run_length}"
+    assert p._signature(g, BG, *again) in p.ran, "the escalated control was not recorded"
 
 
 def test_an_inert_control_is_dropped_mid_run():
@@ -156,7 +158,7 @@ def test_an_inert_control_is_dropped_mid_run():
     _place(g, 1, 8, SYM_BOX)
     first = p.choose_click(g, BG)
     second = p.choose_click(g, BG)             # same board back: nothing happened
-    assert p._tok(*first) in p.inert, "a control that changed nothing was not noticed"
+    assert p._signature(g, BG, *first) in p.inert, "a dead control was not noticed"
     assert second != first, "kept pressing a control that changed nothing"
 
 
@@ -165,7 +167,7 @@ def test_learning_survives_a_new_board_but_the_run_does_not():
     w = ValleyWorld()
     p.choose_click(w.grid(), BG)
     p.board_replaced()
-    assert p._plan == [] and p._run_token is None
+    assert p._presses_left == 0 and p._run_token is None
     assert p.tries, "try counts should survive -- the mechanic did not change"
 
 
@@ -188,6 +190,52 @@ def test_both_agents_cross_this_particular_valley():
     old = _run(Policy(explore=0.0, rng=random.Random(0)))
     new = _run(RunPlanner(run_length=3, explore=0.0, rng=random.Random(0)))
     assert old == new == ValleyWorld.STAGES - 1, (old, new)
+
+
+
+def test_a_control_keeps_its_name_when_the_board_rescales():
+    """The measured failure this exists to fix.
+
+    Instrumented over 30 clicks on vc33 -- which redraws its whole scene at a new
+    scale on every press -- the planner hit 30 DISTINCT positions, repeated none,
+    and so never exploited anything. A control has to be named by the object under
+    it, not by where that object happened to be.
+    """
+    def scene(n, side):
+        g = [[BG] * n for _ in range(n)]
+        for r in range(side, 3 * side):
+            for c in range(side, 3 * side):
+                g[r][c] = 8
+        return g
+
+    small, big = scene(16, 2), scene(32, 4)
+    assert RunPlanner._signature(small, BG, 3, 3) == RunPlanner._signature(big, BG, 7, 7), \
+        "the same object got a different name at a different scale"
+
+
+def test_a_run_follows_its_control_across_a_redraw():
+    """And the plan must be 'press control S again', not 'click that pixel again'."""
+    def scene(n, side):
+        g = [[BG] * n for _ in range(n)]
+        for r in range(side, 3 * side):
+            for c in range(side, 3 * side):
+                g[r][c] = 8
+        for i in range(2):                       # a second object, so there is a choice
+            g[n - 2][2 + 3 * i] = 1
+        return g
+
+    p = RunPlanner(run_length=3, explore=0.0, rng=random.Random(0))
+    small = scene(16, 2)
+    first = p.choose_click(small, BG)
+    sig = p._signature(small, BG, *first)
+    p._run_token, p._presses_left = sig, 2       # mid-run on that control
+
+    big = scene(32, 4)                           # the board redraws at double scale
+    p._prev_grid = [row[:] for row in small]     # ... so the board DID change
+    nxt = p.choose_click(big, BG)
+    assert nxt is not None
+    assert p._signature(big, BG, *nxt) == sig, \
+        f"lost the control across the redraw: {sig} -> {p._signature(big, BG, *nxt)}"
 
 
 if __name__ == "__main__":

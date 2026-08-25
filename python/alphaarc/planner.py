@@ -26,7 +26,7 @@ from __future__ import annotations
 import random
 from typing import Dict, List, Optional, Tuple
 
-from .mdl import PRIMITIVES, Grid
+from .mdl import PRIMITIVES, Grid, _components
 from .perception import background_color
 from .residual import object_targets, residual_targets
 
@@ -62,7 +62,11 @@ class RunPlanner:
         self.ran: set[str] = set()       # controls already given a full run
         self.tries: Dict[str, int] = {}
 
-        self._plan: List[Tuple[int, int]] = []   # queued clicks of the current run
+        # A plan is "press control S, k more times" -- NOT a list of frozen
+        # coordinates. On a board that redraws itself the coordinates go stale
+        # between one press and the next, so the position is re-derived from the
+        # current board every step.
+        self._presses_left = 0
         self._run_token: Optional[str] = None
         self._prev_grid: Optional[Grid] = None
         self._prev_levels: Optional[List[float]] = None
@@ -74,6 +78,35 @@ class RunPlanner:
         return "%d,%d" % (x, y)
 
     @staticmethod
+    def _signature(grid: Grid, bg: int, x: int, y: int) -> str:
+        """A name for a control that survives the board being redrawn.
+
+        vc33 rescales its whole scene on every press, so a control's pixel
+        coordinates land somewhere new each time: instrumented over 30 clicks the
+        planner hit 30 DISTINCT positions, never repeated one, and therefore never
+        exploited anything. Naming a control by the OBJECT under it -- its colour,
+        its size bucket, and where it sits in the frame in eighths -- keeps the
+        profile attached to the same button across a redraw.
+
+        Coarse on purpose: exact size and position are what the redraw changes.
+        """
+        h, w = len(grid), len(grid[0]) if grid else 1
+        colour = grid[y][x] if 0 <= y < h and 0 <= x < w else bg
+        size, total = 0, 0
+        for col, cells in _components(grid, bg):
+            total += len(cells)
+            if not size and col == colour and any(r == y and c == x for r, c in cells):
+                size = len(cells)
+        # Size as a FRACTION of the scene, not in pixels: a rescale multiplies every
+        # area by the same factor, so absolute size is exactly what the redraw
+        # changes (measured: the same box reads s4 at one scale and s6 at double).
+        share = size / total if total else 0.0
+        bucket = 0
+        while bucket < 6 and share < 0.5 ** (bucket + 1):
+            bucket += 1
+        return "c%d/f%d/%d,%d" % (colour, bucket, (y * 8) // max(1, h), (x * 8) // max(1, w))
+
+    @staticmethod
     def _levels(grid: Grid, bg: int) -> List[float]:
         return [float(p.savings(grid, bg)) for p in PRIMITIVES]
 
@@ -82,7 +115,7 @@ class RunPlanner:
         about is gone. What we learned about controls survives -- the mechanic does
         not change with the scenery -- but the run in flight is abandoned, and the
         profiles are re-anchored because they are measured relative to a board."""
-        self._plan.clear()
+        self._presses_left = 0
         self._run_token = None
         self._prev_grid = None
         self._prev_levels = None
@@ -97,7 +130,7 @@ class RunPlanner:
             return
         if grid == self._prev_grid:
             self.inert.add(self._run_token)
-            self._plan.clear()          # a dead control: stop spending on it
+            self._presses_left = 0      # a dead control: stop spending on it
             return
         prof = self.profiles.setdefault(self._run_token, [self._prev_levels or levels])
         prof.append(levels)
@@ -132,19 +165,26 @@ class RunPlanner:
         levels = self._levels(grid, bg)
         self._observe(grid, levels)
 
-        # Inside a run: keep going. The whole point is not to abandon a control
-        # because its first press looked bad.
-        if self._plan:
-            xy = self._plan.pop(0)
-            self._prev_grid = [row[:] for row in grid]
-            self._prev_levels = levels
-            self.tries[self._tok(*xy)] = self.tries.get(self._tok(*xy), 0) + 1
-            return xy
-
         pts = self._candidates(grid, bg)
+        sigs = {(p.x, p.y): self._signature(grid, bg, p.x, p.y) for p in pts}
+
+        # Inside a run: find where that control is NOW and keep going. The whole
+        # point is not to abandon a control because its first press looked bad --
+        # and on a rescaling board, not to lose it because it moved.
+        if self._presses_left > 0 and self._run_token is not None:
+            here = [xy for xy, sig in sigs.items() if sig == self._run_token]
+            if here:
+                xy = here[0]
+                self._presses_left -= 1
+                self._prev_grid = [row[:] for row in grid]
+                self._prev_levels = levels
+                self.tries[self._run_token] = self.tries.get(self._run_token, 0) + 1
+                return xy
+            self._presses_left = 0      # the control is gone from the board
         if not pts:
             self._prev_grid = [row[:] for row in grid]
             self._run_token = None
+            self._presses_left = 0
             return None
 
         # Budget policy, and it is the whole difference between this helping and
@@ -157,37 +197,36 @@ class RunPlanner:
         # That is where a valley can hide; a control that does nothing, or that
         # already pays, needs no run.
         unprobed = [p for p in pts
-                    if self._tok(p.x, p.y) not in self.profiles
-                    and self._tok(p.x, p.y) not in self.inert]
+                    if sigs[(p.x, p.y)] not in self.profiles
+                    and sigs[(p.x, p.y)] not in self.inert]
         escalate = [p for p in pts
-                    if self._tok(p.x, p.y) in self.profiles
-                    and self._tok(p.x, p.y) not in self.inert
-                    and self._tok(p.x, p.y) not in self.ran
-                    and self._best_run(self._tok(p.x, p.y))[0] <= 0]
+                    if sigs[(p.x, p.y)] in self.profiles
+                    and sigs[(p.x, p.y)] not in self.inert
+                    and sigs[(p.x, p.y)] not in self.ran
+                    and self._best_run(sigs[(p.x, p.y)])[0] <= 0]
         if unprobed and self.rng.random() > self.explore:
             target = unprobed[0]                       # learn: one press, cheaply
             presses = 1
         elif escalate:
             target = escalate[0]                       # it moved but did not pay:
             presses = self.run_length                  # maybe the payoff is deeper
-            self.ran.add(self._tok(target.x, target.y))
+            self.ran.add(sigs[(target.x, target.y)])
         else:
-            scored = [(self._best_run(self._tok(p.x, p.y))[0], p) for p in pts
-                      if self._tok(p.x, p.y) not in self.inert]
+            scored = [(self._best_run(sigs[(p.x, p.y)])[0], p) for p in pts
+                      if sigs[(p.x, p.y)] not in self.inert]
             scored = [s for s in scored if s[0] > 0]
             if scored:
                 scored.sort(key=lambda s: -s[0])        # exploit the best known run
                 target = scored[0][1]
-                presses = max(1, self._best_run(self._tok(target.x, target.y))[1])
+                presses = max(1, self._best_run(sigs[(target.x, target.y)])[1])
             else:
                 target = self.rng.choice(pts)           # nothing known pays: sample
                 presses = self.run_length
 
-        self._run_token = self._tok(target.x, target.y)
+        self._run_token = sigs[(target.x, target.y)]
         self.profiles.pop(self._run_token, None)        # re-anchor from HERE
-        self._plan = [(target.x, target.y)] * presses
-        xy = self._plan.pop(0)
+        self._presses_left = presses - 1
         self._prev_grid = [row[:] for row in grid]
         self._prev_levels = levels
         self.tries[self._run_token] = self.tries.get(self._run_token, 0) + 1
-        return xy
+        return (target.x, target.y)
