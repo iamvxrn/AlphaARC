@@ -65,7 +65,15 @@ class MyAgent(Agent):
         elif mode == "policy":
             self._policy = Policy(rng=random.Random(seed))
         else:
-            self._policy = HybridPolicy(rng=random.Random(seed))
+            # ARC_DEAD_STREAK / ARC_CLOCK_DEADRUN exist so the hand-over threshold
+            # can be swept by the bench WITHOUT editing code between runs -- it was
+            # set to 5 while its counter could not increment (see clock.py), so it
+            # has never been calibrated against a counter that works.
+            self._policy = HybridPolicy(
+                rng=random.Random(seed),
+                dead_streak=int(os.environ.get("ARC_DEAD_STREAK", "20")),
+                clock_dead_run=os.environ.get("ARC_CLOCK_DEADRUN", "1") == "1",
+            )
         self._levels_done = 0
 
     @property

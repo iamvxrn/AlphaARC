@@ -4,41 +4,41 @@
  "repeats": 3,
  "seed": 4,
  "agent": "$HOME/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter/agent/my_agent.py",
- "aggregate": 2.648475,
+ "aggregate": 2.6450750000000003,
  "games": {
   "lp85": {
    "state": "GameState.NOT_FINISHED",
-   "levels_completed": 1,
+   "levels_completed": 0,
    "actions": 251,
-   "seconds": 14.9,
+   "seconds": 15.3,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 0,
      "actions": 251,
-     "seconds": 15.0
-    },
-    {
-     "state": "GameState.NOT_FINISHED",
-     "levels_completed": 1,
-     "actions": 251,
-     "seconds": 14.9
+     "seconds": 15.3
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 0,
      "actions": 251,
-     "seconds": 15.1
+     "seconds": 15.2
+    },
+    {
+     "state": "GameState.NOT_FINISHED",
+     "levels_completed": 0,
+     "actions": 251,
+     "seconds": 15.0
     }
    ],
    "levels_per_run": [
     0,
-    1,
+    0,
     0
    ],
-   "score": 0.0136,
+   "score": 0.0,
    "level_scores": [
-    0.49,
+    0.0,
     0.0,
     0.0,
     0.0,
@@ -48,8 +48,8 @@
     0.0
    ],
    "level_actions": [
-    243,
-    8,
+    251,
+    0,
     0,
     0,
     0,
@@ -76,19 +76,19 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 11.4,
+   "seconds": 10.9,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 11.4
+     "seconds": 10.9
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 11.0
+     "seconds": 10.9
     },
     {
      "state": "GameState.NOT_FINISHED",
@@ -136,25 +136,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 18.4,
+   "seconds": 17.5,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 18.4
+     "seconds": 17.5
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 17.8
+     "seconds": 17.2
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 17.4
+     "seconds": 818.2
     }
    ],
    "levels_per_run": [
@@ -199,25 +199,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 2,
    "actions": 251,
-   "seconds": 12.9,
+   "seconds": 13.1,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 12.1
+     "seconds": 12.0
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 12.9
+     "seconds": 13.1
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 13.7
+     "seconds": 13.4
     }
    ],
    "levels_per_run": [

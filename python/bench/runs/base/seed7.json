@@ -10,25 +10,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 0,
    "actions": 251,
-   "seconds": 15.7,
+   "seconds": 19.4,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 0,
      "actions": 251,
-     "seconds": 15.7
+     "seconds": 19.4
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 0,
      "actions": 251,
-     "seconds": 16.0
+     "seconds": 19.6
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 0,
      "actions": 251,
-     "seconds": 15.5
+     "seconds": 19.1
     }
    ],
    "levels_per_run": [
@@ -76,25 +76,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 10.9,
+   "seconds": 12.6,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 10.9
+     "seconds": 12.6
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 10.7
+     "seconds": 12.5
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 11.0
+     "seconds": 13.0
     }
    ],
    "levels_per_run": [
@@ -136,25 +136,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 18.2,
+   "seconds": 22.0,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 18.2
+     "seconds": 22.0
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 18.2
+     "seconds": 22.1
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 17.6
+     "seconds": 21.9
     }
    ],
    "levels_per_run": [
@@ -199,25 +199,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 2,
    "actions": 251,
-   "seconds": 12.5,
+   "seconds": 15.2,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 11.8
+     "seconds": 14.9
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 12.5
+     "seconds": 15.2
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 12.6
+     "seconds": 16.0
     }
    ],
    "levels_per_run": [

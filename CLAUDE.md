@@ -75,8 +75,8 @@ exists to refuse.
 Everything below is committed; tree clean, all suites green, `make check-bundle`
 up to date, no background jobs.
 
-**Where the score is:** quick = **1.2961 over 8 seeds** (HEAD, `runs/base/`), up
-from 1.0967 before the move-budget fix. NOT the 1.7087 that used to be quoted --
+**Where the score is:** quick = **1.3627 over 8 seeds** (HEAD, `runs/base/`), up
+from 1.0967 before the move-budget fix (+0.199) and its hand-over sweep (+0.067). NOT the 1.7087 that used to be quoted --
 that was one lucky seed, and even 4 seeds read 1.55 against 8 seeds' 1.10. Quote
 absolute scores with their seed count. Target 10; the L1-everywhere ceiling is
 3.52, so the metric needs DEPTH.
@@ -128,12 +128,7 @@ left to decode; the holdout stays sealed.
    class too**: it is a movement game played with CLICKS (avatar, route, waypoint),
    so whatever gives ls20 its goal-and-route should be shared with it.
 3. Depth on the four scoring games; vc33 reaches level 2 of 7.
-4. **Turning on the early hand-over** (`HybridPolicy(clock_dead_run=True)`). The
-   move-budget fix made "did that click do anything?" work; the hand-over rule that
-   consumes it is still off, because `dead_streak=5` was set while its counter could
-   not increment. With it on: tn36 +0.750 (all seeds agree) but r11l -0.432. Worth a
-   proper sweep of `dead_streak` now that the counter is real.
-5. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
+4. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
    and su15 not one of the eight offered click candidates is live, measured; the
    real controls sit at rank 21+. Three ways of editing the candidate set have now
    been measured worse — spread, rarity, per-class cap (Rejected #5) — because

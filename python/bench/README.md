@@ -114,7 +114,7 @@ same for a given seed, so most of the variance is common to both variants and
 cancels in the per-seed difference. Unpaired, an effect needs ~1.0 to be visible
 and our entire score is 1.5. It reports a change as REAL only when the mean
 difference clears twice its own standard error AND every seed agrees on the sign.
-`runs/base/seed1..8.json` is the current HEAD baseline; regenerate it whenever
+`runs/base/seed1..8.json` is the current HEAD baseline (mean **1.3627**); regenerate it whenever
 HEAD's behaviour changes. `runs/base_preclock/` is the baseline before the
 move-budget fix, kept so that comparison stays reproducible, and
 `runs/handover_on/` is the rejected variant described under "the move budget"
@@ -429,11 +429,32 @@ tn36 clears the bar and every seed agrees: a REAL per-game win. The aggregate le
 positive (6 of 8 seeds) but does not clear 2*sem, so it is reported as a bug fix
 with one resolved win, not as a score improvement.
 
-**Kept switched OFF: the early hand-over.** Making `HybridPolicy.dead_run` clock-
-aware as well is one more line, and it is NOT part of the bug fix: `dead_streak=5`
-was chosen while that counter could not increment, so the threshold has never been
-calibrated against a counter that works. With it on, the hybrid gives vc33 and r11l
-to the planner at action ~13 instead of 25 -- and this class's own docstring records
-the planner scoring 0.000 on vc33 against the one-step policy's 4.343. Measured over
-4 seeds: tn36 +0.750 (all agree) but r11l -0.432, aggregate +0.10 +/- 0.19. It is
-behind `clock_dead_run=True`, and turning it on means re-deriving `dead_streak`.
+### ...and then the hand-over threshold, calibrated for the first time
+
+Making `HybridPolicy.dead_run` clock-aware is one more line, and it is NOT part of
+the bug fix: `dead_streak=5` was chosen while that counter could not increment, so
+it had never been calibrated against a counter that works. Swept, paired over 4
+seeds, each arm on top of the clock fix:
+
+| dead_streak | paired diff | note |
+|---|---|---|
+| 5 | +0.177 +/- 0.200 | **r11l -0.482, all seeds agree** -- it hurts |
+| 10 | +0.138 +/- 0.199 | |
+| 20 | +0.089 +/- 0.052 | no game harmed; a third of the spread |
+
+At 5 the hybrid hands vc33 and r11l to the planner around action 13, and
+`HybridPolicy`'s own docstring records the planner scoring 0.000 on vc33 against
+the one-step policy's 4.343. **20 against `switch_after=25`** means the streak only
+pre-empts the 25-action clock when a level is nearly all dead clicks -- exactly when
+the cheap policy has nothing left to offer -- which is why it changes so little and
+varies so little.
+
+Confirmed at 8 seeds: **+0.0666, sem 0.0302**. That clears 2*sem, but one seed of
+eight moves -0.0034, so `seeds.py` withholds the REAL verdict and this is shipped
+as a small positive rather than claimed as a win. Defaults are now
+`dead_streak=20, clock_dead_run=True`; `ARC_DEAD_STREAK` and `ARC_CLOCK_DEADRUN=0`
+re-run the sweep from the bench without editing code.
+
+The criterion was NOT relaxed to let this pass. Worth remembering next time: the
+temptation to widen the bar arrives precisely when your own change is just under
+it.
