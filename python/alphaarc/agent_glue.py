@@ -60,10 +60,13 @@ class MyAgent(Agent):
         # ARC_PLANNER=policy / =planner select the two halves on their own, which is
         # how the A/Bs behind that number were run.
         mode = os.environ.get("ARC_PLANNER", "")
+        # ARC_DEAD_DECAY sweeps how long a dead control stays suppressed; see
+        # Policy.dead_decay for why 0.75 cannot accumulate.
+        _decay = float(os.environ.get("ARC_DEAD_DECAY", "0.75"))
         if mode == "planner":
             self._policy = RunPlanner(rng=random.Random(seed))
         elif mode == "policy":
-            self._policy = Policy(rng=random.Random(seed))
+            self._policy = Policy(rng=random.Random(seed), dead_decay=_decay)
         else:
             # ARC_DEAD_STREAK / ARC_CLOCK_DEADRUN exist so the hand-over threshold
             # can be swept by the bench WITHOUT editing code between runs -- it was
@@ -71,6 +74,7 @@ class MyAgent(Agent):
             # has never been calibrated against a counter that works.
             self._policy = HybridPolicy(
                 rng=random.Random(seed),
+                dead_decay=_decay,
                 dead_streak=int(os.environ.get("ARC_DEAD_STREAK", "20")),
                 clock_dead_run=os.environ.get("ARC_CLOCK_DEADRUN", "1") == "1",
             )

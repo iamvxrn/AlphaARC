@@ -334,14 +334,18 @@ class HybridPolicy:
 
     def __init__(self, switch_after: int = 25, dead_streak: int = 20,
                  rng: Optional[random.Random] = None, policy=None, planner=None,
-                 clock_dead_run: bool = True):
+                 clock_dead_run: bool = True, dead_decay: float = 0.75):
         rng = rng or random.Random()
         # The engine adapter falls back to a random simple action when no click is
         # available -- keyboard-only games take that path on every step -- and it
         # reaches for `.rng`. Every policy the adapter can hold must expose one.
         self.rng = rng
         self.switch_after = switch_after
-        self.policy = policy if policy is not None else Policy(rng=rng)
+        # NOTE the shared `rng`: the one-step policy and the planner draw from the
+        # SAME stream, so a change that only alters a constant keeps the whole run
+        # comparable seed for seed. Handing the policy its own Random would move
+        # every subsequent draw and show up as a difference that is purely the RNG.
+        self.policy = policy if policy is not None else Policy(rng=rng, dead_decay=dead_decay)
         self.planner = planner if planner is not None else RunPlanner(rng=rng)
         # Hand over early if the cheap agent is visibly getting nowhere. lp85 puts
         # a row of six small blocks at the top -- a progress indicator, not a

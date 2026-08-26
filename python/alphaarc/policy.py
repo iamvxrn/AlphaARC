@@ -27,6 +27,7 @@ class Policy:
         residual_bonus: float = 0.15,
         explore: float = 0.2,
         max_candidates: int = 8,
+        dead_decay: float = 0.75,
         state_bucket: int = 16,
         rng: Optional[random.Random] = None,
     ):
@@ -34,6 +35,38 @@ class Policy:
         self.residual_bonus = residual_bonus
         self.explore = explore
         self.max_candidates = max_candidates
+        # How fast a "that did nothing" taboo fades. It must fade at all, because
+        # deadness is often CONDITIONAL -- lp85 is select-then-apply, so a swatch
+        # that does nothing now works once something else is selected.
+        #
+        # But at 0.75 it fades in ~10 steps, and with 8-16 candidates a control
+        # comes back up for its turn on exactly that period, so the taboo cannot
+        # ACCUMULATE: a control clicked every 10 steps sits at the fixed point
+        # v = (v + 1) * 0.75**10 ~ 0.06, i.e. no suppression at all. Measured on
+        # vc33 level 2, seed 7: 52 of 90 transitions did nothing but tick the move
+        # clock -- 58% of the agent's actions, with the detector working correctly.
+        #
+        # And yet slowing the decay is NOT the fix. Swept paired over 4 seeds
+        # (0.75 reproduces HEAD exactly, which also proves the RNG stream is intact):
+        #
+        #     0.75  +0.0000 +/- 0.0000   identical, the control
+        #     0.92  +0.0976 +/- 0.5476   variance 5x the baseline's
+        #     0.97  +0.0094 +/- 0.4899   tn36 +0.623 all agree, vc33 -0.593 swinging
+        #                                from +3.66 to -5.52 across seeds
+        #
+        # Because deadness here is CONDITIONAL, and vc33 is the clearest case: its
+        # two buttons are +/- on one scalar that SATURATES at three presses, so at
+        # saturation the + button does nothing -- dead -- and becomes live again the
+        # moment - is pressed. A longer taboo simply locks out the button the game
+        # needs. Time is the wrong variable.
+        #
+        # Where this belongs is `succ`, which is already keyed by (token, STATE): a
+        # click that did nothing writes its own levels back as the successor, so its
+        # predicted gain is zero in THAT state and nowhere else, with no decay
+        # constant to tune. That path exists; what it needs is a state key coarse
+        # enough to repeat (see commit 6b23399, which is the same problem one layer
+        # down). ARC_DEAD_DECAY keeps the sweep available.
+        self.dead_decay = dead_decay
         # The transition model is keyed by (control, levels), and raw levels are too
         # FINE to be a key: a game's move budget ticks inside the compression
         # measurement, so the vector drifts a little every single action and no key
@@ -149,7 +182,7 @@ class Policy:
             self.dead[self._last_token] = self.dead.get(self._last_token, 0.0) + 1.0
         # decay all taboos slightly (inhibition of return fades)
         for k in list(self.dead):
-            self.dead[k] *= 0.75
+            self.dead[k] *= self.dead_decay
             if self.dead[k] < 0.05:
                 del self.dead[k]
 

@@ -136,7 +136,19 @@ left to decode; the holdout stays sealed.
    class too**: it is a movement game played with CLICKS (avatar, route, waypoint),
    so whatever gives ls20 its goal-and-route should be shared with it.
 3. Depth on the four scoring games; vc33 reaches level 2 of 7.
-4. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
+4. **Dead clicks are 58% of the budget, and the taboo cannot hold.** Measured on
+   vc33 level 2, seed 7: 52 of 90 transitions do nothing but tick the move clock,
+   with the detector working correctly. `Policy.dead` decays x0.75 a step, so it
+   fades in ~10 while 8-16 candidates cycle on exactly that period -- the fixed
+   point is v = (v+1)*0.75**10 ~ 0.06, i.e. no suppression can ever accumulate.
+   **Slowing the decay is measured NOT to be the fix** (0.92: +0.098 +/- 0.548;
+   0.97: +0.009 +/- 0.490, vc33 swinging +3.66 to -5.52), because deadness is
+   CONDITIONAL: vc33's scalar saturates at three presses, so the + button is dead
+   at saturation and live again after a -. The place for this is `succ`, already
+   keyed by (token, STATE) -- a null click writes its own levels back and predicts
+   zero gain in that state only. What blocks it is the state key being too fine to
+   repeat, which is the same problem as commit 6b23399 one layer down.
+5. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
    and su15 not one of the eight offered click candidates is live, measured; the
    real controls sit at rank 21+. Three ways of editing the candidate set have now
    been measured worse — spread, rarity, per-class cap (Rejected #5) — because
