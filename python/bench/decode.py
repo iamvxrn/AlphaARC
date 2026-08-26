@@ -50,6 +50,10 @@ def main() -> None:
     ap.add_argument("--render", action="store_true", help="print the opening board")
     ap.add_argument("--keys-only", action="store_true",
                     help="skip click probing (for keyboard games, or to save budget)")
+    ap.add_argument("--points", default="",
+                    help="probe THESE points instead of the candidate list, "
+                         "e.g. --points 10,53;41,21 -- for checking the structures "
+                         "the smallest-first ordering crowds out")
     args = ap.parse_args()
 
     splits = json.loads((REPO / "python" / "bench" / "splits.json").read_text())
@@ -161,14 +165,29 @@ def main() -> None:
     if args.keys_only:
         return
 
+    if args.points:
+        cands = []
+        for part in args.points.split(";"):
+            px, py = (int(v) for v in part.split(","))
+            cands.append((px, py, g0[py][px], 0))
+
     print(f"\nFollowing each control for {args.presses} presses from a FRESH board.")
     print("A control whose profile dips before it climbs is invisible to one-step credit.\n")
+
+    # Collect first, report second. Every action ticks the move budget, so "some
+    # cell changed" does NOT mean the click did anything: on s5i5 and su15 that
+    # tag was true for eight candidates of which none was live, which is why they
+    # read as decoded when they were not. The clock cannot be found by clicking a
+    # cell believed to be dead -- a click the engine does not accept does not tick
+    # it at all -- but it can be found from the runs themselves. Every control is
+    # followed from a FRESH board, so at press i the clock is in the same state for
+    # all of them: whatever changes identically across every control at press i is
+    # the clock, and what a control does beyond that is its own effect.
+    runs = []
     for (cx, cy, col, size) in cands:
         agent, fr = fresh()
         g = grid_of(fr)
-        prof = [levels(g, True)]
-        deltas = []
-        cleared = None
+        prof, changed, cleared = [levels(g, True)], [], None
         for i in range(args.presses):
             act = GameAction.ACTION6
             act.set_data({"x": int(cx), "y": int(cy)})
@@ -176,22 +195,49 @@ def main() -> None:
             fr = agent.take_action(act)
             n = grid_of(fr)
             if n is None:
-                deltas.append("GAME_OVER")
+                changed.append(None)
                 break
-            deltas.append(sum(1 for r in range(min(len(g), len(n)))
-                              for c in range(min(len(g[r]), len(n[r])))
-                              if g[r][c] != n[r][c]))
+            changed.append({(r, c) for r in range(min(len(g), len(n)))
+                            for c in range(min(len(g[r]), len(n[r])))
+                            if g[r][c] != n[r][c]})
             g = n
             prof.append(levels(g, True))
             if fr.levels_completed:
                 cleared = i + 1
                 break
+        runs.append((cx, cy, col, size, prof, changed, cleared))
+
+    clock = []
+    for i in range(args.presses):
+        sets = [ch[i] for _, _, _, _, _, ch, _ in runs if len(ch) > i and ch[i] is not None]
+        clock.append(set.intersection(*sets) if len(sets) >= 3 else set())
+    if len(runs) < 3:
+        print("(fewer than 3 controls followed: the clock cannot be separated, "
+              "so an effect below may be nothing but the move budget)\n")
+    elif any(clock):
+        n_clock = max(len(c) for c in clock)
+        print(f"clock: up to {n_clock} cell(s) per press move identically under every "
+              f"control; subtracted below\n")
+
+    for (cx, cy, col, size, prof, changed, cleared) in runs:
+        deltas = []
+        for i, ch in enumerate(changed):
+            if ch is None:
+                deltas.append("GAME_OVER")
+                continue
+            hit = ch - clock[i]
+            if hit:
+                rr = [q[0] for q in hit]
+                cc = [q[1] for q in hit]
+                deltas.append(f"{len(hit)}@r{min(rr)}-{max(rr)},c{min(cc)}-{max(cc)}")
+            else:
+                deltas.append(0)
         moved = [d for d in deltas if d not in (0, "GAME_OVER")]
         tag = "INERT" if not moved else ("CLEARS L1" if cleared else "live")
         print(f"click ({cx:2},{cy:2}) colour {col:2} size {size:4}  {tag}"
               + (f" in {cleared}" if cleared else ""))
         if moved:
-            print(f"    cells changed per press: {deltas}")
+            print(f"    effect per press (clock subtracted): {deltas}")
             for k, name in enumerate(names):
                 series = [p[k] for p in prof]
                 if len(set(series)) > 1:

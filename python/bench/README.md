@@ -173,7 +173,7 @@ Two things follow, and they outlive this experiment:
 
 ## What the decoded games are
 
-Eight of the twenty-five, via `make decode GAME=xx`. Decoding is not hardcoding:
+All seventeen train games, via `make decode GAME=xx` (the eight holdout games stay sealed). Decoding is not hardcoding:
 the output is a specification for a general mechanism, and the frozen holdout is
 what judges whether the generalization was real.
 
@@ -190,6 +190,9 @@ what judges whether the generalization was real.
 | dc22 | all four keys behave identically: 9 cells once, then only the clock; Count collapses 688→80 | — | a 3×3 **cursor** moved by keys, then applied |
 | m0r0 | 4 of 5 keys move ~100 cells; the board is two halves with two 5×5 markers | — | two-panel comparison |
 | re86 | period-5 blocks: ~61-cell responses alternate with ~53; the mode shows as Count 82 vs 78 | — | `stateful-mode` |
+| lf52 | two panels of 4×4 tiles; clicking a tile's corner flips its marker ONCE (29 cells), then that tile is inert; all 5 keys dead | none found | one-shot per tile |
+| s5i5 | two bordered boxes, each holding a **−/+ pair**; each pair edits a bar drawn FAR AWAY (box A → the E block at rows 9-11, box B → the B bar at cols 9-11) | row 63 | remote effect on a scalar |
+| su15 | a MOVEMENT game played with clicks: the 3x3 `F` block is an avatar, a dashed diagonal marks the route to the 9-blob goal, and a 5-cell colour-0 plus marks the NEXT waypoint. Clicking the plus teleports the avatar into it. Exactly one live cell on the board at a time; the single key is inert | row 63 | a goal and a route, like ls20 -- but clicked |
 
 Facts that generalize, and that cost something to learn:
 
@@ -234,3 +237,71 @@ The lesson repeats one already on this page: a defect being real is not evidence
 that fixing it buys anything. Nine changes have now been measured against the
 board; the ones that paid all came from decoding a game and building exactly what
 the decode specified.
+
+### Rejected #5: re-ordering the click candidates (two variants, both worse)
+
+This page already recorded the pathology, from decoding lp85: *`object_targets`
+ranks HUD fragments ahead of real controls, because HUD segments are small and
+numerous and the rule is smallest-first.* Decoding s5i5 and su15 measured how far
+it goes. A board carries many equal-smallest components, and they take **all
+eight** candidate slots:
+
+| game | what fills all 8 slots | live among them |
+|---|---|---|
+| su15 | 20 one-cell dots of a dashed diagonal path | **0** |
+| s5i5 | 10 pixels shattered off diagonal plus-markers | **0** |
+| lf52 | 8 corner pixels of the `1EE1` tiles | 6, all one-shot |
+
+The zeros are measured, not inferred: `decode` tags a click "live" if any cell
+changed, and every action ticks the move clock, so its tag was true for provably
+dead clicks. A probe that subtracts a null click's effect found that in su15 and
+s5i5 **not one** of the eight offered candidates does anything at all, while the
+controls that do exist sit at rank 21 and beyond. No credit-assignment fix can
+reach them.
+
+Two orderings were then measured against `quick` (baseline **1.7087**):
+
+| variant | quick | vc33 | r11l | tn36 |
+|---|---|---|---|---|
+| rank by shape-class RARITY, size breaking ties | **0.0038** | 0 | 0 | 0 |
+| keep smallest-first, cap any one class at half the slots | **0.2750** | L1 at x8.4 | L1 at x2.5 | L1 at x3.8 |
+
+Both looked excellent offline. Rarity put su15's only live control first (it was
+never offered) and made five of s5i5's eight slots live. The cap left the opening
+candidate lists of vc33 and tn36 **bit-identical** while still surfacing one live
+control in each of su15 and s5i5 -- it is not even a widening, the candidate count
+is unchanged. It still cost 84% of the score.
+
+Why the "bit-identical" check was worthless, and the real lesson: **the opening
+frame is not the experiment.** vc33 rescales its whole scene on every press, so
+its candidate list is regenerated from a different board at every step; equality
+at step 0 says nothing about step 5. Any future check of a perception change has
+to diff the candidate lists ALONG A TRAJECTORY, not on one frame.
+
+And why the ordering is so much more load-bearing than it looks: rank is not a
+tie-breaker, it is the policy's PRIOR. `Policy.choose_click` scores a candidate
+with `residual_bonus / (i + 1)` = 0.15 at rank 0 falling to 0.019 at rank 7, while
+the learned terms enter at `w = 0.02` times a drive gain that starts at zero. For
+the whole opening -- the part the quadratic efficiency term punishes hardest --
+the order IS the policy. Reordering candidates is not "offering a different menu";
+it is rewriting the prior over every board the agent will ever see.
+
+So the direction is closed: the reachability of s5i5's and su15's controls is a
+real defect, and it is not fixable by touching the global ordering. That makes
+three separate ways of editing the candidate set that have now been measured
+worse (spread, rarity, per-class cap) on top of the two rejected wideners.
+
+Two things this cost, worth keeping:
+
+1. **Diff the candidate list offline BEFORE spending a bench run** -- one RESET per
+   game and a printed top-8 is nearly free. But diff it along a TRAJECTORY: the
+   opening-frame check said vc33 was untouched and vc33 then lost its second level.
+2. **`decode` was lying, and is now fixed.** Its "live" tag counted any changed
+   cell, and every action ticks the move clock, so it reported eight live controls
+   in su15 where there are none -- which is how these games read as decoded when
+   they were not. It now follows every control first and calls the clock what
+   changes IDENTICALLY across all of them at the same press index (all runs start
+   from a fresh board, so the clock is in the same state for each). A null click
+   cannot do this job: a click the engine does not accept never ticks the clock at
+   all. `--points x,y;x,y` probes chosen cells, for checking what the ordering
+   crowds out.

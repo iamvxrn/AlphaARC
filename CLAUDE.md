@@ -83,19 +83,29 @@ needs DEPTH, not more first levels.
 the decode specified -> `make quick` (127 s) -> confirm with `make bench` (~40 min).
 Nine changes have been measured; every one that paid came out of a decode, and
 every one that came from "this looks wrong, fix it" returned zero or worse. Read
-`python/bench/README.md` "Tried and rejected" (four entries) before proposing
+`python/bench/README.md` "Tried and rejected" (five entries) before proposing
 anything that widens exploration or edits the compression measurement.
 
-**Decoded: 14 of 17 train games** — see `python/bench/README.md` and memory
-`reference_decoded_games`. **Left to decode: lf52, s5i5, su15** (all click-only, so
-run decode WITHOUT `--keys-only`).
+**Decoded: 17 of 17 train games** (lf52, s5i5, su15 finished 2026-08-26) — see
+`python/bench/README.md` and memory `reference_decoded_games`. Nothing on train is
+left to decode; the holdout stays sealed.
 
 **Open, in rough order of expected value:**
 1. `stateful-mode` (dc22, m0r0, re86, sp80) is blocked by the STATE REPRESENTATION,
    not the credit: dc22's mode is a cursor position that moves 9 cells of 4096, and
    the per-primitive level vector cannot see it. The class needs a state that also
    carries WHERE the last small change happened.
-2. Movement beyond ls20 — g50t, m0r0, re86, sp80 still zero.
+2. Movement beyond ls20 — g50t, m0r0, re86, sp80 still zero. **su15 belongs in this
+   class too**: it is a movement game played with CLICKS (avatar, route, waypoint),
+   so whatever gives ls20 its goal-and-route should be shared with it.
 3. Depth on the four scoring games; vc33 reaches level 2 of 7.
+4. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
+   and su15 not one of the eight offered click candidates is live, measured; the
+   real controls sit at rank 21+. Three ways of editing the candidate set have now
+   been measured worse — spread, rarity, per-class cap (Rejected #5) — because
+   `residual_bonus / (i + 1)` makes rank the policy's PRIOR, not a tie-breaker.
+   Any new attempt needs a mechanism that reaches those controls WITHOUT changing
+   the order of the ones already there, and must be diffed along a trajectory
+   rather than on the opening frame.
 
 **Do NOT touch the holdout** — sealed by the user, criterion above.
