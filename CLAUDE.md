@@ -75,8 +75,10 @@ exists to refuse.
 Everything below is committed; tree clean, all suites green, `make check-bundle`
 up to date, no background jobs.
 
-**Where the score is:** quick = **1.3627 over 8 seeds** (HEAD, `runs/base/`), up
-from 1.0967 before the move-budget fix (+0.199) and its hand-over sweep (+0.067). NOT the 1.7087 that used to be quoted --
+**Where the score is:** quick = **1.5124 over 16 seeds** (HEAD, `runs/base/`), from
+1.0967 this morning -- the move-budget fix (+0.199), the hand-over sweep (+0.067)
+and the known-dead override (+0.146, unresolved). **16 seeds, not 8**: the last of
+those read +0.287 over seeds 1-8 and +0.146 over 1-16. NOT the 1.7087 that used to be quoted --
 that was one lucky seed, and even 4 seeds read 1.55 against 8 seeds' 1.10. Quote
 absolute scores with their seed count. Target 10; the L1-everywhere ceiling is
 3.52, so the metric needs DEPTH.
@@ -136,7 +138,7 @@ left to decode; the holdout stays sealed.
    class too**: it is a movement game played with CLICKS (avatar, route, waypoint),
    so whatever gives ls20 its goal-and-route should be shared with it.
 3. Depth on the four scoring games; vc33 reaches level 2 of 7.
-4. **Dead clicks are 58% of the budget, and the taboo cannot hold.** Measured on
+4. **Dead clicks were 58% of the budget** (partly addressed; see below).** Measured on
    vc33 level 2, seed 7: 52 of 90 transitions do nothing but tick the move clock,
    with the detector working correctly. `Policy.dead` decays x0.75 a step, so it
    fades in ~10 while 8-16 candidates cycle on exactly that period -- the fixed
@@ -145,9 +147,11 @@ left to decode; the holdout stays sealed.
    0.97: +0.009 +/- 0.490, vc33 swinging +3.66 to -5.52), because deadness is
    CONDITIONAL: vc33's scalar saturates at three presses, so the + button is dead
    at saturation and live again after a -. The place for this is `succ`, already
-   keyed by (token, STATE) -- a null click writes its own levels back and predicts
-   zero gain in that state only. What blocks it is the state key being too fine to
-   repeat, which is the same problem as commit 6b23399 one layer down.
+   keyed by (token, STATE). DONE, in part: the model turned out to be consulted
+   successfully 18-25% of the time and to predict "nothing happens" on 84% of vc33's
+   hits, and the policy was ignoring that -- now it does not (+0.146 over 16 seeds,
+   unresolved). What is still open is the state key: 25% hits means three lookups in
+   four still miss, so most of the model is never reached.
 5. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
    and su15 not one of the eight offered click candidates is live, measured; the
    real controls sit at rank 21+. Three ways of editing the candidate set have now

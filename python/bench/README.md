@@ -114,7 +114,7 @@ same for a given seed, so most of the variance is common to both variants and
 cancels in the per-seed difference. Unpaired, an effect needs ~1.0 to be visible
 and our entire score is 1.5. It reports a change as REAL only when the mean
 difference clears twice its own standard error AND every seed agrees on the sign.
-`runs/base/seed1..8.json` is the current HEAD baseline (mean **1.3627**); regenerate it whenever
+`runs/base/seed1..16.json` is the current HEAD baseline (mean **1.5124**); regenerate it whenever
 HEAD's behaviour changes. `runs/base_preclock/` is the baseline before the
 move-budget fix, kept so that comparison stays reproducible, and
 `runs/handover_on/` is the rejected variant described under "the move budget"
@@ -388,6 +388,28 @@ Two things this cost, worth keeping:
    all. `--points x,y;x,y` probes chosen cells, for checking what the ordering
    crowds out.
 
+## When a change is not measurable, keep it only on these grounds
+
+"Not measurable" means the effect cannot be told from zero at 2*sem -- NOT that it
+is zero. Some changes will never be resolvable: an effect of +0.15 against sd 0.51
+needs about **50 seeds per arm**, five hours of wall clock, for +11%. So there has
+to be a rule, or "principled" quietly becomes a licence to ship anything.
+
+Keep an unresolved change only when ALL of:
+
+1. it fixes an **inconsistency between what the code does and what it claims** --
+   not a preference, not an intuition about what should help;
+2. it adds **no new tunable constant** (a constant needs a sweep, and a sweep needs
+   resolution we do not have);
+3. its measured mean over >=16 seeds is **not negative**.
+
+And claim nothing about the score. Report it as a correctness fix whose effect was
+unresolved, and say so in the commit message.
+
+**And 8 seeds still over-estimates.** The known-dead change below read **+0.287**
+over seeds 1-8 and **+0.146** over 1-16 -- the first eight happened to contain a
++1.55. Use 16 before believing a number, and treat 4 as a screen.
+
 ## The move budget made every dead control look alive -- in the AGENT
 
 `decode` had this bug and it was fixed on 2026-08-26; the same morning it turned
@@ -483,3 +505,30 @@ the TYPICAL one. Two things follow:
 
 The best-of-N shape is the real Kaggle scoring rule, so it is the right target --
 but when judging a change, look at whether the floor came up, not only the ceiling.
+
+## An absence of reward is not a known absence of effect
+
+`Policy` scored a control the world model had **already watched do nothing from
+this exact state** identically to one it had never seen: both took the
+`predicted = 0.0` branch, and both then collected the rank prior and the
+untried-optimism. Measured on vc33 seed 4: of 169 successful `succ` lookups, **142
+predicted no change at all**, while 52 of 90 transitions were nothing but the move
+clock. The knowledge was there and the policy threw it away every step.
+
+The fix uses no new constant: the prior and the optimism are what we spend where we
+do NOT know, so where the model has an answer for this control in this state, the
+answer stands and the guesses get no vote. That is the information-gain criterion
+the MBRL plan asks for, applied to the model already in the code.
+
+This also came out of ruling out the obvious alternative first. Making the taboo
+decay slower is what the 58% dead-click rate seems to call for, and it is measured
+NOT to work (0.92: +0.098 +/- 0.548; 0.97: +0.009 +/- 0.490, with vc33 swinging
++3.66 to -5.52) -- because deadness is CONDITIONAL. vc33's scalar saturates at three
+presses, so its + button is dead at saturation and live again after a -, and a
+longer taboo just locks out the button the game needs. Time was the wrong variable;
+state was the right one, and `succ` was already keyed by it.
+
+Measured paired, **16 seeds**: quick 1.3660 -> 1.5124, **+0.1464, sem 0.1281**.
+10 of 16 seeds positive, 5 negative, 1 unchanged. That does NOT clear 2*sem, so no
+score claim is made. Kept under the three-part rule at the top of this file: it
+removes an inconsistency, adds no constant, and its mean is not negative.

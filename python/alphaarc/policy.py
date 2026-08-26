@@ -222,11 +222,28 @@ class Policy:
             predicted = 0.0 if nxt is None else max(
                 (n - c for n, c in zip(nxt, level)), key=abs, default=0.0
             )
+            # An ABSENCE of reward is not the same as a KNOWN absence of effect,
+            # and until now both scored 0.0 -- so a control the model had already
+            # watched do nothing from this exact state still collected the rank
+            # prior and the untried-optimism, and got clicked again. Measured on
+            # vc33 seed 4: of 169 successful model lookups, 142 predicted no change
+            # at all, while 52 of 90 transitions were nothing but the move clock.
+            # The knowledge was there and the policy threw it away.
+            #
+            # So: the prior and the optimism are what we use where we do NOT know.
+            # Where the model has an answer for this control in this state, the
+            # answer stands and the guesses do not get a vote. No new constant --
+            # this is the information-gain criterion the MBRL plan asks for,
+            # applied to the model we already have.
+            known_dead = nxt is not None and predicted == 0.0
+            guess = 0.0 if known_dead else (
+                self.residual_bonus / (i + 1)        # larger clusters rank higher
+                + 0.05 / (self.tries.get(tok, 0) + 1)  # optimism for the under-tried
+            )
             v = (
                 self.w * self.drive_gain.get(tok, 0.0)
                 + self.w * 4.0 * predicted               # state-keyed prediction (survives involution)
-                + self.residual_bonus / (i + 1)          # larger clusters (earlier) rank higher
-                + 0.05 / (self.tries.get(tok, 0) + 1)    # optimism for the under-tried
+                + guess                                  # only where the model is silent
                 - self.dead.get(tok, 0.0)                # inhibition of return
             )
             if v > best_v:

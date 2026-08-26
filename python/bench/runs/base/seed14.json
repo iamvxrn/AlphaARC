@@ -2,43 +2,43 @@
  "split": "scoring",
  "max_steps": 250,
  "repeats": 3,
- "seed": 8,
+ "seed": 14,
  "agent": "$HOME/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter/agent/my_agent.py",
- "aggregate": 0.868775,
+ "aggregate": 0.6326499999999999,
  "games": {
   "lp85": {
    "state": "GameState.NOT_FINISHED",
-   "levels_completed": 1,
+   "levels_completed": 0,
    "actions": 251,
-   "seconds": 15.0,
+   "seconds": 14.9,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 1,
+     "levels_completed": 0,
      "actions": 251,
-     "seconds": 15.0
-    },
-    {
-     "state": "GameState.NOT_FINISHED",
-     "levels_completed": 1,
-     "actions": 251,
-     "seconds": 15.5
+     "seconds": 14.9
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 0,
      "actions": 251,
-     "seconds": 15.7
+     "seconds": 15.1
+    },
+    {
+     "state": "GameState.NOT_FINISHED",
+     "levels_completed": 0,
+     "actions": 251,
+     "seconds": 15.8
     }
    ],
    "levels_per_run": [
-    1,
-    1,
+    0,
+    0,
     0
    ],
-   "score": 0.0141,
+   "score": 0.0,
    "level_scores": [
-    0.51,
+    0.0,
     0.0,
     0.0,
     0.0,
@@ -48,8 +48,8 @@
     0.0
    ],
    "level_actions": [
-    239,
-    12,
+    251,
+    0,
     0,
     0,
     0,
@@ -76,35 +76,35 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 11.2,
+   "seconds": 10.1,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 1,
+     "levels_completed": 0,
      "actions": 251,
-     "seconds": 11.2
+     "seconds": 8.7
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 10.5
+     "seconds": 10.1
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 11.1
+     "seconds": 10.6
     }
    ],
    "levels_per_run": [
-    1,
+    0,
     1,
     1
    ],
-   "score": 0.4446,
+   "score": 0.1628,
    "level_scores": [
-    9.34,
+    3.42,
     0.0,
     0.0,
     0.0,
@@ -112,8 +112,8 @@
     0.0
    ],
    "level_actions": [
-    72,
-    179,
+    119,
+    132,
     0,
     0,
     0,
@@ -136,25 +136,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 16.4,
+   "seconds": 16.6,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 16.4
+     "seconds": 16.6
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 17.7
+     "seconds": 14.9
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 15.9
+     "seconds": 17.1
     }
    ],
    "levels_per_run": [
@@ -162,9 +162,9 @@
     1,
     1
    ],
-   "score": 1.1662,
+   "score": 0.5062,
    "level_scores": [
-    32.65,
+    14.17,
     0.0,
     0.0,
     0.0,
@@ -173,8 +173,8 @@
     0.0
    ],
    "level_actions": [
-    56,
-    195,
+    85,
+    166,
     0,
     0,
     0,
@@ -199,36 +199,36 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 2,
    "actions": 251,
-   "seconds": 12.6,
+   "seconds": 12.3,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 12.6
+     "seconds": 12.3
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 12.8
+     "seconds": 13.1
     },
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 1,
+     "levels_completed": 2,
      "actions": 251,
-     "seconds": 11.8
+     "seconds": 13.1
     }
    ],
    "levels_per_run": [
     2,
     2,
-    1
+    2
    ],
-   "score": 1.8502,
+   "score": 1.8616,
    "level_scores": [
     49.0,
-    1.4,
+    1.56,
     0.0,
     0.0,
     0.0,
@@ -237,8 +237,8 @@
    ],
    "level_actions": [
     10,
-    152,
-    89,
+    144,
+    97,
     0,
     0,
     0,

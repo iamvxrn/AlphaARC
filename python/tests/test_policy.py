@@ -284,5 +284,45 @@ def test_a_pixel_coordinate_alone_is_not_the_name():
     assert left != right, "two boxes in different halves of the frame share a name: %r" % left
 
 
+def test_a_control_the_model_has_watched_do_nothing_loses_its_prior():
+    """An absence of reward is not a KNOWN absence of effect.
+
+    Both used to score 0.0, so a control the model had already watched do nothing
+    from this exact state still collected the rank prior and the untried-optimism
+    and got clicked again. Measured on vc33 seed 4: of 169 successful model
+    lookups 142 predicted no change, while 52 of 90 transitions were nothing but
+    the move clock -- the knowledge was there and the policy ignored it.
+    """
+    bg = 9
+    g = _bg_grid(7, 14, bg)
+    _place(g, 1, 1, SYM_BOX)
+    _place(g, 1, 8, SYM_BOX)
+    g[3][10] = bg
+
+    p = Policy(explore=0.0, rng=random.Random(0))
+    first = p.choose_click(g, bg)
+    levels = Policy._levels(g, bg)
+    tok = Policy._token(g, bg, first[0], first[1])
+    # the model watched it do exactly nothing from this state
+    p.succ[(tok, p._key(levels))] = list(levels)
+
+    again = p.choose_click(g, bg)
+    assert again != first, \
+        "clicked a control the model says does nothing here: %s" % (again,)
+
+
+def test_the_model_only_overrides_where_it_actually_knows():
+    """A control the model has never seen from this state keeps its prior --
+    otherwise nothing would ever be tried a first time."""
+    bg = 9
+    g = _bg_grid(7, 14, bg)
+    _place(g, 1, 1, SYM_BOX)
+    _place(g, 1, 8, SYM_BOX)
+    g[3][10] = bg
+    p = Policy(explore=0.0, rng=random.Random(0))
+    assert p.choose_click(g, bg) is not None
+    assert not p.succ, "nothing should be known before a transition is observed"
+
+
 if __name__ == "__main__":
     sys.exit(1 if _run() else 0)
