@@ -88,13 +88,22 @@ def main():
         if all(abs(d) < 1e-9 for d in diffs):
             print("  -> IDENTICAL on every seed: the change did not alter behaviour.")
             return
-        agree = all(d > 0 for d in diffs) or all(d < 0 for d in diffs)
+        # A seed on which nothing changed is a TIE, not a disagreement: many changes
+        # only alter behaviour on some boards, and counting those zeros as dissent
+        # reported a clean +0.0095/+0.0074/0/0 result as "the seeds disagree".
+        nz = [d for d in diffs if abs(d) > 1e-9]
+        agree = bool(nz) and (all(d > 0 for d in nz) or all(d < 0 for d in nz))
+        ties = len(diffs) - len(nz)
+        tie_note = f" ({ties} seed(s) unchanged)" if ties else ""
         if abs(m) > 2 * se and agree:
-            print(f"  -> REAL: |mean| > 2*sem and all {len(diffs)} seeds agree on the sign")
+            print(f"  -> REAL: |mean| > 2*sem and every seed that moved agrees on "
+                  f"the sign{tie_note}")
         elif agree:
-            print(f"  -> weak: all seeds agree on the sign, but |mean| < 2*sem. More seeds.")
+            print(f"  -> too small to call: signs agree{tie_note} but |mean| < 2*sem. "
+                  f"Add seeds, or accept it as neutral.")
         else:
-            print(f"  -> NOT MEASURABLE: the seeds disagree on the sign. This is noise.")
+            print(f"  -> NOT MEASURABLE: the seeds that moved disagree on the sign"
+                  f"{tie_note}. This is noise.")
     else:
         print(f"  mean {m:+.4f}  (one seed -- not a measurement)")
 
@@ -107,7 +116,9 @@ def main():
     if per:
         print("\nper game (paired differences):")
         for g, ds in sorted(per.items(), key=lambda kv: -abs(statistics.mean(kv[1]))):
-            sign = "all agree" if (all(d > 0 for d in ds) or all(d < 0 for d in ds)) else "MIXED"
+            nzg = [d for d in ds if abs(d) > 1e-9]
+            sign = ("all agree" if nzg and (all(d > 0 for d in nzg) or all(d < 0 for d in nzg))
+                    else "MIXED")
             print(f"  {g:6} {statistics.mean(ds):+8.3f}   {[round(d, 2) for d in ds]}  {sign}")
 
 

@@ -75,9 +75,27 @@ exists to refuse.
 Everything below is committed; tree clean, all suites green, `make check-bundle`
 up to date, no background jobs.
 
-**Where the score is:** train 0.4010 (17 games) + ls20's first level; quick 1.7087
-(4 games, all scoring). Target 10. The L1-everywhere ceiling is 3.52, so the metric
-needs DEPTH, not more first levels.
+**Where the score is:** quick = **1.5505 +/- 1.07 (sd over 4 seeds)**, NOT the
+1.7087 that used to be quoted -- that was one lucky seed. Target 10; the
+L1-everywhere ceiling is 3.52, so the metric needs DEPTH.
+
+Paired measurement has sd 0.0144, so the loop resolves ~0.03. Use it.
+
+**Where the score actually hides, measured:** vc33 takes level 1 in 6 actions
+against a baseline of 7 -- a CAPPED 115 points, nothing left to win there -- and
+then spends 68 actions on level 2 against a baseline of 18. vc33 at baseline on
+the two levels it ALREADY reaches would score 11.25 against its current 4.61,
+which is more than the whole 17-game aggregate. Across the split, taking the same
+levels we already take but at exact baseline is 0.40 -> 1.12. Efficiency on levels
+already reached beats reaching new ones, because the efficiency term is quadratic
+while a new deep level arrives heavily discounted by its own inefficiency.
+
+Carrying what was learned across the level seam is the obvious attack and the
+obvious version of it does NOT work: vc33's two colour-9 buttons sit at eighth
+(3,7) and (4,7) on level 1 and at (3,0) and (4,0) on level 2 -- same colour, same
+size bucket, same row, MIRRORED column -- so the object signature does not name
+them across the seam. Measured paired: +0.0095 +/- 0.0072, neutral. Pinned in
+`test_the_name_survives_a_small_shift_but_NOT_a_move_across_the_frame`.
 
 **THE MEASUREMENTS BEHIND EVERY PAST CLAIM WERE INVALID.** Measured 2026-08-26:
 same code, same `--repeats 3`, four seeds give quick = 1.7087 / 1.0019 / 0.5205 /

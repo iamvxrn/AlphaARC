@@ -27,7 +27,7 @@ import random
 from typing import Dict, List, Optional, Tuple
 
 from .mdl import PRIMITIVES, Grid, _components
-from .perception import background_color
+from .perception import background_color, control_signature
 from .policy import Policy
 from .residual import object_targets, residual_targets
 
@@ -113,32 +113,8 @@ class RunPlanner:
 
     @staticmethod
     def _signature(grid: Grid, bg: int, x: int, y: int) -> str:
-        """A name for a control that survives the board being redrawn.
-
-        vc33 rescales its whole scene on every press, so a control's pixel
-        coordinates land somewhere new each time: instrumented over 30 clicks the
-        planner hit 30 DISTINCT positions, never repeated one, and therefore never
-        exploited anything. Naming a control by the OBJECT under it -- its colour,
-        its size bucket, and where it sits in the frame in eighths -- keeps the
-        profile attached to the same button across a redraw.
-
-        Coarse on purpose: exact size and position are what the redraw changes.
-        """
-        h, w = len(grid), len(grid[0]) if grid else 1
-        colour = grid[y][x] if 0 <= y < h and 0 <= x < w else bg
-        size, total = 0, 0
-        for col, cells in _components(grid, bg):
-            total += len(cells)
-            if not size and col == colour and any(r == y and c == x for r, c in cells):
-                size = len(cells)
-        # Size as a FRACTION of the scene, not in pixels: a rescale multiplies every
-        # area by the same factor, so absolute size is exactly what the redraw
-        # changes (measured: the same box reads s4 at one scale and s6 at double).
-        share = size / total if total else 0.0
-        bucket = 0
-        while bucket < 6 and share < 0.5 ** (bucket + 1):
-            bucket += 1
-        return "c%d/f%d/%d,%d" % (colour, bucket, (y * 8) // max(1, h), (x * 8) // max(1, w))
+        """A name for a control that survives a redraw -- see perception."""
+        return control_signature(grid, bg, x, y)
 
     @staticmethod
     def _levels(grid: Grid, bg: int) -> List[float]:

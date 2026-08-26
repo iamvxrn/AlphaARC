@@ -15,7 +15,7 @@ import random
 from typing import Dict, List, Optional, Tuple
 
 from .mdl import PRIMITIVES, Grid
-from .perception import background_color
+from .perception import background_color, control_signature
 from .residual import object_targets, residual_targets
 
 
@@ -77,6 +77,24 @@ class Policy:
     @staticmethod
     def _tok(x: int, y: int) -> str:
         return "%d,%d" % (x, y)
+
+    @staticmethod
+    def _token(grid: Grid, bg: int, x: int, y: int) -> str:
+        """What a learned value is filed under. NOT the pixel coordinate.
+
+        `board_replaced` deliberately keeps drive_gain and succ across a level
+        transition -- "the mechanic does not change when the board does" -- but
+        while the key was "x,y" that carry-over could not work and could actively
+        mislead, because the coordinate that meant "the shrink button" on level 1
+        is scenery on level 2. The score weights a level by its INDEX, so this is
+        the most expensive place in the agent to forget: vc33 takes level 1 in 6
+        actions against a baseline of 7, then spends 68 on level 2 against a
+        baseline of 18, relearning a mechanic it had already learned.
+
+        The planner has always named controls this way; the one-step policy, which
+        is what plays the opening of every level, did not.
+        """
+        return control_signature(grid, bg, x, y)
 
     def _key(self, levels: List[float]) -> Tuple[int, ...]:
         """The state signature the transition model is keyed on: coarse on purpose."""
@@ -151,7 +169,7 @@ class Policy:
 
         best_tok, best_xy, best_v = None, None, -1e18
         for i, p in enumerate(pts):
-            tok = self._tok(p.x, p.y)
+            tok = self._token(grid, bg, p.x, p.y)
             # How much better than NOW is the best state this control has reached?
             # Zero once we are already there, so a toggle is pursued to its good
             # state and then left alone instead of being flipped back and forth.
@@ -175,7 +193,7 @@ class Policy:
         # epsilon-exploration over the candidate set
         if self.explore > 0 and self.rng.random() < self.explore:
             p = self.rng.choice(pts)
-            best_tok, best_xy = self._tok(p.x, p.y), (p.x, p.y)
+            best_tok, best_xy = self._token(grid, bg, p.x, p.y), (p.x, p.y)
 
         self.tries[best_tok] = self.tries.get(best_tok, 0) + 1
         self._prev_grid = [row[:] for row in grid]

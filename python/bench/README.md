@@ -120,6 +120,25 @@ HEAD's behaviour changes.
 `bench.py --vs` now REFUSES to diff two runs taken at different
 repeats/max_steps/seed, and every summary stamps its settings.
 
+**What pairing buys, measured on the first change put through it** (keying the
+one-step policy's learned values by the board-invariant control signature instead
+of by pixel coordinates):
+
+```
+raw aggregate      sd 1.0578        <- what every past decision was read against
+paired difference  sd 0.0144        mean +0.0095, sem 0.0072
+```
+
+**~74x more resolution.** The loop can now see effects of about 0.03, where before
+it could not see 1.0 -- on a total score of 1.5. That change itself came out
+"too small to call": two seeds unchanged, two slightly positive. Neutral, kept
+because it puts both policies on one naming scheme, and reported as neutral
+rather than as a win.
+
+A tie is not a disagreement: many changes only alter behaviour on some boards, so
+`seeds.py` judges sign agreement among the seeds that actually MOVED and reports
+the rest as unchanged.
+
 ## Tried and rejected -- ALL of it measured on one seed, so read the section above first
 
 Both of these were built for the census's headline finding — that the dominant

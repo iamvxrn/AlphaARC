@@ -56,7 +56,7 @@ def test_positive_delta_reinforces_the_clicked_token():
 
     p = Policy(explore=0.0, rng=random.Random(0))
     xy = p.choose_click(partial, bg)      # picks some candidate, records it
-    tok = "%d,%d" % (xy[0], xy[1])
+    tok = Policy._token(partial, bg, xy[0], xy[1])
 
     fixed = [row[:] for row in partial]
     fixed[3][10] = 4                       # fill the cell -> Correspondence 23->24
@@ -73,7 +73,7 @@ def test_dead_click_is_tabooed():
     g[3][10] = bg
     p = Policy(explore=0.0, rng=random.Random(0))
     xy = p.choose_click(g, bg)
-    tok = "%d,%d" % (xy[0], xy[1])
+    tok = Policy._token(g, bg, xy[0], xy[1])
     p.choose_click(g, bg)  # identical grid -> previous click "did nothing"
     assert p.dead.get(tok, 0.0) > 0.0, "a no-op click should be tabooed"
 
@@ -243,6 +243,45 @@ def test_the_measurement_itself_is_untouched():
     _place(g, 1, 1, SYM_BOX)
     p = Policy(state_bucket=16, rng=random.Random(0))
     assert p._levels(g, bg) == Policy._levels(g, bg)
+
+
+def test_the_name_survives_a_small_shift_but_NOT_a_move_across_the_frame():
+    """What the object signature actually buys, measured rather than hoped for.
+
+    It is coarse in colour, in size-as-a-fraction-of-the-scene, and in position to
+    an eighth of the frame -- so an object that shifts by a few cells keeps its
+    name. It does NOT survive an object moving to the other side of the board, and
+    that limit is not hypothetical: vc33's two colour-9 buttons sit at eighth
+    (row 3, col 7) and (row 4, col 7) on level 1, and on level 2 the same two
+    buttons are at (3, 0) and (4, 0) -- same colour, same size bucket, same row,
+    MIRRORED column. So keying learned values by this signature does not by itself
+    carry vc33's mechanic across the level transition where the score actually is.
+
+    Written down so the next attempt starts from the measurement instead of
+    rediscovering it.
+    """
+    bg = 9
+    a = _bg_grid(64, 64, bg)
+    _place(a, 20, 20, SYM_BOX)
+    b = _bg_grid(64, 64, bg)
+    _place(b, 22, 22, SYM_BOX)          # shifted two cells: same eighth
+    assert Policy._token(a, bg, 21, 21) == Policy._token(b, bg, 23, 23)
+
+    c = _bg_grid(64, 64, bg)
+    _place(c, 20, 52, SYM_BOX)          # same object, other side of the frame
+    assert Policy._token(a, bg, 21, 21) != Policy._token(c, bg, 53, 21)
+
+
+def test_a_pixel_coordinate_alone_is_not_the_name():
+    """Guard the inverse: two DIFFERENT objects must not collapse onto one token,
+    or a control's value would be polluted by whatever else shares its cell."""
+    bg = 9
+    g = _bg_grid(7, 14, bg)
+    _place(g, 1, 1, SYM_BOX)
+    _place(g, 1, 8, SYM_BOX)
+    left = Policy._token(g, bg, 2, 2)
+    right = Policy._token(g, bg, 9, 2)
+    assert left != right, "two boxes in different halves of the frame share a name: %r" % left
 
 
 if __name__ == "__main__":
