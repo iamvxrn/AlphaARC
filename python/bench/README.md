@@ -73,7 +73,54 @@ therefore canonical; `make check-bundle` fails if the built file is stale, and
 `python/tests/test_bundle.py` pins that the bundle is import-free and computes
 the same numbers as the package.
 
-## Tried and rejected (do not re-litigate without new evidence)
+## READ THIS BEFORE ANY NUMBER BELOW: one seed is not a measurement
+
+Measured 2026-08-26, same code at HEAD, same `--repeats 3`, four seeds:
+
+| seed | 1 | 2 | 3 | 4 |
+|---|---|---|---|---|
+| quick aggregate | 1.7087 | 1.0019 | 0.5205 | **2.9709** |
+
+**mean 1.5505, sd 1.0653, a 5.7x spread.** vc33 alone reads 0.845 to 8.786 with
+identical code, r11l 0.111 to 1.778. The engine scores a game by its BEST run, and
+whether vc33 stumbles into level 2 within three repeats is close to a coin flip.
+
+Everything on this page below was judged on ONE seed, and several of those
+judgements compared against a baseline taken at a different seed or a different
+`--repeats`. Two consequences, both uncomfortable:
+
+- The headline **"+27%, 0.3145 -> 0.4010"** and every rejection below are inside
+  a +/-1.0 noise band. They are not evidence. Treat them as UNMEASURED, not as
+  settled, and do not cite them as reasons a direction is closed. Only one result
+  on this page is clearly outside the band -- ordering candidates by shape rarity,
+  which took every game to ZERO levels in every repeat, a qualitatively different
+  event from an unlucky seed.
+- `--repeats` is not a speed knob. Repeat *r* plays with seed `s + 1000r`, so
+  best-of-3 is a superset of best-of-2 and always scores at least as high: the
+  same agent reads **1.7087 at repeats=3 and 0.3383 at repeats=2**. A day was
+  spent calling changes catastrophic against a number taken at the other setting.
+
+The tooling now enforces the fix:
+
+```
+make quick                       # ONE seed: a smoke test. Never a measurement.
+make quick-n SEEDS=4 TAG=mychange              # the inner loop, ~10 min
+make quick-n SEEDS=4 TAG=mychange VSDIR=base   # ... compared against runs/base
+python/bench/seeds.py runs/x/seed*.json --vs runs/base/seed*.json
+```
+
+`seeds.py` compares **paired on identical seeds** -- the agent's RNG stream is the
+same for a given seed, so most of the variance is common to both variants and
+cancels in the per-seed difference. Unpaired, an effect needs ~1.0 to be visible
+and our entire score is 1.5. It reports a change as REAL only when the mean
+difference clears twice its own standard error AND every seed agrees on the sign.
+`runs/base/seed1..4.json` is the current HEAD baseline; regenerate it whenever
+HEAD's behaviour changes.
+
+`bench.py --vs` now REFUSES to diff two runs taken at different
+repeats/max_steps/seed, and every summary stamps its settings.
+
+## Tried and rejected -- ALL of it measured on one seed, so read the section above first
 
 Both of these were built for the census's headline finding — that the dominant
 mechanic, 12 of 17 train games, is a click whose effect lands somewhere the click
@@ -259,18 +306,24 @@ s5i5 **not one** of the eight offered candidates does anything at all, while the
 controls that do exist sit at rank 21 and beyond. No credit-assignment fix can
 reach them.
 
-Two orderings were then measured against `quick` (baseline **1.7087**):
+Two orderings were then measured -- badly. Both runs were taken at `repeats=2`
+and compared against 1.7087, which was taken at `repeats=3`. The correct control,
+HEAD at repeats=2 seed 1, is **0.3383**:
 
-| variant | quick | vc33 | r11l | tn36 |
-|---|---|---|---|---|
-| rank by shape-class RARITY, size breaking ties | **0.0038** | 0 | 0 | 0 |
-| keep smallest-first, cap any one class at half the slots | **0.2750** | L1 at x8.4 | L1 at x2.5 | L1 at x3.8 |
+| variant (repeats=2, seed 1) | quick | verdict |
+|---|---|---|
+| HEAD control | 0.3383 | -- |
+| rank by shape-class RARITY | **0.0038** | genuinely worse: ZERO levels in every game and repeat |
+| keep smallest-first, cap any one class at half the slots | 0.2750 | **not distinguishable** from control -- lp85, tn36 and vc33 identical to three decimals, only r11l differs, and r11l swings 0.111-1.778 across seeds by itself |
+
+So only the rarity ordering is actually rejected. The per-class cap is UNMEASURED:
+it needs `make quick-n SEEDS=4 TAG=cap VSDIR=base` to say anything.
 
 Both looked excellent offline. Rarity put su15's only live control first (it was
 never offered) and made five of s5i5's eight slots live. The cap left the opening
 candidate lists of vc33 and tn36 **bit-identical** while still surfacing one live
 control in each of su15 and s5i5 -- it is not even a widening, the candidate count
-is unchanged. It still cost 84% of the score.
+is unchanged.
 
 Why the "bit-identical" check was worthless, and the real lesson: **the opening
 frame is not the experiment.** vc33 rescales its whole scene on every press, so
@@ -286,16 +339,18 @@ the whole opening -- the part the quadratic efficiency term punishes hardest --
 the order IS the policy. Reordering candidates is not "offering a different menu";
 it is rewriting the prior over every board the agent will ever see.
 
-So the direction is closed: the reachability of s5i5's and su15's controls is a
-real defect, and it is not fixable by touching the global ordering. That makes
-three separate ways of editing the candidate set that have now been measured
-worse (spread, rarity, per-class cap) on top of the two rejected wideners.
+What survives: the reachability of s5i5's and su15's controls is a REAL defect,
+measured -- not one of the eight offered candidates in either game is live. Ranking
+by rarity is a genuinely bad answer to it. Everything else about this direction is
+still open, and the per-class cap in particular was never actually measured.
 
 Two things this cost, worth keeping:
 
 1. **Diff the candidate list offline BEFORE spending a bench run** -- one RESET per
-   game and a printed top-8 is nearly free. But diff it along a TRAJECTORY: the
-   opening-frame check said vc33 was untouched and vc33 then lost its second level.
+   game and a printed top-8 is nearly free. Diff it along a TRAJECTORY rather than
+   on the opening frame: vc33 redraws its whole scene every press, so equality at
+   step 0 says nothing about step 5. (The claim that this cost vc33 its second
+   level was itself a noise artefact -- see the section at the top of this file.)
 2. **`decode` was lying, and is now fixed.** Its "live" tag counted any changed
    cell, and every action ticks the move clock, so it reported eight live controls
    in su15 where there are none -- which is how these games read as decoded when

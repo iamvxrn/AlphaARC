@@ -17,15 +17,22 @@ KIT      ?= $(HOME)/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter
 PY       := $(KIT)/.venv/bin/python
 GO       ?= /run/host/usr/lib/go/bin/go
 STEPS    ?= 250
-REPEATS  ?= 2
+# The engine scores a game by its BEST run, so `repeats` moves the aggregate on
+# its own: the recorded 1.7087 was taken at 3, and the SAME agent reads 0.3383
+# at 2 because vc33 reaches level 2 in only one repeat of three. Every recorded
+# baseline is repeats=3; changing this makes runs incomparable, not just slower.
+REPEATS  ?= 3
 SEED     ?= 1
 OUT      ?=
 VS       ?=
+SEEDS    ?= 4
+TAG      ?= tmp
+VSDIR    ?=
 
 BENCH_ARGS = --kit $(KIT) --max-steps $(STEPS) --repeats $(REPEATS) --seed $(SEED) \
              $(if $(OUT),--out $(OUT)) $(if $(VS),--vs $(VS))
 
-.PHONY: help quick decode bundle bench bench-all holdout census test test-go test-py check-bundle
+.PHONY: help quick quick-n decode bundle bench bench-all holdout census test test-go test-py check-bundle
 
 help:
 	@sed -n '2,12p' $(MAKEFILE_LIST)
@@ -36,8 +43,19 @@ bundle: ## flatten the package into the kit's agent/my_agent.py
 check-bundle: ## fail if the built agent is stale w.r.t. the package
 	python3 python/bench/bundle.py --kit $(KIT) --check
 
-quick: bundle ## INNER LOOP: only the games that ever score (~5 min, not ~40)
+quick: bundle ## one seed of the scoring games -- a SMOKE TEST, never a measurement
 	$(PY) python/bench/bench.py --split scoring $(BENCH_ARGS)
+
+quick-n: bundle ## INNER LOOP: SEEDS seeds of the scoring games, paired-comparable
+	@mkdir -p python/bench/runs/$(TAG)
+	@for s in $$(seq $(SEED) $$(($(SEED)+$(SEEDS)-1))); do \
+	    echo "=== seed $$s ==="; \
+	    $(PY) python/bench/bench.py --split scoring --kit $(KIT) --max-steps $(STEPS) \
+	        --repeats $(REPEATS) --seed $$s \
+	        --out python/bench/runs/$(TAG)/seed$$s.json | tail -3; \
+	done
+	@python3 python/bench/seeds.py python/bench/runs/$(TAG)/seed*.json \
+	    $(if $(VSDIR),--vs python/bench/runs/$(VSDIR)/seed*.json)
 
 bench: bundle ## train split -- confirmation, after `quick` says something moved
 	$(PY) python/bench/bench.py --split train $(BENCH_ARGS)

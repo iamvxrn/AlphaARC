@@ -79,12 +79,20 @@ up to date, no background jobs.
 (4 games, all scoring). Target 10. The L1-everywhere ceiling is 3.52, so the metric
 needs DEPTH, not more first levels.
 
-**The loop that works:** `make decode GAME=xx` -> understand -> build exactly what
-the decode specified -> `make quick` (127 s) -> confirm with `make bench` (~40 min).
-Nine changes have been measured; every one that paid came out of a decode, and
-every one that came from "this looks wrong, fix it" returned zero or worse. Read
-`python/bench/README.md` "Tried and rejected" (five entries) before proposing
-anything that widens exploration or edits the compression measurement.
+**THE MEASUREMENTS BEHIND EVERY PAST CLAIM WERE INVALID.** Measured 2026-08-26:
+same code, same `--repeats 3`, four seeds give quick = 1.7087 / 1.0019 / 0.5205 /
+2.9709 -- mean 1.5505, **sd 1.07, a 5.7x spread**, because the engine scores a game
+by its best run and vc33 reaching level 2 is nearly a coin flip. The "+27%" headline
+and all five "Tried and rejected" entries sit inside that band. Only ONE result is
+outside it (ranking candidates by shape rarity: every game to zero levels in every
+repeat). Treat the rest as UNMEASURED, not settled.
+
+**The loop:** `make decode GAME=xx` -> understand -> build exactly what the decode
+specified -> `make quick-n SEEDS=4 TAG=x VSDIR=base` (~10 min, PAIRED on identical
+seeds) -> confirm on `make bench`. `make quick` is a single seed: a smoke test,
+never a measurement. `python/bench/seeds.py` calls a change REAL only when the mean
+paired difference clears twice its standard error and every seed agrees on the sign.
+`python/bench/runs/base/` is HEAD's 4-seed baseline -- regenerate when HEAD moves.
 
 **Decoded: 17 of 17 train games** (lf52, s5i5, su15 finished 2026-08-26) — see
 `python/bench/README.md` and memory `reference_decoded_games`. Nothing on train is

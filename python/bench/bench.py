@@ -142,6 +142,9 @@ def main() -> None:
                     help="pinned RNG seed (the reference agent otherwise seeds from the clock)")
     ap.add_argument("--out", type=Path, default=None, help="write results JSON here")
     ap.add_argument("--vs", type=Path, default=None, help="diff against a results JSON")
+    ap.add_argument("--vs-anyway", action="store_true",
+                    help="compare even though the two runs used different "
+                         "repeats/max_steps/seed (almost always a mistake)")
     args = ap.parse_args()
 
     if args.split == "holdout" and not os.environ.get("ARC_HOLDOUT_OK"):
@@ -223,6 +226,10 @@ def main() -> None:
           f"engine card score: {scorecard.score:.4f}")
     print(f"ceiling reminder: L1 of every game at exact baseline = 3.52; "
           f">10 needs depth (first 2 levels everywhere) or ~3 full games")
+    # Stamp the settings on every summary. The engine scores a game by its BEST
+    # run, so an aggregate is only meaningful next to the repeats it was taken at.
+    print(f"settings: repeats={args.repeats} seed={args.seed} "
+          f"max_steps={args.max_steps}  --  compare only against runs with these")
     print(f"wall clock: {time.time() - t0:.0f}s  (cap {args.max_steps} actions/game)")
 
     payload = {
@@ -244,6 +251,23 @@ def main() -> None:
         shared = sorted(set(old["games"]) & set(results))
         if not shared:
             print(f"\nDIFF vs {args.vs}: no games in common -- nothing to compare.")
+            return
+        # Refuse to compare runs taken under different settings. The engine scores
+        # a game by its BEST run, so `repeats` alone moves the aggregate hugely:
+        # vc33 reaches level 2 in one repeat of three, so the recorded 1.7087 at
+        # repeats=3 reads as 0.3383 at repeats=2 with the SAME agent. A day was
+        # spent calling changes catastrophic regressions against that number. This
+        # is the same defect the game-set guard above already catches, one level
+        # down: a diff is meaningless unless the two runs were the same experiment.
+        settings = [("repeats", args.repeats), ("max_steps", args.max_steps),
+                    ("seed", args.seed)]
+        differs = [(k, old.get(k), v) for k, v in settings if old.get(k) != v]
+        if differs and not args.vs_anyway:
+            print(f"\nDIFF vs {args.vs}: REFUSED -- different experiment.")
+            for k, o, n in differs:
+                print(f"  {k}: {args.vs.name} used {o!r}, this run {n!r}")
+            print("  Re-run with matching settings, or pass --vs-anyway if you are "
+                  "certain the difference cannot matter.")
             return
         # Compare on the INTERSECTION. The aggregate is a mean over games, so
         # comparing a 17-game run against a 25-game one reads as a large gain that
