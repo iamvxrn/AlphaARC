@@ -114,11 +114,19 @@ same for a given seed, so most of the variance is common to both variants and
 cancels in the per-seed difference. Unpaired, an effect needs ~1.0 to be visible
 and our entire score is 1.5. It reports a change as REAL only when the mean
 difference clears twice its own standard error AND every seed agrees on the sign.
-`runs/base/seed1..4.json` is the current HEAD baseline; regenerate it whenever
-HEAD's behaviour changes.
+`runs/base/seed1..8.json` is the current HEAD baseline; regenerate it whenever
+HEAD's behaviour changes. `runs/base_preclock/` is the baseline before the
+move-budget fix, kept so that comparison stays reproducible, and
+`runs/handover_on/` is the rejected variant described under "the move budget"
+below.
 
 `bench.py --vs` now REFUSES to diff two runs taken at different
 repeats/max_steps/seed, and every summary stamps its settings.
+
+**Four seeds is not enough for an ABSOLUTE number either.** The same HEAD reads
+1.5505 over seeds 1-4 and **1.0967 over seeds 1-8** -- seeds 5-8 are all below the
+mean. Quote absolute scores with their seed count, and prefer the paired
+difference, which is what the loop can actually resolve.
 
 **What pairing buys, measured on the first change put through it** (keying the
 one-step policy's learned values by the board-invariant control signature instead
@@ -379,3 +387,53 @@ Two things this cost, worth keeping:
    cannot do this job: a click the engine does not accept never ticks the clock at
    all. `--points x,y;x,y` probes chosen cells, for checking what the ordering
    crowds out.
+
+## The move budget made every dead control look alive -- in the AGENT
+
+`decode` had this bug and it was fixed on 2026-08-26; the same morning it turned
+out all three policies had it too, where it costs actual score. Each asked
+
+```python
+if grid == self._prev_grid:      # nothing happened -> taboo it
+```
+
+and every accepted action ticks a move-budget strip -- row 0 in vc33, column 0 in
+r11l, row 63 in ft09, g50t, s5i5, su15 -- so the boards are NEVER equal. Inhibition
+of return never fired, `RunPlanner.inert` was never set, and `HybridPolicy`'s
+"switch after five dead clicks" was unreachable code; only its 25-action clock ever
+fired.
+
+Traced on vc33 level 2, seed 4: **26 consecutive actions** on the same four
+controls, every one returning a compression delta of -1 or -2, out of the 68 the
+level cost against a baseline of 18. Level 1 had gone in 6 actions against 7.
+
+`alphaarc/clock.py` fixes it. The clock cannot be found from WHICH cells move --
+su15 eats its budget bar two cells at a time, so no cell repeats and an
+intersection over transitions is empty. What is stable is the LINE. So count how
+often each row and column is touched and treat a change confined to lines that move
+on >=80% of transitions as the clock. A game with no strip (tn36) never has such a
+line and falls back to exact equality, which is correct there. A board that changes
+SHAPE is never the clock -- vc33 rescales its whole scene on a press.
+
+**This is not the rejected HUD mask.** That cropped the strip out of the
+COMPRESSION MEASUREMENT and moved Reflect by +68. This answers a different
+question -- "did anything happen?" -- and the answer to it was simply wrong.
+
+Measured paired over 8 seeds:
+
+| | aggregate | tn36 | vc33 | r11l |
+|---|---|---|---|---|
+| the fix | **+0.1993** +/- 0.1591 | **+0.846, all 8 seeds agree** | -0.089 mixed | +0.040 mixed |
+
+tn36 clears the bar and every seed agrees: a REAL per-game win. The aggregate leans
+positive (6 of 8 seeds) but does not clear 2*sem, so it is reported as a bug fix
+with one resolved win, not as a score improvement.
+
+**Kept switched OFF: the early hand-over.** Making `HybridPolicy.dead_run` clock-
+aware as well is one more line, and it is NOT part of the bug fix: `dead_streak=5`
+was chosen while that counter could not increment, so the threshold has never been
+calibrated against a counter that works. With it on, the hybrid gives vc33 and r11l
+to the planner at action ~13 instead of 25 -- and this class's own docstring records
+the planner scoring 0.000 on vc33 against the one-step policy's 4.343. Measured over
+4 seeds: tn36 +0.750 (all agree) but r11l -0.432, aggregate +0.10 +/- 0.19. It is
+behind `clock_dead_run=True`, and turning it on means re-deriving `dead_streak`.

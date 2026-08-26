@@ -14,6 +14,7 @@ from __future__ import annotations
 import random
 from typing import Dict, List, Optional, Tuple
 
+from .clock import ClockTracker
 from .mdl import PRIMITIVES, Grid
 from .perception import background_color, control_signature
 from .residual import object_targets, residual_targets
@@ -53,6 +54,10 @@ class Policy:
         self._prev_grid: Optional[Grid] = None
         self._prev_levels: Optional[List[float]] = None
         self._last_token: Optional[str] = None
+        # Survives board_replaced on purpose: the budget strip is a property of the
+        # GAME, not of the level, and re-learning which line it is costs the
+        # WARMUP actions again at every seam -- exactly where the score is.
+        self.clock = ClockTracker()
 
     def board_replaced(self) -> None:
         """The board was swapped out: a RESET, a GAME_OVER, or a LEVEL TRANSITION.
@@ -136,7 +141,11 @@ class Policy:
         d = max((n - o for n, o in zip(level, prev)), key=abs, default=0.0)
         self.drive_gain[self._last_token] = 0.6 * self.drive_gain.get(self._last_token, 0.0) + 0.4 * d
         self.succ[(self._last_token, self._key(prev))] = list(level)
-        if grid == self._prev_grid:  # the click changed nothing -> taboo it a while
+        # "Did that do anything?" -- and NOT `grid == self._prev_grid`, which is
+        # false on every step of every game that draws a move-budget strip, so this
+        # taboo never fired where it was needed most. Traced on vc33 level 2: 26
+        # consecutive actions on four controls returning nothing but the clock.
+        if self.clock.clock_only(self._prev_grid, grid):
             self.dead[self._last_token] = self.dead.get(self._last_token, 0.0) + 1.0
         # decay all taboos slightly (inhibition of return fades)
         for k in list(self.dead):

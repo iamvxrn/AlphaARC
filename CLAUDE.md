@@ -75,11 +75,14 @@ exists to refuse.
 Everything below is committed; tree clean, all suites green, `make check-bundle`
 up to date, no background jobs.
 
-**Where the score is:** quick = **1.5505 +/- 1.07 (sd over 4 seeds)**, NOT the
-1.7087 that used to be quoted -- that was one lucky seed. Target 10; the
-L1-everywhere ceiling is 3.52, so the metric needs DEPTH.
+**Where the score is:** quick = **1.2961 over 8 seeds** (HEAD, `runs/base/`), up
+from 1.0967 before the move-budget fix. NOT the 1.7087 that used to be quoted --
+that was one lucky seed, and even 4 seeds read 1.55 against 8 seeds' 1.10. Quote
+absolute scores with their seed count. Target 10; the L1-everywhere ceiling is
+3.52, so the metric needs DEPTH.
 
-Paired measurement has sd 0.0144, so the loop resolves ~0.03. Use it.
+Use the PAIRED difference: it resolves ~0.03 for a change that touches little and
+~0.3 for one that changes behaviour broadly. Add seeds until sem is small enough.
 
 **Where the score actually hides, measured:** vc33 takes level 1 in 6 actions
 against a baseline of 7 -- a CAPPED 115 points, nothing left to win there -- and
@@ -125,7 +128,12 @@ left to decode; the holdout stays sealed.
    class too**: it is a movement game played with CLICKS (avatar, route, waypoint),
    so whatever gives ls20 its goal-and-route should be shared with it.
 3. Depth on the four scoring games; vc33 reaches level 2 of 7.
-4. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
+4. **Turning on the early hand-over** (`HybridPolicy(clock_dead_run=True)`). The
+   move-budget fix made "did that click do anything?" work; the hand-over rule that
+   consumes it is still off, because `dead_streak=5` was set while its counter could
+   not increment. With it on: tn36 +0.750 (all seeds agree) but r11l -0.432. Worth a
+   proper sweep of `dead_streak` now that the counter is real.
+5. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
    and su15 not one of the eight offered click candidates is live, measured; the
    real controls sit at rank 21+. Three ways of editing the candidate set have now
    been measured worse — spread, rarity, per-class cap (Rejected #5) — because

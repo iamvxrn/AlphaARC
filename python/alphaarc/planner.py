@@ -27,6 +27,7 @@ import random
 from typing import Dict, List, Optional, Tuple
 
 from .mdl import PRIMITIVES, Grid, _components
+from .clock import ClockTracker
 from .perception import background_color, control_signature
 from .policy import Policy
 from .residual import object_targets, residual_targets
@@ -104,6 +105,7 @@ class RunPlanner:
         self._run_token: Optional[str] = None
         self._prev_grid: Optional[Grid] = None
         self._prev_levels: Optional[List[float]] = None
+        self.clock = ClockTracker()
 
     # ------------------------------------------------------------- bookkeeping
 
@@ -138,7 +140,10 @@ class RunPlanner:
         """Extend the profile of the control whose run we are inside."""
         if self._run_token is None or self._prev_grid is None:
             return
-        if grid == self._prev_grid:
+        # The budget strip ticks on every action, so an exact-equality test can
+        # never be true and `inert` was never once set in vc33, r11l, ft09, g50t,
+        # s5i5 or su15. See alphaarc/clock.py.
+        if self.clock.clock_only(self._prev_grid, grid):
             self.inert.add(self._run_token)
             self._presses_left = 0      # a dead control: stop spending on it
             return
@@ -328,7 +333,8 @@ class HybridPolicy:
     """
 
     def __init__(self, switch_after: int = 25, dead_streak: int = 5,
-                 rng: Optional[random.Random] = None, policy=None, planner=None):
+                 rng: Optional[random.Random] = None, policy=None, planner=None,
+                 clock_dead_run: bool = False):
         rng = rng or random.Random()
         # The engine adapter falls back to a random simple action when no click is
         # available -- keyboard-only games take that path on every step -- and it
@@ -345,10 +351,12 @@ class HybridPolicy:
         # opening on them. Dead clicks are the evidence, so switch on those rather
         # than only on a clock.
         self.dead_streak = dead_streak
+        self.clock_dead_run = clock_dead_run
         self.since_level = 0
         self.dead_run = 0
         self.switched = False
         self._prev_grid: Optional[Grid] = None
+        self.clock = ClockTracker()
 
     @property
     def active(self):
@@ -383,7 +391,25 @@ class HybridPolicy:
             return self.planner.choose(grid, bg, keys, clickable=False)
         self.since_level += 1
         if self._prev_grid is not None:
-            self.dead_run = self.dead_run + 1 if grid == self._prev_grid else 0
+            # DELIBERATELY still whole-board equality, which in a game with a move
+            # budget is never true -- so this counter stays zero and the hand-over
+            # below fires only on its 25-action clock.
+            #
+            # Fixing it is a one-line change and it is NOT a bug fix: `dead_streak`
+            # was set to 5 while this counter could not increment, so the threshold
+            # was never calibrated against a counter that works. Turning it on is
+            # NEW BEHAVIOUR and belongs to its own measurement. Measured with it on,
+            # paired over 4 seeds: tn36 +0.750 with all seeds agreeing, r11l -0.432,
+            # aggregate +0.10 +/- 0.19 -- not measurable, because it hands vc33 and
+            # r11l to the planner at action ~13 instead of 25, and this class's own
+            # docstring records the planner scoring 0.000 on vc33 against the
+            # one-step policy's 4.343.
+            #
+            # So: `clock_dead_run=True` enables it, and `dead_streak` has to be
+            # re-derived when it does. See alphaarc/clock.py.
+            dead = (self.clock.clock_only(self._prev_grid, grid) if self.clock_dead_run
+                    else grid == self._prev_grid)
+            self.dead_run = self.dead_run + 1 if dead else 0
         self._prev_grid = [row[:] for row in grid]
         if not self.switched and (self.since_level > self.switch_after
                                   or self.dead_run >= self.dead_streak):
