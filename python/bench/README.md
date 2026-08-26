@@ -458,3 +458,28 @@ re-run the sweep from the bench without editing code.
 The criterion was NOT relaxed to let this pass. Worth remembering next time: the
 temptation to widen the bar arrives precisely when your own change is just under
 it.
+
+### What the aggregate hid: the metric under-reports RELIABILITY
+
+The two changes above moved quick from 1.0967 to 1.3627, which looks slight. Per
+game over the same 8 seeds it is not slight at all:
+
+| game | levels taken, before -> after | L1 cost, mean x baseline |
+|---|---|---|
+| **vc33** | `[2,1,2,2,1,1,1,2]` -> **`[2,2,2,2,2,2,2,2]`** | 2.1 -> 1.9 |
+| **lp85** | 3 of 8 seeds -> **6 of 8** | 13.0 -> **5.3** |
+| **tn36** | 8 of 8 -> 8 of 8 | 3.0 -> **1.6** |
+| **r11l** | 8 of 8 -> 8 of 8 | 4.2 -> **3.2** |
+
+Every game improved. The aggregate barely moved because a game is scored by its
+BEST run of three, so the lucky runs were already being counted -- what improved is
+the TYPICAL one. Two things follow:
+
+- **Read the per-game levels and per-level actions, not only the aggregate.** A
+  change that makes the agent reliable looks almost free on the headline number.
+- Reliability is the precondition for DEPTH, which is where the metric's weight
+  actually is. vc33 cannot reach level 3 until it reaches level 2 every time, and
+  as of today it does.
+
+The best-of-N shape is the real Kaggle scoring rule, so it is the right target --
+but when judging a change, look at whether the floor came up, not only the ceiling.

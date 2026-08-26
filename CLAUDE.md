@@ -84,6 +84,14 @@ absolute scores with their seed count. Target 10; the L1-everywhere ceiling is
 Use the PAIRED difference: it resolves ~0.03 for a change that touches little and
 ~0.3 for one that changes behaviour broadly. Add seeds until sem is small enough.
 
+**And read the per-game levels, not only the aggregate.** A game is scored by its
+BEST run of three, so a change that lifts the TYPICAL run barely moves the headline.
+Today's two changes read as +0.27 on the aggregate and look like this per game over
+8 seeds: vc33 reaches level 2 in `[2,2,2,2,2,2,2,2]` where it used to manage
+`[2,1,2,2,1,1,1,2]`; lp85 takes its level in 6 of 8 seeds instead of 3, at x5.3
+baseline instead of x13.0; tn36 x3.0 -> x1.6; r11l x4.2 -> x3.2. Reliability is the
+precondition for depth, and depth is where the metric's weight is.
+
 **Where the score actually hides, measured:** vc33 takes level 1 in 6 actions
 against a baseline of 7 -- a CAPPED 115 points, nothing left to win there -- and
 then spends 68 actions on level 2 against a baseline of 18. vc33 at baseline on
