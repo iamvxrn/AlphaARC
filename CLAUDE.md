@@ -150,8 +150,19 @@ left to decode; the holdout stays sealed.
    keyed by (token, STATE). DONE, in part: the model turned out to be consulted
    successfully 18-25% of the time and to predict "nothing happens" on 84% of vc33's
    hits, and the policy was ignoring that -- now it does not (+0.146 over 16 seeds,
-   unresolved). What is still open is the state key: 25% hits means three lookups in
-   four still miss, so most of the model is never reached.
+   unresolved). **The state key is now CLOSED, 2026-08-27** -- and the premise was
+   wrong. Instrumented over every lookup the policy makes, the fine key answers
+   ~50%, not 18-25% (vc33 50%, r11l 43%, lp85 84%, tn36 25% at seed 1); 25% was
+   tn36 alone. It is a reach/truth TRADE, not a defect: coarsening buys reach and
+   pays in the answer being true, the optimum differs per game, and `argmax` /
+   `rank order` keys carry literally zero bits (they reproduce the state-free
+   numbers exactly -- the dominant primitive never changes inside a game). Backing
+   off to the state-free fact "this control has never once moved the board" reached
+   more on 8 of 8 game-seeds offline and measured **-0.0336 +/- 0.0695 over 16
+   seeds**: reverted, because the suppression is SELF-CONFIRMING (one dead press
+   writes a control off, and being written off prevents the press that would clear
+   it -- seed 7, vc33 -4.16, a lost level 2). Requiring two distinct states erases
+   the whole gain. Full write-up: `python/bench/README.md` Rejected #6.
 5. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
    and su15 not one of the eight offered click candidates is live, measured; the
    real controls sit at rank 21+. Three ways of editing the candidate set have now
@@ -159,6 +170,10 @@ left to decode; the holdout stays sealed.
    `residual_bonus / (i + 1)` makes rank the policy's PRIOR, not a tie-breaker.
    Any new attempt needs a mechanism that reaches those controls WITHOUT changing
    the order of the ones already there, and must be diffed along a trajectory
-   rather than on the opening frame.
+   rather than on the opening frame. **Measured 2026-08-27, and it sharpens
+   the class:** on lp85 the policy is offered 16 candidates per step while only 2
+   tokens are ever live in the whole run, and 94% of transitions do nothing. A
+   perfect dead-detector suppresses 14 of 16 and still chooses between the same
+   two -- no world model reaches past a candidate-set limit.
 
 **Do NOT touch the holdout** — sealed by the user, criterion above.

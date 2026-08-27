@@ -506,6 +506,73 @@ the TYPICAL one. Two things follow:
 The best-of-N shape is the real Kaggle scoring rule, so it is the right target --
 but when judging a change, look at whether the floor came up, not only the ceiling.
 
+### Rejected #6: backing the state key off to a state-free fact
+
+The handoff called the state key the next wall: "the model is consulted
+successfully only 18-25% of the time, so three lookups in four miss." Both halves
+of that turned out to need correcting, and the correction is worth more than the
+change was.
+
+**The premise was wrong as stated.** `Policy` was instrumented to record every
+lookup it makes -- the level vector, every candidate's token, the one chosen --
+across the four scoring games at two seeds. How often the key `(token, levels//16)`
+finds anything at all:
+
+| | vc33 | r11l | lp85 | tn36 |
+|---|---|---|---|---|
+| seed 1 | 49.9% | 42.9% | 84.4% | 25.2% |
+| seed 4 | 41.5% | 41.8% | 85.3% | 42.9% |
+
+25% is **tn36**, not the rule. The model answers about half of all lookups.
+
+**And it is a trade, not a defect.** Twelve key schemes replayed over the same
+traces, scored on two numbers instead of one -- how often the key answers, and
+whether the answer is still true. Coarsening buys reach and pays in truth, and the
+optimum differs per game, so no single bucket size is the answer. At bucket 4 on
+vc33 the sign of the prediction is right 100% of the time and the reach falls to
+42%; state-free reaches 80% and the sign is right 71%. Two schemes that looked
+promising are dead outright: **`argmax` (which primitive dominates) and `rank
+order` reproduce the state-free numbers exactly**, on every game -- the dominant
+primitive never changes inside a game, so those keys carry zero bits.
+
+**What was built.** The policy asks the model two different questions and only one
+needs the exact successor: "what will this control do here?" needs the fine key,
+but "is it dead here?" is a binary. So: fine key first; on a miss, fall back to a
+fact that needs no state at all -- *a control that has never once moved the board,
+from any state, is dead here too* -- abstaining the moment it works once, which is
+what keeps a toggle (tn36) and a saturating scalar (vc33's + is dead at saturation
+and live again after a -) out of it. The run-planner has had exactly this fact all
+along, as `inert`; the one-step policy, which plays the opening of every level, did
+not. Replayed offline it answered more lookups on 8 of 8 game-seeds (vc33 50->55%,
+lp85 84->89%, tn36 25->35%) with the dead calls no less precise (vc33 100->98%,
+r11l 78->85%, lp85 98->98%).
+
+**Measured paired, 16 seeds: -0.0336, sem 0.0695. Not measurable, and the mean is
+negative** -- so it fails the third clause of the keep-rule at the top of this file
+and was reverted. `runs/backoff/` is kept as the evidence.
+
+The shape of the failure is the useful part. Six seeds improved, four worsened, six
+were untouched; the mean is dragged under by **seed 7 alone, vc33 -4.16** -- a lost
+level 2. That is exactly what the mechanism's one flaw predicts: the suppression is
+**self-confirming**. One unlucky dead press writes a control off permanently, and
+being written off prevents the press that would clear it. The decaying taboo avoids
+this by fading; this had no decay at all.
+
+The obvious repair -- demand evidence from two DISTINCT states before making a
+state-free claim, two being the smallest plural and no new constant -- was tested
+offline first and **erases the entire gain**: vc33 returns to 49.9% reach and 47
+dead calls, i.e. exactly HEAD. The extra reach came from precisely the
+single-observation aggressiveness that causes the lock-out. There is no version of
+this idea that keeps one without the other, which is why it is recorded as closed
+rather than as pending.
+
+**One measurement from the traces outlives the change** and belongs to candidate
+reachability (Rejected #5's open half), not to the model: on lp85 the policy is
+offered **16 candidates per step and only 2 tokens are ever live in the whole run**,
+with 94% of transitions doing nothing. A perfect dead-detector there suppresses 14
+of 16 and still chooses between the same two. That is a candidate-set limit, and no
+amount of world model reaches past it.
+
 ## An absence of reward is not a known absence of effect
 
 `Policy` scored a control the world model had **already watched do nothing from
