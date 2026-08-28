@@ -159,10 +159,28 @@ left to decode; the holdout stays sealed.
    not the credit: dc22's mode is a cursor position that moves 9 cells of 4096, and
    the per-primitive level vector cannot see it. The class needs a state that also
    carries WHERE the last small change happened.
-2. Movement beyond ls20 — g50t, m0r0, re86, sp80 still zero. **su15 belongs in this
-   class too**: it is a movement game played with CLICKS (avatar, route, waypoint),
-   so whatever gives ls20 its goal-and-route should be shared with it.
-3. Depth on the four scoring games; vc33 reaches level 2 of 7.
+2. **Movement: the GOAL, not the avatar and not the route.** Narrowed hard on
+   2026-08-29 and this is now the sharpest open item in the file. The avatar
+   detector was fixed (it tested a whole COLOUR as one body, so g50t's 24-cell
+   avatar inside 119 cells of colour 9 was invisible; now a per-component back-off
+   sees it) and **the score did not move by 0.0000 on six paired seeds**. Because
+   the detector was never the blocker: instrumented over a full run, ls20's
+   `_route` fires **243 of 249** calls with the avatar found and four directions
+   learned and completes ZERO levels, while g50t's is **silent 248 of 248** even
+   with five directions -- the target it picks, the nearest residual/object
+   candidate, sits adjacent to the avatar and no 6-cell step shortens a distance of
+   1. So the route half is built and demonstrably insufficient, and
+   **"the nearest anomaly" is not the goal of any of these games**. What is needed
+   is a perception answer to "what on this board is a DESTINATION?" -- su15's decode
+   already names the shape of one (a 9-blob goal with a dashed route and a
+   waypoint), and su15 belongs to this class despite being played with clicks.
+   Do NOT spend more effort on detecting or steering the avatar.
+3. Depth on the four scoring games; vc33 still reaches level 2 of 7 on every seed,
+   and the seam fix did not change that -- it made the levels already reached much
+   cheaper (vc33 L2 x5.95 -> x2.27). Remaining efficiency headroom, mean over 16
+   seeds: lp85 L1 x2.74, vc33 L2 x2.27, r11l L1 x1.91, vc33 L1 x1.75, tn36 L1 x1.02
+   (that last one is at baseline -- capped, nothing left to win there). Depth past
+   vc33 level 2 is now the only large untried lever on this split.
 4. **Dead clicks were 58% of the budget** (partly addressed; see below).** Measured on
    vc33 level 2, seed 7: 52 of 90 transitions do nothing but tick the move clock,
    with the detector working correctly. `Policy.dead` decays x0.75 a step, so it
@@ -188,6 +206,11 @@ left to decode; the holdout stays sealed.
    writes a control off, and being written off prevents the press that would clear
    it -- seed 7, vc33 -4.16, a lost level 2). Requiring two distinct states erases
    the whole gain. Full write-up: `python/bench/README.md` Rejected #6.
+   **Independently replicated 2026-08-29** from a fresh trace and a fresh 16-seed
+   run: the same -0.0336, and the same offline picture (fine key answers ~50%;
+   `argmax`/`rank order` reproduce the state-free numbers exactly). Treat this item
+   as CLOSED and read it before re-opening the state key -- the replication cost an
+   hour that the line above had already paid for.
 5. **Candidate REACHABILITY (real, but do not attack it by re-ordering).** In s5i5
    and su15 not one of the eight offered click candidates is live, measured; the
    real controls sit at rank 21+. Three ways of editing the candidate set have now
