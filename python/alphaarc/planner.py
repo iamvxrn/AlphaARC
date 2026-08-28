@@ -33,13 +33,18 @@ from .policy import Policy
 from .residual import object_targets, residual_targets
 
 
-def rigid_move(before: Grid, after: Grid, bg: int) -> Optional[Tuple[int, int, int]]:
-    """(colour, drow, dcol) if exactly one colour's cells moved as a rigid body.
+def _normalise(cells) -> frozenset:
+    """A shape, independent of where it sits."""
+    r0 = min(r for r, _ in cells)
+    c0 = min(c for _, c in cells)
+    return frozenset((r - r0, c - c0) for r, c in cells)
 
-    This is how an avatar announces itself. Everything else on the board -- a
-    budget strip ticking, a counter, scenery being repainted -- fails the test,
-    because a rigid translation preserves the cell COUNT and every offset.
-    """
+
+def _rigid_by_colour(before: Grid, after: Grid, bg: int) -> Optional[Tuple[int, int, int]]:
+    """Exactly one COLOUR's cells moved as one rigid body. The original rule, kept
+    first and unchanged, because it is what already finds ls20's and sp80's
+    avatars and any replacement risks finding a different body than the one the
+    route was built around."""
     moved = None
     colours = {v for row in before for v in row} | {v for row in after for v in row}
     for colour in colours:
@@ -57,6 +62,71 @@ def rigid_move(before: Grid, after: Grid, bg: int) -> Optional[Tuple[int, int, i
                 return None          # two bodies moved: not one avatar
             moved = (colour, dr, dc)
     return moved
+
+
+def _rigid_by_component(before: Grid, after: Grid, bg: int):
+    """(colour, shape, drow, dcol) for the largest SHAPE that translated.
+
+    Reached only where the colour test above is silent, and that is not a rare
+    corner: probing every key of every movement game from a fresh board, g50t's
+    avatar is a 24-cell colour-9 shape moving (+6,0) on ACTION2 and (0,+6) on
+    ACTION4 -- perfectly rigid -- while colour 9 covers 119 cells, most of them
+    scenery, so the colour is not a translation and the detector reported NOTHING.
+    All five of g50t's directions were invisible.
+
+    Ambiguity is still refused: two shapes of the SAME size moving in different
+    directions is m0r0's mirrored pair of 25-cell markers, (0,-5) and (0,+5) on
+    one key, where "which of them am I steering" has no answer yet.
+    """
+    a, b = _shapes(before, bg), _shapes(after, bg)
+    moved = []
+    for key in set(a) & set(b):
+        pa, pb = sorted(a[key]), sorted(b[key])
+        if pa == pb or len(pa) != len(pb):
+            continue
+        for off in {(q[0] - p[0], q[1] - p[1]) for p, q in zip(pa, pb)}:
+            moved.append((len(key[1]), key[0], off, key[1]))
+    if not moved:
+        return None
+    size = max(m[0] for m in moved)
+    top = {m[2] for m in moved if m[0] == size}
+    if len(top) != 1:
+        return None
+    colour, shape = next((m[1], m[3]) for m in moved if m[0] == size)
+    (dr, dc), = top
+    return (colour, shape, dr, dc)
+
+
+def _shapes(grid: Grid, bg: int):
+    """(colour, shape normalised to its own top-left) -> the anchors it occurs at."""
+    out: Dict[Tuple[int, frozenset], List[Tuple[int, int]]] = {}
+    for col, cells in _components(grid, bg):
+        out.setdefault((col, _normalise(cells)), []).append(
+            (min(r for r, _ in cells), min(c for _, c in cells)))
+    return out
+
+
+def rigid_body(before: Grid, after: Grid, bg: int):
+    """(colour, shape or None, drow, dcol) for the body that translated.
+
+    Two levels, and the order is the whole point. The colour test runs first and
+    its answer stands, so every game where the avatar was already found behaves
+    EXACTLY as before -- shape None means "locate it by colour", the old code
+    path. Replacing that rule instead of extending it was measured: naming the
+    largest moving shape re-identified ls20's avatar from colour 12 to colour 9
+    and cost it its level (0.385 -> 0.000 at seed 2). The per-component rule is
+    reached only where the colour rule found nothing at all.
+    """
+    got = _rigid_by_colour(before, after, bg)
+    if got is not None:
+        return (got[0], None, got[1], got[2])
+    return _rigid_by_component(before, after, bg)
+
+
+def rigid_move(before: Grid, after: Grid, bg: int) -> Optional[Tuple[int, int, int]]:
+    """The avatar's colour and offset -- `rigid_body` without the shape."""
+    got = rigid_body(before, after, bg)
+    return None if got is None else (got[0], got[2], got[3])
 
 
 def _gain(now: List[float], later: List[float]) -> float:
@@ -94,6 +164,10 @@ class RunPlanner:
         # and its credit are both fine and it still scores zero.
         self.moves: Dict[str, Tuple[int, int]] = {}
         self.avatar: Optional[int] = None
+        # ...and the avatar's SHAPE, when the colour alone does not locate it:
+        # g50t's avatar is a 24-cell shape inside 119 cells of colour 9, so a
+        # centroid over the colour sits in the scenery. None = locate by colour.
+        self.avatar_shape: Optional[frozenset] = None
         self._bg: Optional[int] = None
         self.tries: Dict[str, int] = {}
 
@@ -150,10 +224,10 @@ class RunPlanner:
         prof = self.profiles.setdefault(self._run_token, [self._prev_levels or levels])
         prof.append(levels)
         if self._run_token.startswith("k") and self._bg is not None:
-            got = rigid_move(self._prev_grid, grid, self._bg)
+            got = rigid_body(self._prev_grid, grid, self._bg)
             if got:
-                self.avatar = got[0]
-                self.moves[self._run_token] = (got[1], got[2])
+                self.avatar, self.avatar_shape = got[0], got[1]
+                self.moves[self._run_token] = (got[2], got[3])
 
     # ------------------------------------------------------------- deciding
 
@@ -166,6 +240,21 @@ class RunPlanner:
                 pts.append(p)
         return pts
 
+    def _avatar_cells(self, grid: Grid, bg: int) -> List[Tuple[int, int]]:
+        """Where the avatar is NOW. By shape when one is known and occurs exactly
+        once; otherwise every cell of its colour -- the original behaviour, which
+        is right for a one-body scene and merely imprecise, whereas guessing
+        between two identical bodies is not."""
+        if self.avatar is None:
+            return []
+        if self.avatar_shape is not None:
+            hits = [cells for col, cells in _components(grid, bg)
+                    if col == self.avatar and _normalise(cells) == self.avatar_shape]
+            if len(hits) == 1:
+                return hits[0]
+        return [(r, c) for r in range(len(grid))
+                for c in range(len(grid[r])) if grid[r][c] == self.avatar]
+
     def _route(self, grid: Grid, bg: int) -> Optional[str]:
         """The key that most reduces the avatar's distance to the anomaly, or None.
 
@@ -175,14 +264,13 @@ class RunPlanner:
         """
         if self.avatar is None or len(self.moves) < 2:
             return None
-        cells = [(r, c) for r in range(len(grid))
-                 for c in range(len(grid[r])) if grid[r][c] == self.avatar]
+        cells = self._avatar_cells(grid, bg)
         if not cells:
             return None
         ar = sum(r for r, _ in cells) / len(cells)
         ac = sum(c for _, c in cells) / len(cells)
-        targets = self._candidates(grid, bg)
-        targets = [t for t in targets if grid[t.y][t.x] != self.avatar]
+        occupied = set(cells)
+        targets = [t for t in self._candidates(grid, bg) if (t.y, t.x) not in occupied]
         if not targets:
             return None
         t = min(targets, key=lambda p: abs(p.y - ar) + abs(p.x - ac))

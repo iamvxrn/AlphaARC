@@ -7,7 +7,9 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from alphaarc.planner import HybridPolicy, RunPlanner, _gain, rigid_move  # noqa: E402
+from alphaarc.planner import (  # noqa: E402
+    HybridPolicy, RunPlanner, _gain, rigid_body, rigid_move,
+)
 from alphaarc.policy import Policy  # noqa: E402
 
 BG = 9
@@ -356,6 +358,95 @@ def test_rigid_move_finds_the_avatar_and_ignores_a_ticking_hud():
     hud = [row[:] for row in a]
     hud[0][3] = 2                                   # one more cell appears
     assert rigid_move(a, hud, BG) is None
+
+
+def test_the_colour_rule_wins_wherever_it_fires():
+    """The ORDER is the whole safety of this. Replacing the colour rule with the
+    per-component one was measured and it re-identified ls20's avatar from colour
+    12 to colour 9, costing the game its level (0.385 -> 0.000 at seed 2). So the
+    colour rule answers first and its answer stands, and `shape is None` means
+    "locate by colour" -- the original code path, bit for bit."""
+    a = _blank(20, 20)
+    a[10][5] = 7
+    a[10][6] = 7                        # one body of one colour: the colour rule fires
+    a[2][2] = 4
+    a[2][3] = 4
+    a[2][4] = 4                         # a LARGER shape that does not move
+    b = [row[:] for row in a]
+    b[10][5] = BG
+    b[10][6] = BG
+    b[12][5] = 7
+    b[12][6] = 7
+    assert rigid_body(a, b, BG) == (7, None, 2, 0), \
+        "the colour rule did not answer first: %s" % (rigid_body(a, b, BG),)
+
+
+def test_the_avatar_is_a_shape_inside_its_colour_not_the_whole_colour():
+    """g50t's defect, pinned. Its avatar is a 24-cell shape sitting inside 119
+    cells of colour 9, so testing the COLOUR as one body found no translation at
+    all and the game lost every direction it has. Per component, the avatar
+    translates perfectly."""
+    a = _blank(20, 20)
+    for c in range(2, 18):
+        a[1][c] = 7                     # scenery: a wall that shares the colour
+    a[10][5] = 7                        # the avatar
+    a[10][6] = 7
+    b = [row[:] for row in a]
+    b[10][5] = BG
+    b[10][6] = BG
+    b[12][5] = 7
+    b[12][6] = 7
+    assert rigid_move(a, b, BG) == (7, 2, 0), \
+        "the avatar was lost inside the scenery that shares its colour: %s" % (
+            rigid_move(a, b, BG),)
+
+
+def test_a_body_that_moves_with_a_marker_on_the_same_offset_is_still_one_avatar():
+    """g50t moves a one-cell marker along with its avatar, on the same vector. Two
+    bodies agreeing on a direction is not an ambiguity -- the old rule refused it
+    and lost the game."""
+    a = _blank(20, 20)
+    for c in range(5, 9):
+        a[10][c] = 7                    # the avatar
+    a[3][3] = 4                         # a marker that travels with it
+    b = [row[:] for row in a]
+    for c in range(5, 9):
+        b[10][c] = BG
+        b[12][c] = 7
+    b[3][3] = BG
+    b[5][3] = 4
+    assert rigid_move(a, b, BG) == (7, 2, 0)
+
+
+def test_two_identical_bodies_moving_apart_are_refused():
+    """m0r0's mirrored pair: two 25-cell markers, one per panel, moving (0,-5) and
+    (0,+5) on the same key. Which one is the avatar has no answer yet, so the
+    detector must abstain rather than pick."""
+    a = _blank(20, 20)
+    a[5][5] = 7
+    a[5][14] = 7
+    b = [row[:] for row in a]
+    b[5][5] = BG
+    b[5][14] = BG
+    b[5][3] = 7                         # left marker goes left
+    b[5][16] = 7                        # right marker goes right
+    assert rigid_move(a, b, BG) is None
+
+
+def test_the_planner_finds_the_avatar_by_shape_not_by_colour():
+    """The other half of the same fix: once the avatar is known, it must be
+    LOCATED by its shape. A centroid taken over every cell of its colour sits in
+    g50t's scenery, and every route computed from it points the wrong way."""
+    g = _blank(20, 20)
+    for c in range(2, 18):
+        g[1][c] = 7                     # scenery, same colour
+    g[10][5] = 7
+    g[10][6] = 7
+    p = RunPlanner(rng=random.Random(0))
+    p.avatar = 7
+    p.avatar_shape = frozenset({(0, 0), (0, 1)})
+    assert sorted(p._avatar_cells(g, BG)) == [(10, 5), (10, 6)], \
+        "the avatar was located over its whole colour: %s" % (p._avatar_cells(g, BG),)
 
 
 class MoveWorld:

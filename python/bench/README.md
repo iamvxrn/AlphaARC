@@ -653,3 +653,56 @@ side of a seam -- more than halves. A change that merely made the agent cleverer
 would have moved both. That asymmetry is the mechanism showing itself, and it is
 the reason to believe the aggregate rather than to suspect the seeds.
 
+## The movement class: the avatar detector was never the blocker
+
+Five train games are movement games and four of them score zero. `RunPlanner._route`
+-- the only thing that gives a movement game a goal -- is gated on `rigid_move`
+having found an avatar and at least two directions, so the first question is
+whether that gate ever opens. Probing every key of every movement game from a
+fresh board (`scratchpad` probes, three presses each):
+
+| game | what the detector saw | what is actually there |
+|---|---|---|
+| ls20 | 3 directions, colour 12 | works, and must not be disturbed |
+| sp80 | 4 directions, an 80-cell colour-9 avatar | works |
+| m0r0 | 2 directions, both VERTICAL | two 25-cell markers, one per panel; horizontally they MIRROR -- (0,-5) and (0,+5) on one key -- so the union is not a translation |
+| g50t | **nothing, on all five keys** | a 24-cell colour-9 shape moving (+6,0) on ACTION2 and (0,+6) on ACTION4, perfectly rigidly -- inside 119 cells of colour 9, most of them scenery |
+
+So `rigid_move` tested a whole COLOUR as one body, and g50t's avatar is a
+component inside a colour. Fixed by adding a per-component test -- as a
+**back-off, not a replacement**, and that distinction was measured: replacing the
+colour rule with "the largest shape that translated" re-identified ls20's avatar
+from colour 12 to colour 9 and cost it its level, **0.385 -> 0.000 at seed 2**.
+With the colour rule answering first, ls20 and m0r0 return their original answers
+bit for bit and g50t gains two directions where it had none.
+
+**And it changes no score, which is the actual finding.** Instrumented over a full
+250-action run at seed 1:
+
+- **ls20** -- `_route` fires on **243 of 249** calls, with the avatar found and all
+  four directions learned. Zero levels completed. The mechanism runs constantly
+  and does not win.
+- **g50t** -- now learns five directions and a 24-cell avatar, and `_route` is
+  **silent 248 times out of 248**. The gate is open; what fails is inside. The
+  target it picks is the nearest residual/object candidate, which sits adjacent to
+  the avatar, and no 6-cell step reduces a distance of 1.
+- **sp80** -- learns only 2 of its 4 directions in a live run (against 4 from a
+  fresh board) and marks five controls inert.
+
+**"The nearest anomaly" is not the goal of any of these games.** That is what the
+decode said for ls20 a session ago -- "needs a GOAL and a route" -- and the route
+half is now demonstrably present and demonstrably insufficient. The goal half is
+the open problem, and it is a perception question (what on this board is a
+destination?), not a planning one.
+
+Measured paired on the movement split (ls20, g50t, sp80, m0r0), **six seeds, both
+arms**: the difference is **exactly 0.0000 on every seed**, not merely small. That
+is the back-off construction showing up in the numbers -- the colour rule answers
+first, so every transition it already explained behaves identically -- and the four
+scoring games are all tagged pure `click`, where the planner's key path is never
+reached at all. Kept under the three-part rule at the top of this file as a
+correctness fix: `rigid_move`'s own docstring said "this is how an avatar announces
+itself" while it could not see an avatar that translates perfectly rigidly. Note
+the rule asks for 16 seeds and this has 6 -- defensible only because the difference
+is an identity rather than a small number.
+
