@@ -449,6 +449,68 @@ def test_the_planner_finds_the_avatar_by_shape_not_by_colour():
         "the avatar was located over its whole colour: %s" % (p._avatar_cells(g, BG),)
 
 
+def _steerer(moves=None):
+    p = RunPlanner(rng=random.Random(0))
+    p.moves = moves or {"k1": (-5, 0), "k2": (5, 0), "k3": (0, -5), "k4": (0, 5)}
+    p._h = p._w = 64
+    return p
+
+
+def test_the_route_goes_around_a_wall_instead_of_pushing_into_it():
+    """Greedy distance cannot solve a maze, because getting past a wall means
+    moving AWAY from the target for a step. ls20 IS a maze."""
+    p = _steerer()
+    assert p._plan((45, 35), (30, 35), 2) == "k1", "a clear line should just be walked"
+    p.blocked = {((45, 35), "k1"), ((45, 40), "k1")}
+    assert p._plan((45, 35), (30, 35), 2) in ("k3", "k4"), \
+        "the route pushed into a known wall instead of stepping aside"
+
+
+def test_an_unreachable_destination_is_reported_not_hammered():
+    """Walled in on every side: the caller needs a None so it can cross the
+    destination off and sweep to the next one."""
+    p = _steerer()
+    p.blocked = {((45, 35), k) for k in p.moves}
+    assert p._plan((45, 35), (30, 35), 2) is None
+    assert p._plan((30, 35), (30, 35), 2) is None, "already there is not a journey"
+
+
+def test_a_routed_key_that_did_not_move_the_avatar_marks_a_wall():
+    """A wall is an edge that does not exist, and the only way to find out is to
+    try. Pinned end to end through _route rather than on the helper."""
+    bg = 9
+    g = _blank(30, 30)
+    g[10][10] = 7
+    g[10][11] = 7                       # the avatar
+    g[2][20] = 4                        # something to aim at
+    p = _steerer()
+    p.avatar, p.avatar_shape = 7, None
+    first = p._route(g, bg)
+    assert first is not None, "fixture must produce a route"
+    assert p._routed_from == ((10, 10), first)
+    p._route(g, bg)                     # same board: the avatar did not move
+    assert ((10, 10), first) in p.blocked, "a key that moved nothing was not a wall"
+
+
+def test_the_destination_is_held_across_steps_not_re_chosen():
+    """The defect this replaces: re-deriving 'the nearest candidate' every step is
+    a gradient that reverses as soon as the avatar moves. Measured on ls20 seed 1
+    -- 249 route decisions, the avatar oscillating between about six positions with
+    the key alternating between two OPPOSITE directions."""
+    bg = 9
+    g = _blank(30, 30)
+    g[10][10] = 7
+    g[10][11] = 7
+    g[2][20] = 4
+    p = _steerer()
+    p.avatar, p.avatar_shape = 7, None
+    p._route(g, bg)
+    held = p._dest
+    assert held is not None
+    p._route(g, bg)
+    assert p._dest == held, "the destination was re-chosen underneath the agent"
+
+
 class MoveWorld:
     """Four keys translate an avatar; one cell elsewhere breaks the symmetry and is
     therefore what the residual points at. Reaching it is the goal."""

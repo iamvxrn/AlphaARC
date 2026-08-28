@@ -24,6 +24,7 @@ baseline is what the metric actually rewards.
 from __future__ import annotations
 
 import random
+from collections import deque
 from typing import Dict, List, Optional, Tuple
 
 from .mdl import PRIMITIVES, Grid, _components
@@ -168,6 +169,16 @@ class RunPlanner:
         # g50t's avatar is a 24-cell shape inside 119 cells of colour 9, so a
         # centroid over the colour sits in the scenery. None = locate by colour.
         self.avatar_shape: Optional[frozenset] = None
+        # The destination the avatar is currently steering at, held across steps
+        # instead of re-derived, and the ones already reached or given up on.
+        self._dest: Optional[Tuple[int, int]] = None
+        self._dest_best: Optional[float] = None
+        self._dest_stale = 0
+        self.crossed_off: set = set()
+        # A wall is an EDGE THAT DOES NOT EXIST, learned by trying: a routed key
+        # that leaves the avatar where it was marks (anchor, key) impassable.
+        self.blocked: set = set()
+        self._routed_from: Optional[Tuple[Tuple[int, int], str]] = None
         self._bg: Optional[int] = None
         self.tries: Dict[str, int] = {}
 
@@ -207,6 +218,15 @@ class RunPlanner:
         self._prev_levels = None
         self.profiles.clear()
         self.ran.clear()
+        # A destination is a place on THIS board; the next level's board is a
+        # different place. What survives is the key->offset map, which is the
+        # mechanic.
+        self._dest = None
+        self._dest_best = None
+        self._dest_stale = 0
+        self.crossed_off.clear()
+        self.blocked.clear()          # walls are a property of THIS board
+        self._routed_from = None
 
     reset_episode = board_replaced
 
@@ -240,6 +260,34 @@ class RunPlanner:
                 pts.append(p)
         return pts
 
+    def _plan(self, pos, dest, tol: float) -> Optional[str]:
+        """First key of a shortest path from `pos` to within `tol` of `dest`.
+
+        Greedy distance cannot go around a wall -- that is the whole difficulty of
+        a maze, and ls20 is a maze -- because getting past one means moving AWAY
+        from the target for a step. Breadth-first over the lattice the avatar's own
+        offsets define, with the edges it has found to be impassable removed, will
+        do that; untried edges are assumed open, which is what makes it explore.
+        """
+        if abs(pos[0] - dest[0]) + abs(pos[1] - dest[1]) <= tol:
+            return None
+        seen = {pos}
+        q = deque([(pos, None)])
+        while q:
+            cur, first = q.popleft()
+            for key, (dr, dc) in sorted(self.moves.items()):
+                if (cur, key) in self.blocked:
+                    continue
+                nxt = (cur[0] + dr, cur[1] + dc)
+                if nxt in seen or not (0 <= nxt[0] < self._h and 0 <= nxt[1] < self._w):
+                    continue
+                step = first if first is not None else key
+                if abs(nxt[0] - dest[0]) + abs(nxt[1] - dest[1]) <= tol:
+                    return step
+                seen.add(nxt)
+                q.append((nxt, step))
+        return None
+
     def _avatar_cells(self, grid: Grid, bg: int) -> List[Tuple[int, int]]:
         """Where the avatar is NOW. By shape when one is known and occurs exactly
         once; otherwise every cell of its colour -- the original behaviour, which
@@ -256,30 +304,86 @@ class RunPlanner:
                 for c in range(len(grid[r])) if grid[r][c] == self.avatar]
 
     def _route(self, grid: Grid, bg: int) -> Optional[str]:
-        """The key that most reduces the avatar's distance to the anomaly, or None.
+        """Steer the avatar toward a COMMITTED destination.
 
-        Greedy on Manhattan distance rather than a full path: a step that closes
-        the gap is worth taking now, and the model is re-checked every step, so a
-        wall simply shows up as a key that stopped working.
+        The previous version re-chose "the nearest candidate" on every single step,
+        which is not a goal at all -- it is a gradient that reverses the moment the
+        avatar moves, because the nearest anomaly is usually whatever fragment the
+        avatar is standing next to. Instrumented on ls20, seed 1: 249 route
+        decisions, the avatar's position changed on 223 of them, and it spent the
+        whole run oscillating between about six positions -- (40,36) -> (36,36) ->
+        (40,36) -- with the key choice alternating k3 and k4, which are opposite
+        directions. It moves constantly and arrives nowhere.
+
+        So a destination is chosen once and held until it is REACHED or PROVES
+        UNREACHABLE, and then crossed off so the next one is tried. "Proves
+        unreachable" needs no tuned constant: once every direction we know has been
+        spent without the distance improving, greedy steering has nothing left to
+        offer for that destination.
+
+        This does not solve a maze -- greedy distance cannot go around a wall, and
+        ls20 is a maze. What it removes is the jitter that prevented the agent from
+        ever committing to anything long enough to find that out.
         """
         if self.avatar is None or len(self.moves) < 2:
             return None
         cells = self._avatar_cells(grid, bg)
         if not cells:
             return None
+        self._h, self._w = len(grid), len(grid[0]) if grid else 1
         ar = sum(r for r, _ in cells) / len(cells)
         ac = sum(c for _, c in cells) / len(cells)
+        anchor = (min(r for r, _ in cells), min(c for _, c in cells))
+        # Did the last routed key move us? If not, that edge is a wall.
+        if self._routed_from is not None and self._routed_from[0] == anchor:
+            self.blocked.add(self._routed_from)
+        self._routed_from = None
         occupied = set(cells)
-        targets = [t for t in self._candidates(grid, bg) if (t.y, t.x) not in occupied]
-        if not targets:
+        targets = [t for t in self._candidates(grid, bg)
+                   if (t.y, t.x) not in occupied and (t.y, t.x) not in self.crossed_off]
+
+        if self._dest is not None and self._dest in self.crossed_off:
+            self._dest = None
+        if self._dest is None:
+            if not targets:
+                self.crossed_off.clear()      # nothing left: start the sweep again
+                return None
+            t = min(targets, key=lambda p: abs(p.y - ar) + abs(p.x - ac))
+            self._dest = (t.y, t.x)
+            self._dest_best = None
+            self._dest_stale = 0
+
+        ty, tx = self._dest
+        here = abs(ty - ar) + abs(tx - ac)
+        # Arrived: the avatar covers the destination, or is within one step of it.
+        step = min((abs(dr) + abs(dc) for dr, dc in self.moves.values()), default=1)
+        if here <= step / 2:
+            self.crossed_off.add(self._dest)
+            self._dest = None
             return None
-        t = min(targets, key=lambda p: abs(p.y - ar) + abs(p.x - ac))
-        here = abs(t.y - ar) + abs(t.x - ac)
-        best, best_d = None, here
-        for key, (dr, dc) in self.moves.items():
-            d = abs(t.y - (ar + dr)) + abs(t.x - (ac + dc))
-            if d < best_d:
-                best, best_d = key, d
+
+        # Search, not gradient. The destination is expressed in ANCHOR space so
+        # the lattice and the goal test speak the same coordinates.
+        goal = (ty - (ar - anchor[0]), tx - (ac - anchor[1]))
+        best = self._plan(anchor, goal, step / 2)
+        if best is None:
+            # Nothing reachable through what we have learned: cross it off rather
+            # than stand still, and let the sweep move to the next candidate.
+            self.crossed_off.add(self._dest)
+            self._dest = None
+            return None
+        self._routed_from = (anchor, best)
+
+        if self._dest_best is None or here < self._dest_best:
+            self._dest_best, self._dest_stale = here, 0
+        else:
+            self._dest_stale += 1
+            # Every known direction spent without getting closer: greedy steering
+            # has nothing more to offer here, so stop paying for it.
+            if self._dest_stale >= len(self.moves):
+                self.crossed_off.add(self._dest)
+                self._dest = None
+                return None
         return best
 
     @staticmethod
