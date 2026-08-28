@@ -599,3 +599,40 @@ Measured paired, **16 seeds**: quick 1.3660 -> 1.5124, **+0.1464, sem 0.1281**.
 10 of 16 seeds positive, 5 negative, 1 unchanged. That does NOT clear 2*sem, so no
 score claim is made. Kept under the three-part rule at the top of this file: it
 removes an inconsistency, adds no constant, and its mean is not negative.
+
+## Name a control by its RANK among its peers, not by where it sits
+
+The object signature was colour + size-as-a-fraction + **position in eighths of
+the frame**, and the position is what broke at the level seam it was built for.
+vc33's two colour-9 buttons sit at eighth (3,7) and (4,7) on level 1 and at (3,0)
+and (4,0) on level 2 -- same colour, same size bucket, same rows, MIRRORED column
+-- so the signature called them four different controls and the mechanic was
+learned twice. Level 1 costs 6 actions against a baseline of 7; level 2 cost 68
+against 18.
+
+What DOES survive the mirroring is the pair's **order**. So a control is now named
+by what it is plus how many objects of the same colour and size bucket come before
+it in reading order. Rank does not collapse distinct objects the way dropping
+position entirely would -- two identical boxes on one board are peer 0 and peer 1,
+which is the distinction the coordinate was there to make.
+
+Measured paired, **16 seeds**: quick **1.5124 -> 2.6091, +1.0967, sem 0.2653**.
+13 of 16 seeds positive, 3 negative. The mean clears 2*sem by a factor of four
+(t = 4.1), so the FIRST half of this file's criterion is met with room to spare;
+the second half -- every seed agreeing on the sign -- is not, so `seeds.py` still
+prints NOT MEASURABLE. Read it as: the effect is real by any ordinary statistical
+standard and the per-seed spread stays large, which is what vc33 always does.
+
+Per game, paired over the 16:
+
+| game | mean | agreement |
+|---|---|---|
+| vc33 | **+2.222** | 13 of 16 positive, swings -5.53 to +8.06 |
+| tn36 | +1.206 | 12 of 16 positive |
+| r11l | +0.613 | 11 of 16 positive |
+| lp85 | +0.345 | **all 16 agree** |
+
+This is the largest measured change in the project's history, and it is the first
+one that attacks DEPTH rather than the opening: what it buys is the mechanic
+surviving the seam, which is where the metric's weight is.
+

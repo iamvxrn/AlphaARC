@@ -245,31 +245,43 @@ def test_the_measurement_itself_is_untouched():
     assert p._levels(g, bg) == Policy._levels(g, bg)
 
 
-def test_the_name_survives_a_small_shift_but_NOT_a_move_across_the_frame():
-    """What the object signature actually buys, measured rather than hoped for.
+def test_the_name_survives_the_level_seam_that_broke_vc33():
+    """The seam this signature exists for, pinned as the real vc33 geometry.
 
-    It is coarse in colour, in size-as-a-fraction-of-the-scene, and in position to
-    an eighth of the frame -- so an object that shifts by a few cells keeps its
-    name. It does NOT survive an object moving to the other side of the board, and
-    that limit is not hypothetical: vc33's two colour-9 buttons sit at eighth
-    (row 3, col 7) and (row 4, col 7) on level 1, and on level 2 the same two
-    buttons are at (3, 0) and (4, 0) -- same colour, same size bucket, same row,
-    MIRRORED column. So keying learned values by this signature does not by itself
-    carry vc33's mechanic across the level transition where the score actually is.
+    vc33's two colour-9 buttons sit at eighth (row 3, col 7) and (4, 7) on level 1
+    and at (3, 0) and (4, 0) on level 2 -- same colour, same size bucket, same
+    rows, MIRRORED column. Naming by position in eighths called those four
+    different controls, so the mechanic was learned twice and level 2 cost 68
+    actions against a baseline of 18 while level 1 had cost 6 against 7.
 
-    Written down so the next attempt starts from the measurement instead of
-    rediscovering it.
+    Naming by RANK among same-colour, same-size peers carries the pair across:
+    mirroring a stacked pair does not reorder it.
     """
+    bg = 0
+    btn = [[9, 9], [9, 9]]
+    right = _bg_grid(64, 64, bg)
+    _place(right, 24, 56, btn)          # the pair, right-hand side (level 1)
+    _place(right, 28, 56, btn)
+    left = _bg_grid(64, 64, bg)
+    _place(left, 24, 2, btn)            # the same pair, mirrored (level 2)
+    _place(left, 28, 2, btn)
+
+    top_r, bot_r = Policy._token(right, bg, 56, 24), Policy._token(right, bg, 56, 28)
+    top_l, bot_l = Policy._token(left, bg, 2, 24), Policy._token(left, bg, 2, 28)
+    assert top_r == top_l, "the upper button changed its name across the seam: %s vs %s" % (top_r, top_l)
+    assert bot_r == bot_l, "the lower button changed its name across the seam: %s vs %s" % (bot_r, bot_l)
+    assert top_r != bot_r, "the two buttons collapsed onto one name: %s" % top_r
+
+
+def test_the_name_still_survives_a_small_shift():
+    """The property the eighths-based name already had, kept: an object that moves
+    a few cells is the same object."""
     bg = 9
     a = _bg_grid(64, 64, bg)
     _place(a, 20, 20, SYM_BOX)
     b = _bg_grid(64, 64, bg)
-    _place(b, 22, 22, SYM_BOX)          # shifted two cells: same eighth
+    _place(b, 22, 22, SYM_BOX)
     assert Policy._token(a, bg, 21, 21) == Policy._token(b, bg, 23, 23)
-
-    c = _bg_grid(64, 64, bg)
-    _place(c, 20, 52, SYM_BOX)          # same object, other side of the frame
-    assert Policy._token(a, bg, 21, 21) != Policy._token(c, bg, 53, 21)
 
 
 def test_a_pixel_coordinate_alone_is_not_the_name():

@@ -18,6 +18,16 @@ def background_color(grid: Grid) -> int:
     return min(v for v, n in c.items() if n == best_n)
 
 
+def _size_bucket(size: int, total: int) -> int:
+    """Size as a FRACTION of the scene, in halvings. Exact size is what a redraw
+    changes; the fraction is what it preserves."""
+    share = size / total if total else 0.0
+    b = 0
+    while b < 6 and share < 0.5 ** (b + 1):
+        b += 1
+    return b
+
+
 def control_signature(grid: Grid, bg: int, x: int, y: int) -> str:
     """A name for a control that survives the board being REDRAWN or the level changing.
 
@@ -32,19 +42,41 @@ def control_signature(grid: Grid, bg: int, x: int, y: int) -> str:
     capped 115 points), and then level 2 takes 68 against a baseline of 18. The
     mechanic did not change between them; only our ability to carry what we learned.
 
-    Naming a control by the OBJECT under it -- colour, size as a FRACTION of the
-    scene, and position in eighths of the frame -- is coarse on purpose: exact size
-    and position are exactly what a redraw changes.
+    The name is therefore what the object IS -- its colour and its size as a
+    fraction of the scene -- plus its RANK AMONG ITS PEERS: how many objects of the
+    same colour and the same size bucket come before it in reading order.
+
+    Rank rather than position, because position in eighths of the frame was
+    measured NOT to survive the seam it was built for. vc33's two colour-9 buttons
+    sit at eighth (3,7) and (4,7) on level 1 and at (3,0) and (4,0) on level 2 --
+    same colour, same size bucket, same rows, MIRRORED column -- so an
+    eighths-keyed name calls them four different controls and the mechanic is
+    learned twice. Their rank among the colour-9 objects is 0 and 1 on both levels,
+    because mirroring the pair does not reorder it.
+
+    Rank does not collapse distinct objects the way dropping position entirely
+    would: two identical boxes on the same board are peer 0 and peer 1, which is
+    exactly the distinction the coordinate was there to make.
     """
     h, w = len(grid), len(grid[0]) if grid else 1
     colour = grid[y][x] if 0 <= y < h and 0 <= x < w else bg
-    size, total = 0, 0
-    for col, cells in _components(grid, bg):
-        total += len(cells)
-        if not size and col == colour and any(r == y and c == x for r, c in cells):
-            size = len(cells)
-    share = size / total if total else 0.0
-    bucket = 0
-    while bucket < 6 and share < 0.5 ** (bucket + 1):
-        bucket += 1
-    return "c%d/f%d/%d,%d" % (colour, bucket, (y * 8) // max(1, h), (x * 8) // max(1, w))
+    comps = list(_components(grid, bg))
+    total = sum(len(cells) for _, cells in comps)
+    mine, peers = None, []
+    for col, cells in comps:
+        if col != colour:
+            continue
+        # The top-left-most cell, not the centroid: an object that grows or is
+        # partly repainted keeps its anchor, and only the ORDER of anchors is read.
+        anchor = min(cells)
+        entry = (_size_bucket(len(cells), total), anchor)
+        peers.append(entry)
+        if mine is None and any(r == y and c == x for r, c in cells):
+            mine = entry
+    if mine is None:
+        # A click on background names no object. Kept distinct from every real
+        # control rather than folded onto one, so it cannot absorb their values.
+        return "c%d/bg" % colour
+    bucket, anchor = mine
+    rank = sum(1 for b, a in peers if b == bucket and a < anchor)
+    return "c%d/f%d/#%d" % (colour, bucket, rank)
