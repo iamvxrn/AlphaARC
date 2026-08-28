@@ -632,7 +632,24 @@ Per game, paired over the 16:
 | r11l | +0.613 | 11 of 16 positive |
 | lp85 | +0.345 | **all 16 agree** |
 
-This is the largest measured change in the project's history, and it is the first
-one that attacks DEPTH rather than the opening: what it buys is the mechanic
-surviving the seam, which is where the metric's weight is.
+This is the largest measured change in the project's history. **It buys efficiency
+AFTER the seam, not new levels** -- and the difference matters, because the obvious
+reading of a +72% aggregate is wrong. Levels reached are identical in both arms
+(r11l 1, tn36 1, vc33 2 on all 16 seeds); the one game whose depth changed is lp85,
+which goes from taking its level in 7 of 16 seeds to 16 of 16. Everything else is
+actions. On levels actually completed, as a multiple of baseline:
+
+| level | base | peer-rank |
+|---|---|---|
+| vc33 **L1** (nothing to carry yet) | x1.83 | x1.75 |
+| vc33 **L2** (the first level AFTER a seam) | x5.95 | **x2.27** |
+| tn36 L1 | x1.58 | x1.02 |
+| r11l L1 | x2.79 | x1.91 |
+| lp85 L1 | x5.02, taken in 7 of 16 seeds | x2.74, taken in **16 of 16** |
+
+Read the first two rows together: vc33's level 1 hardly moves, because there is
+nothing to carry INTO the first level, while level 2 -- the first level on the far
+side of a seam -- more than halves. A change that merely made the agent cleverer
+would have moved both. That asymmetry is the mechanism showing itself, and it is
+the reason to believe the aggregate rather than to suspect the seeds.
 

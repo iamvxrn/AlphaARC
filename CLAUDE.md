@@ -75,13 +75,32 @@ exists to refuse.
 Everything below is committed; tree clean, all suites green, `make check-bundle`
 up to date, no background jobs.
 
-**Where the score is:** quick = **1.5124 over 16 seeds** (HEAD, `runs/base/`), from
-1.0967 this morning -- the move-budget fix (+0.199), the hand-over sweep (+0.067)
-and the known-dead override (+0.146, unresolved). **16 seeds, not 8**: the last of
-those read +0.287 over seeds 1-8 and +0.146 over 1-16. NOT the 1.7087 that used to be quoted --
-that was one lucky seed, and even 4 seeds read 1.55 against 8 seeds' 1.10. Quote
-absolute scores with their seed count. Target 10; the L1-everywhere ceiling is
-3.52, so the metric needs DEPTH.
+**Where the score is:** quick = **2.6091 over 16 seeds** (HEAD, `runs/peerrank/`),
+from 1.5124 -- the peer-rank control name (+1.0967, sem 0.2653) carrying the level
+seam, on top of 2026-08-26's move-budget fix (+0.199), hand-over sweep (+0.067) and
+known-dead override (+0.146, unresolved). **16 seeds, not 8**: the known-dead change
+read +0.287 over seeds 1-8 and +0.146 over 1-16, and the peer-rank one read +0.787
+over 1-8 against +1.097 over 1-16 -- eight seeds move a headline by 30-50% in EITHER
+direction. NOT the 1.7087 once quoted; that was one lucky seed. Quote absolute
+scores with their seed count. Target 10; the L1-everywhere ceiling is 3.52, so the
+metric needs DEPTH.
+**What the seam fix actually bought is EFFICIENCY AFTER THE SEAM, not new levels** --
+levels reached are identical (r11l 1, tn36 1, vc33 2 on every seed, both arms); only
+lp85 changed, from taking its level in 7 of 16 seeds to 16 of 16. Actions as a
+multiple of baseline, on levels actually completed:
+
+| level | base | peer-rank |
+|---|---|---|
+| vc33 **L1** (nothing to carry yet) | x1.83 | x1.75 |
+| vc33 **L2** (the first level AFTER a seam) | x5.95 | **x2.27** |
+| tn36 L1 | x1.58 | x1.02 |
+| r11l L1 | x2.79 | x1.91 |
+| lp85 L1 | x5.02, taken in 7 of 16 seeds | x2.74, taken in **16 of 16** |
+The signature is the point: vc33's level 1 barely moves because there is nothing to
+carry INTO it, while level 2 more than halves. That is what "the mechanic survived
+the seam" looks like, and it is the quantity the metric weights by level index.
+**`runs/base/` is now STALE** (it is the pre-seam baseline, mean 1.5124). Regenerate
+it from HEAD, or diff against `runs/peerrank/`, before measuring anything new.
 
 Use the PAIRED difference: it resolves ~0.03 for a change that touches little and
 ~0.3 for one that changes behaviour broadly. Add seeds until sem is small enough.
@@ -103,12 +122,18 @@ levels we already take but at exact baseline is 0.40 -> 1.12. Efficiency on leve
 already reached beats reaching new ones, because the efficiency term is quadratic
 while a new deep level arrives heavily discounted by its own inefficiency.
 
-Carrying what was learned across the level seam is the obvious attack and the
-obvious version of it does NOT work: vc33's two colour-9 buttons sit at eighth
-(3,7) and (4,7) on level 1 and at (3,0) and (4,0) on level 2 -- same colour, same
-size bucket, same row, MIRRORED column -- so the object signature does not name
-them across the seam. Measured paired: +0.0095 +/- 0.0072, neutral. Pinned in
-`test_the_name_survives_a_small_shift_but_NOT_a_move_across_the_frame`.
+**THE LEVEL SEAM IS NOW CARRIED, 2026-08-29 -- the largest measured change in the
+project.** vc33's two colour-9 buttons sit at eighth (3,7) and (4,7) on level 1
+and at (3,0) and (4,0) on level 2 -- same colour, same size bucket, same rows,
+MIRRORED column -- so a name ending in position-in-eighths called them four
+different controls and the mechanic was learned twice. What the mirroring does NOT
+change is the pair's ORDER, so `control_signature` now ends in the object's RANK
+among same-colour, same-size-bucket peers in reading order instead of its position.
+Measured paired, 16 seeds: quick **1.5124 -> 2.6091, +1.0967, sem 0.2653** (t=4.1,
+13 of 16 seeds positive; 3 disagree on sign, so `seeds.py` still withholds REAL and
+no stronger claim is made). lp85 agrees on all 16. Pinned in
+`test_the_name_survives_the_level_seam_that_broke_vc33`. The earlier "+0.0095 +/-
+0.0072, neutral" refers to a DIFFERENT attempt and no longer describes the seam.
 
 **THE MEASUREMENTS BEHIND EVERY PAST CLAIM WERE INVALID.** Measured 2026-08-26:
 same code, same `--repeats 3`, four seeds give quick = 1.7087 / 1.0019 / 0.5205 /
