@@ -791,3 +791,22 @@ against the 8-16 arbitrary candidates the sweep currently walks.
 The lesson is the older one: an analogy between two games is a hypothesis, and this
 file records measurements. Checking it cost one replay.
 
+**And "enclosed region" is closed too, tested before it was built.** A frame is a
+component whose bounding box holds cells unreachable from the box border without
+crossing it. Run over the four movement boards:
+
+| game | what it finds |
+|---|---|
+| ls20 | 4 regions -- the goal box IS among them (frame c5, rows 9-15, interior 6 colour-9 cells) but so are the corridor network and the budget strip |
+| g50t | 3 regions, and **the goal is not one of them** -- its room at rows 48-56 / cols 42-50 is open on the left, so it is not a closed ring. One of the three is the avatar itself |
+| sp80 | **none** |
+| m0r0 | **none** |
+
+Zero regions on exactly the two games that still score zero, and a miss on the one
+whose goal we had just located. Not built.
+
+So the destination rule is still unknown, with three candidates now closed by
+measurement: imagined compression, the five-cell plus, and enclosure. What IS
+established is where the avatar has to end up in two games, which is the evidence
+any fourth candidate has to explain.
+
