@@ -3,42 +3,42 @@
  "max_steps": 250,
  "repeats": 3,
  "seed": 10,
- "agent": "$HOME/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter/agent/my_agent.py",
- "aggregate": 2.4834,
+ "agent": "~/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter/agent/my_agent.py",
+ "aggregate": 2.2116000000000002,
  "games": {
   "lp85": {
    "state": "GameState.NOT_FINISHED",
-   "levels_completed": 0,
+   "levels_completed": 1,
    "actions": 251,
-   "seconds": 15.8,
+   "seconds": 14.9,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 0,
+     "levels_completed": 1,
      "actions": 251,
-     "seconds": 15.8
+     "seconds": 14.9
     },
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 0,
+     "levels_completed": 1,
      "actions": 251,
-     "seconds": 15.6
+     "seconds": 14.5
     },
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 0,
+     "levels_completed": 1,
      "actions": 251,
-     "seconds": 16.4
+     "seconds": 14.0
     }
    ],
    "levels_per_run": [
-    0,
-    0,
-    0
+    1,
+    1,
+    1
    ],
-   "score": 0.0,
+   "score": 0.5559,
    "level_scores": [
-    0.0,
+    20.01,
     0.0,
     0.0,
     0.0,
@@ -48,8 +48,8 @@
     0.0
    ],
    "level_actions": [
-    251,
-    0,
+    38,
+    213,
     0,
     0,
     0,
@@ -76,25 +76,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 11.9,
+   "seconds": 11.5,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 11.9
+     "seconds": 11.5
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 10.8
+     "seconds": 11.0
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 11.1
+     "seconds": 11.3
     }
    ],
    "levels_per_run": [
@@ -102,9 +102,9 @@
     1,
     1
    ],
-   "score": 4.3568,
+   "score": 1.4405,
    "level_scores": [
-    91.49,
+    30.25,
     0.0,
     0.0,
     0.0,
@@ -112,8 +112,8 @@
     0.0
    ],
    "level_actions": [
-    23,
-    228,
+    40,
+    211,
     0,
     0,
     0,
@@ -136,25 +136,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 15.8,
+   "seconds": 15.4,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 15.8
+     "seconds": 15.4
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 15.6
+     "seconds": 17.6
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 18.3
+     "seconds": 17.3
     }
    ],
    "levels_per_run": [
@@ -162,9 +162,9 @@
     1,
     1
    ],
-   "score": 1.889,
+   "score": 1.4629,
    "level_scores": [
-    52.89,
+    40.96,
     0.0,
     0.0,
     0.0,
@@ -173,8 +173,8 @@
     0.0
    ],
    "level_actions": [
-    44,
-    207,
+    50,
+    201,
     0,
     0,
     0,
@@ -199,25 +199,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 2,
    "actions": 251,
-   "seconds": 12.7,
+   "seconds": 13.0,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 12.7
+     "seconds": 13.0
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 13.7
+     "seconds": 12.4
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 12.5
+     "seconds": 12.9
     }
    ],
    "levels_per_run": [
@@ -225,10 +225,10 @@
     2,
     2
    ],
-   "score": 3.6878,
+   "score": 5.3871,
    "level_scores": [
-    100.0,
-    1.63,
+    16.96,
+    66.94,
     0.0,
     0.0,
     0.0,
@@ -236,9 +236,9 @@
     0.0
    ],
    "level_actions": [
-    7,
-    141,
-    103,
+    17,
+    22,
+    212,
     0,
     0,
     0,

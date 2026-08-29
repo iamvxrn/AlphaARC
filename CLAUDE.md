@@ -99,8 +99,9 @@ multiple of baseline, on levels actually completed:
 The signature is the point: vc33's level 1 barely moves because there is nothing to
 carry INTO it, while level 2 more than halves. That is what "the mechanic survived
 the seam" looks like, and it is the quantity the metric weights by level index.
-**`runs/base/` is now STALE** (it is the pre-seam baseline, mean 1.5124). Regenerate
-it from HEAD, or diff against `runs/peerrank/`, before measuring anything new.
+**`runs/base/` is CURRENT** -- regenerated from HEAD on 2026-08-30: 16 seeds, mean
+2.6091, sd 0.6892, range 1.676-4.000, and IDENTICAL to `runs/peerrank/` on every one
+of the 16 seeds. Diff new work against it directly; regenerate again when HEAD moves.
 
 Use the PAIRED difference: it resolves ~0.03 for a change that touches little and
 ~0.3 for one that changes behaviour broadly. Add seeds until sem is small enough.
@@ -148,7 +149,7 @@ specified -> `make quick-n SEEDS=4 TAG=x VSDIR=base` (~10 min, PAIRED on identic
 seeds) -> confirm on `make bench`. `make quick` is a single seed: a smoke test,
 never a measurement. `python/bench/seeds.py` calls a change REAL only when the mean
 paired difference clears twice its standard error and every seed agrees on the sign.
-`python/bench/runs/base/` is HEAD's 4-seed baseline -- regenerate when HEAD moves.
+`python/bench/runs/base/` is HEAD's 16-seed baseline -- regenerate when HEAD moves.
 
 **Decoded: 17 of 17 train games** (lf52, s5i5, su15 finished 2026-08-26) — see
 `python/bench/README.md` and memory `reference_decoded_games`. Nothing on train is

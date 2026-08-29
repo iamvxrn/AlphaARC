@@ -888,3 +888,53 @@ Caveat on the table: two seeds for three of the games, and the magnitudes are no
 comparable across games in any deep sense -- they depend on board size and how many
 cells a control moves. The blind fraction is comparable (it is an absolute
 one-cell threshold); the medians are context.
+
+### What the learned value is actually worth against the rank prior (2026-08-30)
+
+The open list has said since 2026-08-27 that `residual_bonus / (i + 1)` "makes rank
+the policy's PRIOR, not a tie-breaker". That was an argument from reading the
+formula. Here it is in traced numbers, which turn out to be worse than the sentence.
+
+With the shipped constants -- `drive_gain_weight = 0.02`, `residual_bonus = 0.15`,
+8 candidates -- the rank prior pays **0.150** to the first candidate and **0.019** to
+the eighth, while everything the policy has learned about a control enters as
+`0.02 x EMA`.
+
+| game | median \|EMA\| | its contribution | best contribution | steps where learning beats rank 1 |
+|---|---|---|---|---|
+| vc33 | 0.6 | 0.013 | 1.693 | **21%** |
+| r11l | 1.2 | 0.024 | 0.534 | 17% |
+| lp85 | 0.0 | 0.000 | 0.268 | **4%** |
+| tn36 | 0.6 | 0.013 | 0.188 | **3%** |
+
+**At the median, everything the policy has learned about a control is worth about
+as much as being ranked eighth** (0.013 against 0.019), and about a tenth of being
+ranked first. On tn36 and lp85, learning is strong enough to outvote the top rank
+prior on 3-4% of steps. The policy is, on those two games, following candidate
+order almost entirely -- which is also the simplest explanation for the re-pick
+rates measured the same night (a control already seen to be live is chosen 7% of
+the time on lp85, 20-29% elsewhere).
+
+**The cause is that `drive_gain_weight` is not scale-free.** The size of a
+compression delta is a property of the game -- median non-zero `|d|` is 44 on vc33
+and 3 on tn36, a 15x spread -- while the prior it competes against is a fixed
+constant. One weight therefore cannot mean the same thing on two games, and 0.02
+was hand-calibrated against vc33's own numbers (see the provenance correction in
+CLAUDE.md). It makes learning decisive exactly where it was fitted and nearly
+irrelevant on the other three.
+
+**A hypothesis this suggests, NOT built and NOT measured:** scale the learned term
+by the game's own running `|d|` so it is comparable to the fixed prior everywhere.
+It does not touch the candidate set or its order, so it is not one of the three
+re-ordering attempts already rejected. What would kill it: vc33's 21% is precisely
+what carries it to level 2, and a normalisation that costs vc33 more than it buys
+lp85/tn36 is worse than nothing. Measure paired over >=16 seeds against
+`runs/base/` before believing anything.
+
+**A non-finding, recorded so it is not mistaken for one.** The traced `dead` values
+peak around 1.4, far above every other term in the sum -- but this does NOT refute
+the fixed-point argument that the taboo can never accumulate. The trace writes
+`dead` immediately after the press that incremented it, not when that control is
+scored again ten steps later, which is the moment the argument is about. Testing
+that claim needs `dead` recorded at candidate-scoring time; the candidate logging
+added alongside this makes it possible, and it has not been done.

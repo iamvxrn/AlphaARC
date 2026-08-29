@@ -3,42 +3,42 @@
  "max_steps": 250,
  "repeats": 3,
  "seed": 12,
- "agent": "$HOME/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter/agent/my_agent.py",
- "aggregate": 0.8366,
+ "agent": "~/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter/agent/my_agent.py",
+ "aggregate": 1.93645,
  "games": {
   "lp85": {
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 15.1,
+   "seconds": 14.1,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 0,
+     "levels_completed": 1,
      "actions": 251,
-     "seconds": 16.0
-    },
-    {
-     "state": "GameState.NOT_FINISHED",
-     "levels_completed": 0,
-     "actions": 251,
-     "seconds": 16.3
+     "seconds": 14.1
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 15.1
+     "seconds": 14.3
+    },
+    {
+     "state": "GameState.NOT_FINISHED",
+     "levels_completed": 1,
+     "actions": 251,
+     "seconds": 14.1
     }
    ],
    "levels_per_run": [
-    0,
-    0,
+    1,
+    1,
     1
    ],
-   "score": 0.0539,
+   "score": 0.2753,
    "level_scores": [
-    1.94,
+    9.91,
     0.0,
     0.0,
     0.0,
@@ -48,8 +48,8 @@
     0.0
    ],
    "level_actions": [
-    122,
-    129,
+    54,
+    197,
     0,
     0,
     0,
@@ -76,13 +76,13 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 10.8,
+   "seconds": 11.1,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 10.8
+     "seconds": 11.1
     },
     {
      "state": "GameState.NOT_FINISHED",
@@ -94,7 +94,7 @@
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 10.6
+     "seconds": 11.2
     }
    ],
    "levels_per_run": [
@@ -102,9 +102,9 @@
     1,
     1
    ],
-   "score": 0.5627,
+   "score": 0.4704,
    "level_scores": [
-    11.82,
+    9.88,
     0.0,
     0.0,
     0.0,
@@ -112,8 +112,8 @@
     0.0
    ],
    "level_actions": [
-    64,
-    187,
+    70,
+    181,
     0,
     0,
     0,
@@ -136,25 +136,25 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 16.6,
+   "seconds": 17.7,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 16.6
+     "seconds": 17.7
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 16.2
+     "seconds": 16.1
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 18.3
+     "seconds": 16.0
     }
    ],
    "levels_per_run": [
@@ -162,9 +162,9 @@
     1,
     1
    ],
-   "score": 1.4629,
+   "score": 2.4044,
    "level_scores": [
-    40.96,
+    67.32,
     0.0,
     0.0,
     0.0,
@@ -173,8 +173,8 @@
     0.0
    ],
    "level_actions": [
-    50,
-    201,
+    39,
+    212,
     0,
     0,
     0,
@@ -199,36 +199,36 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 2,
    "actions": 251,
-   "seconds": 12.7,
+   "seconds": 13.4,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 1,
+     "levels_completed": 2,
      "actions": 251,
-     "seconds": 11.8
+     "seconds": 13.4
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 12.7
+     "seconds": 13.5
     },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 13.2
+     "seconds": 12.8
     }
    ],
    "levels_per_run": [
-    1,
+    2,
     2,
     2
    ],
-   "score": 1.2669,
+   "score": 4.5957,
    "level_scores": [
-    28.99,
-    3.24,
+    25.0,
+    51.84,
     0.0,
     0.0,
     0.0,
@@ -236,9 +236,9 @@
     0.0
    ],
    "level_actions": [
-    13,
-    100,
-    138,
+    14,
+    25,
+    212,
     0,
     0,
     0,

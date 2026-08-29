@@ -274,6 +274,13 @@ class Policy:
             best_tok, best_xy = self._token(grid, bg, p.x, p.y), (p.x, p.y)
 
         self.tries[best_tok] = self.tries.get(best_tok, 0) + 1
+        # Which controls were even ON THE TABLE this step. Without this a trace
+        # cannot tell "the policy knew this control was live and passed it over"
+        # (a credit problem) from "it was never offered" (a perception problem),
+        # and those two want opposite fixes.
+        if self._trace_path:
+            self._emit({"cands": [self._token(grid, bg, p.x, p.y) for p in pts],
+                        "pick": best_tok})
         self._prev_grid = [row[:] for row in grid]
         self._last_token = best_tok
         return best_xy

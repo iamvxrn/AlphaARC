@@ -3,42 +3,42 @@
  "max_steps": 250,
  "repeats": 3,
  "seed": 15,
- "agent": "$HOME/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter/agent/my_agent.py",
- "aggregate": 1.639025,
+ "agent": "~/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter/agent/my_agent.py",
+ "aggregate": 2.393975,
  "games": {
   "lp85": {
    "state": "GameState.NOT_FINISHED",
-   "levels_completed": 0,
+   "levels_completed": 1,
    "actions": 251,
-   "seconds": 15.5,
+   "seconds": 14.0,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 0,
+     "levels_completed": 1,
      "actions": 251,
-     "seconds": 15.5
+     "seconds": 14.0
     },
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 0,
+     "levels_completed": 1,
      "actions": 251,
-     "seconds": 15.3
+     "seconds": 14.0
     },
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 0,
+     "levels_completed": 1,
      "actions": 251,
-     "seconds": 15.1
+     "seconds": 13.8
     }
    ],
    "levels_per_run": [
-    0,
-    0,
-    0
+    1,
+    1,
+    1
    ],
-   "score": 0.0,
+   "score": 0.4147,
    "level_scores": [
-    0.0,
+    14.93,
     0.0,
     0.0,
     0.0,
@@ -48,8 +48,8 @@
     0.0
    ],
    "level_actions": [
-    251,
-    0,
+    44,
+    207,
     0,
     0,
     0,
@@ -76,14 +76,8 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 10.7,
+   "seconds": 11.1,
    "runs": [
-    {
-     "state": "GameState.NOT_FINISHED",
-     "levels_completed": 1,
-     "actions": 251,
-     "seconds": 10.7
-    },
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
@@ -92,19 +86,25 @@
     },
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 0,
+     "levels_completed": 1,
      "actions": 251,
-     "seconds": 9.3
+     "seconds": 11.3
+    },
+    {
+     "state": "GameState.NOT_FINISHED",
+     "levels_completed": 1,
+     "actions": 251,
+     "seconds": 10.8
     }
    ],
    "levels_per_run": [
     1,
     1,
-    0
+    1
    ],
-   "score": 0.3513,
+   "score": 1.1905,
    "level_scores": [
-    7.38,
+    25.0,
     0.0,
     0.0,
     0.0,
@@ -112,8 +112,8 @@
     0.0
    ],
    "level_actions": [
-    81,
-    170,
+    44,
+    207,
     0,
     0,
     0,
@@ -136,13 +136,13 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 1,
    "actions": 251,
-   "seconds": 18.8,
+   "seconds": 18.2,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 18.8
+     "seconds": 18.2
     },
     {
      "state": "GameState.NOT_FINISHED",
@@ -154,7 +154,7 @@
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 1,
      "actions": 251,
-     "seconds": 17.6
+     "seconds": 18.2
     }
    ],
    "levels_per_run": [
@@ -162,9 +162,9 @@
     1,
     1
    ],
-   "score": 1.9779,
+   "score": 3.5714,
    "level_scores": [
-    55.38,
+    115.0,
     0.0,
     0.0,
     0.0,
@@ -173,8 +173,8 @@
     0.0
    ],
    "level_actions": [
-    43,
-    208,
+    26,
+    225,
     0,
     0,
     0,
@@ -199,36 +199,36 @@
    "state": "GameState.NOT_FINISHED",
    "levels_completed": 2,
    "actions": 251,
-   "seconds": 12.6,
+   "seconds": 12.5,
    "runs": [
     {
      "state": "GameState.NOT_FINISHED",
      "levels_completed": 2,
      "actions": 251,
-     "seconds": 12.6
+     "seconds": 12.5
     },
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 1,
+     "levels_completed": 2,
      "actions": 251,
-     "seconds": 11.9
+     "seconds": 12.4
     },
     {
      "state": "GameState.NOT_FINISHED",
-     "levels_completed": 1,
+     "levels_completed": 2,
      "actions": 251,
-     "seconds": 11.7
+     "seconds": 12.7
     }
    ],
    "levels_per_run": [
     2,
-    1,
-    1
+    2,
+    2
    ],
-   "score": 4.2269,
+   "score": 4.3993,
    "level_scores": [
     115.0,
-    1.68,
+    4.09,
     0.0,
     0.0,
     0.0,
@@ -237,8 +237,8 @@
    ],
    "level_actions": [
     4,
-    139,
-    108,
+    89,
+    158,
     0,
     0,
     0,
