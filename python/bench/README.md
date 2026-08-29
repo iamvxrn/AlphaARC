@@ -853,3 +853,38 @@ diffed along a trajectory and measured paired over >=16 seeds before it is belie
 
 Traces are not committed; regenerate with
 `ARC_TRACE=/tmp/t.jsonl $KIT/.venv/bin/python python/bench/bench.py --games vc33 --seed 1 --repeats 1`.
+
+### ...and the 80% is vc33's number, not the architecture's (same night)
+
+The section above was written from vc33 alone and framed as a general wall. Swept
+over the other three scoring games the same night, it is not one. Two seeds each
+for r11l/lp85/tn36, four for vc33; `|d| <= 1` means the board moved by at most one
+cell's worth of MDL savings, i.e. the move clock and nothing else.
+
+| game | steps | blind | live tokens / offered | median non-zero \|d\| | max | result |
+|---|---|---|---|---|---|---|
+| vc33 | 380 | **80%** | 2 / 23 | 44 | 108 | L2, x1.9 x1.2 |
+| r11l | 294 | **49%** | 12 / 45 | 9 | 51 | L1, x4.1 / x1.9 |
+| lp85 | 192 | **82%** | 3 / 34 | 7 | 25 | L1, x4.9 / x4.6 |
+| tn36 | 235 | **71%** | 3 / 27 | 3 | 12 | L1, **x1.2 / x1.4** |
+
+**The blind fraction does not order the games by how well they go.** tn36 has the
+weakest compression signal of the four -- a median non-zero delta of 3 against
+vc33's 44, a maximum of 12 against 108 -- and is the most efficient game on the
+split, essentially at baseline. lp85 is the blindest and the worst. r11l is the
+least blind, has six times as many live tokens as vc33, and lands in the middle.
+Neither the fraction of silent decisions nor the size of the signal separates the
+games that go well from the games that do not.
+
+So "the drive is silent for four decisions in five" is a true description of vc33
+and a real property of the credit signal, but it is **not the lever**, and the
+sentence above calling it "the candidate-reachability wall through a different
+instrument" over-generalised from one game. What it does establish: any mechanism
+that consumes the one-step delta -- a backward pass included -- is working with
+something that is absent most of the time on three of the four games and mostly
+present on the fourth, so it must be measured per game, not on the aggregate.
+
+Caveat on the table: two seeds for three of the games, and the magnitudes are not
+comparable across games in any deep sense -- they depend on board size and how many
+cells a control moves. The blind fraction is comparable (it is an absolute
+one-cell threshold); the medians are context.
