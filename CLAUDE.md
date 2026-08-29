@@ -172,20 +172,30 @@ left to decode; the holdout stays sealed.
    actions against a baseline of 22 and 48 against 78. The aggregate difference
    is +0.1550, sem 0.1157 -- NOT resolved, and it read +0.41 over the first six
    seeds, so quote the counts, not the mean.
-   **What is still missing is the goal itself.** The sweep works by crossing
-   candidates off, not by recognising a destination, which is why m0r0 and sp80
-   stay at zero and ls20 fails half its seeds. Two criteria are closed by
-   measurement: imagined compression scores EVERY candidate negative on ls20 (an
-   avatar in a corridor breaks the corridor), and "nearest" is what caused the
-   oscillation. **The destination is an ENCLOSED REGION**, measured by replaying
-   the frame before each level cleared: ls20's avatar ends INSIDE the framed box
-   at rows 8-16/cols 32-40 (which this repo had been calling a legend), and
-   g50t's ends against the edge of the framed box at rows 48-56/cols 42-50. An
-   earlier claim in this file that ls20's goal was a 5-cell plus at (32,21) was
-   an unchecked analogy with su15 and is WRONG -- that plus is untouched when the
-   level clears. Next build: offer the route ENCLOSED REGIONS as destinations
-   instead of residual/object centroids. ls20 has two on a 64x64 board against
-   the 8-16 arbitrary candidates the sweep walks now.
+   **What is still missing is the goal itself, and there is NO CANDIDATE RULE
+   right now.** The sweep works by crossing candidates off, not by recognising a
+   destination, which is why m0r0 and sp80 stay at zero and ls20 fails half its
+   seeds. "Nearest" is what caused the oscillation (fixed by holding a destination
+   until reached or crossed off). Three ways of MARKING the destination are now
+   closed by measurement, and none of them is the rule:
+     - **imagined compression** -- scores EVERY candidate negative on ls20; an
+       avatar standing in a corridor breaks the corridor.
+     - **a five-cell plus** (an earlier claim in this file that ls20's goal was the
+       plus at (32,21)) -- an unchecked analogy with su15, refuted by replay: that
+       plus is untouched when the level clears.
+     - **an enclosed region** -- a component whose bounding box holds cells
+       unreachable from the border without crossing it. ls20 4 regions (the goal
+       among them), g50t 3 (the goal NOT among them -- its room is open on the
+       left, so no closed ring), sp80 none, m0r0 none. Zero regions on exactly the
+       two games that score zero, and a miss on the one game whose goal had just
+       been located. Run before building, so it was never built.
+   **What a fourth hypothesis has to explain** (measured by replaying the frame
+   before each level cleared): ls20's avatar ends INSIDE the framed box at rows
+   8-16/cols 32-40 (which this repo had been calling a legend), and g50t's ends
+   flush against the LEFT edge of an OPEN-SIDED room at rows 48-56/cols 42-50.
+   Test the next criterion against those two boards -- and against sp80 and m0r0
+   yielding something -- BEFORE building it; that is what killed the third one in
+   five minutes. Details in `python/bench/README.md`.
 3. Depth on the four scoring games; vc33 still reaches level 2 of 7 on every seed,
    and the seam fix did not change that -- it made the levels already reached much
    cheaper (vc33 L2 x5.95 -> x2.27). Remaining efficiency headroom, mean over 16
