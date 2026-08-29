@@ -767,8 +767,27 @@ retrying without new evidence:
 
 Still open, and now sharply: **what marks a destination.** The sweep works by
 crossing candidates off rather than by recognising the goal, which is why m0r0 and
-sp80 stay at zero and why ls20 fails half its seeds. One empirical lead: ls20's
-destination is a five-cell plus of rare colours at (32,21), and su15's decode
-independently named "a 5-cell colour-0 plus marks the NEXT waypoint". Two
-independently decoded games sharing a figure is a specification, not a coincidence.
+sp80 stay at zero and why ls20 fails half its seeds.
+
+**CORRECTION, same session.** This section first said ls20's destination was a
+five-cell plus of rare colours at (32,21), by analogy with su15's decode. That was
+an assumption, never checked, and it is WRONG. Measured by replaying the frame
+before the level cleared:
+
+- **ls20** (seed 3) -- the avatar ends at rows 15-16, cols 34-38, INSIDE the framed
+  box at rows 8-16 / cols 32-40 that this file had been calling a legend. The
+  five-cell plus is still sitting untouched at rows 31-33 when the level clears.
+- **g50t** (seed 3) -- the avatar, a 24-cell colour-9 block that started at rows
+  8-12 / cols 14-18, ends at rows 50-54 / cols 37-41, hard against the left edge of
+  the framed box at rows 48-56 / cols 42-50.
+
+So the shared structure is not a marker figure, it is **an ENCLOSED REGION** -- a
+ring of one colour around an interior of another, sitting apart from the corridor
+network -- and the avatar goes into it or up to it. That is a much better candidate
+for a general destination rule than "the nearest anomaly", and it is small: ls20
+has two such regions on a 64x64 board (the goal box and a legend box in the corner)
+against the 8-16 arbitrary candidates the sweep currently walks.
+
+The lesson is the older one: an analogy between two games is a hypothesis, and this
+file records measurements. Checking it cost one replay.
 

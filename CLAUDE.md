@@ -176,11 +176,16 @@ left to decode; the holdout stays sealed.
    candidates off, not by recognising a destination, which is why m0r0 and sp80
    stay at zero and ls20 fails half its seeds. Two criteria are closed by
    measurement: imagined compression scores EVERY candidate negative on ls20 (an
-   avatar in a corridor breaks the corridor) with the real goal tenth, and
-   "nearest" is what caused the oscillation. The live lead is perceptual: ls20's
-   destination is a 5-cell plus of rare colours at (32,21), and su15's decode
-   independently named a 5-cell colour-0 plus as its waypoint marker. Two
-   independently decoded games sharing a figure is a specification.
+   avatar in a corridor breaks the corridor), and "nearest" is what caused the
+   oscillation. **The destination is an ENCLOSED REGION**, measured by replaying
+   the frame before each level cleared: ls20's avatar ends INSIDE the framed box
+   at rows 8-16/cols 32-40 (which this repo had been calling a legend), and
+   g50t's ends against the edge of the framed box at rows 48-56/cols 42-50. An
+   earlier claim in this file that ls20's goal was a 5-cell plus at (32,21) was
+   an unchecked analogy with su15 and is WRONG -- that plus is untouched when the
+   level clears. Next build: offer the route ENCLOSED REGIONS as destinations
+   instead of residual/object centroids. ls20 has two on a 64x64 board against
+   the 8-16 arbitrary candidates the sweep walks now.
 3. Depth on the four scoring games; vc33 still reaches level 2 of 7 on every seed,
    and the seam fix did not change that -- it made the levels already reached much
    cheaper (vc33 L2 x5.95 -> x2.27). Remaining efficiency headroom, mean over 16
