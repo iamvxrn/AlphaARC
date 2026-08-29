@@ -11,6 +11,8 @@ fails). This is env-agnostic pure logic; my_agent.py adapts it to arc-agi.
 
 from __future__ import annotations
 
+import json
+import os
 import random
 from typing import Dict, List, Optional, Tuple
 
@@ -87,12 +89,17 @@ class Policy:
         self._prev_grid: Optional[Grid] = None
         self._prev_levels: Optional[List[float]] = None
         self._last_token: Optional[str] = None
+        # Opt-in measurement trace (ARC_TRACE=<path>). Off by default and read by
+        # nothing in the decision loop -- this records what the one-step credit
+        # SAW, so a backward pass can be scored offline before anything is built.
+        self._trace_path = os.environ.get("ARC_TRACE") or None
+        self._step = 0
         # Survives board_replaced on purpose: the budget strip is a property of the
         # GAME, not of the level, and re-learning which line it is costs the
         # WARMUP actions again at every seam -- exactly where the score is.
         self.clock = ClockTracker()
 
-    def board_replaced(self) -> None:
+    def board_replaced(self, reason: str = "board") -> None:
         """The board was swapped out: a RESET, a GAME_OVER, or a LEVEL TRANSITION.
 
         What the policy LEARNED about clicks (drive_gain, succ, tries) survives --
@@ -103,6 +110,7 @@ class Policy:
         junk entry into the transition model, precisely at the moment that matters
         most: level 2 onward is where the score actually is.
         """
+        self._emit({"event": reason})
         self._prev_grid = None
         self._prev_levels = None
         self._last_token = None
@@ -150,6 +158,13 @@ class Policy:
         """
         return [float(p.savings(grid, bg)) for p in PRIMITIVES]
 
+    def _emit(self, rec: dict) -> None:
+        if not self._trace_path:
+            return
+        rec["t"] = self._step
+        with open(self._trace_path, "a") as fh:
+            fh.write(json.dumps(rec) + "\n")
+
     def _credit_last(self, grid: Grid, bg: int, level: List[float]) -> None:
         """Credit the previous click, and remember WHAT IT DID from where it was.
 
@@ -185,11 +200,15 @@ class Policy:
             self.dead[k] *= self.dead_decay
             if self.dead[k] < 0.05:
                 del self.dead[k]
+        self._emit({"tok": self._last_token, "d": d,
+                    "ema": self.drive_gain[self._last_token],
+                    "dead": self.dead.get(self._last_token, 0.0)})
 
     def choose_click(self, grid: Grid, bg: Optional[int] = None) -> Optional[Tuple[int, int]]:
         """Return the (x=col, y=row) to click, or None if no candidate exists."""
         if bg is None:
             bg = background_color(grid)
+        self._step += 1
         level = self._levels(grid, bg)
         self._credit_last(grid, bg, level)
         self._prev_levels = level

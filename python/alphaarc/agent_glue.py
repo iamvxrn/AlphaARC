@@ -100,7 +100,7 @@ class MyAgent(Agent):
     def choose_action(self, frames: List[FrameData], latest_frame: FrameData) -> GameAction:
         if latest_frame.state in (GameState.NOT_PLAYED, GameState.GAME_OVER):
             self._levels_done = 0
-            self._policy.board_replaced()
+            self._policy.board_replaced("reset")
             return GameAction.RESET
 
         # Completing a level swaps the whole board. Tell the policy, or it credits
@@ -110,7 +110,7 @@ class MyAgent(Agent):
         done = int(getattr(latest_frame, "levels_completed", 0) or 0)
         if done > self._levels_done:
             self._levels_done = done
-            self._policy.board_replaced()
+            self._policy.board_replaced("level_clear")
 
         grid = self._current_grid(latest_frame)
         avail = set(latest_frame.available_actions or [])

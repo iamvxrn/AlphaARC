@@ -207,7 +207,7 @@ class RunPlanner:
     def _levels(grid: Grid, bg: int) -> List[float]:
         return [float(p.savings(grid, bg)) for p in PRIMITIVES]
 
-    def board_replaced(self) -> None:
+    def board_replaced(self, reason: str = "board") -> None:
         """A reset, a game over, or a level transition: the board we were reasoning
         about is gone. What we learned about controls survives -- the mechanic does
         not change with the scenery -- but the run in flight is abandoned, and the
@@ -558,15 +558,15 @@ class HybridPolicy:
     def active(self):
         return self.planner if self.switched else self.policy
 
-    def board_replaced(self) -> None:
+    def board_replaced(self, reason: str = "board") -> None:
         """A new level is a fresh chance for the cheap agent: reset the clock and
         hand control back, because the next level's opening may well be short."""
         self.since_level = 0
         self.dead_run = 0
         self.switched = False
         self._prev_grid = None
-        self.policy.board_replaced()
-        self.planner.board_replaced()
+        self.policy.board_replaced(reason)
+        self.planner.board_replaced(reason)
 
     reset_episode = board_replaced
 

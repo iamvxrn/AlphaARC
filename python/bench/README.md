@@ -810,3 +810,46 @@ measurement: imagined compression, the five-cell plus, and enclosure. What IS
 established is where the avatar has to end up in two games, which is the evidence
 any fourth candidate has to explain.
 
+
+## The drive is silent for 80% of the decisions (traced 2026-08-30)
+
+Run before building a backward credit pass, to see what a backward pass would
+have to propagate. `ARC_TRACE=<path>` (off by default, read by nothing in the
+decision loop) appends one JSON line per credited step: the token, the signed
+one-step delta `d` the credit actually used, the resulting EMA, and the taboo
+value; `board_replaced` writes a `reset` / `level_clear` event, so the run-up to
+a cleared level is findable.
+
+vc33, four seeds, 380 credited steps:
+
+| seed | steps | `|d| <= 1` (only the move clock) | tokens ever credited positive | clears |
+|---|---|---|---|---|
+| 1 | 89 | 70 (78%) | 2 of 17 | 4 |
+| 2 | 101 | 80 (79%) | 2 of 21 | 4 |
+| 3 | 95 | 79 (83%) | 2 of 17 | 4 |
+| 4 | 95 | 75 (78%) | 2 of 19 | 4 |
+| **all** | **380** | **304 (80%)** | **2, every seed** | 16 |
+
+Two facts, both reproduced on 4 of 4 seeds. **Four in five decisions are made on a
+drive signal that carries nothing but the move-budget clock ticking one cell**, and
+**exactly two tokens out of the seventeen-to-twenty-one on offer ever earn positive
+credit** -- the same shape already measured on lp85 (16 candidates offered, 2 ever
+live), now on vc33 as well. This is the candidate-reachability wall seen through a
+different instrument, not a new problem.
+
+A third fact is code, not statistics: **the action that clears a level is never
+credited at all.** `board_replaced` drops `_last_token` so the next click is not
+credited with a delta measured across the seam between two unrelated boards -- which
+is right, that delta is meaningless -- but the consequence is that the single most
+informative action of the episode teaches the policy nothing.
+
+**What this does and does not say about a backward pass.** It does NOT refute one:
+propagating future compression gain to the actions that preceded it is exactly the
+mechanism for a signal that is invisible one step ahead, and 80% silence is that
+condition. It DOES bound the payoff: with only two tokens ever earning positive
+credit, a backward pass redistributes credit among candidates the policy already
+ranks first, so the ordering may not move at all. Anything built here must be
+diffed along a trajectory and measured paired over >=16 seeds before it is believed.
+
+Traces are not committed; regenerate with
+`ARC_TRACE=/tmp/t.jsonl $KIT/.venv/bin/python python/bench/bench.py --games vc33 --seed 1 --repeats 1`.
