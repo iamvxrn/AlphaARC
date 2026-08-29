@@ -938,3 +938,47 @@ the fixed-point argument that the taboo can never accumulate. The trace writes
 scored again ten steps later, which is the moment the argument is about. Testing
 that claim needs `dead` recorded at candidate-scoring time; the candidate logging
 added alongside this makes it possible, and it has not been done.
+
+### Rejected #7: putting the learned value and the rank prior in the same units
+
+The measurement that motivated it is real and stands (see the two sections above):
+the median learned value of a control contributes 0.013 to its score against 0.150
+for being ranked first, because `drive_gain_weight` is a fixed constant while the
+size of a compression delta is a property of the game (median non-zero `|d|` is 44
+on vc33, 3 on tn36). And the live control is demonstrably ON THE TABLE and passed
+over -- offered on 100% of tn36's steps and taken on 22%, offered on 82% of lp85's
+and taken on 8%.
+
+The fix that follows: score a control by `residual_bonus * (EMA / running mean
+non-zero |d|)`, so a control whose effect is typical for its game ties with being
+ranked first. No new constant; the two priors are simply put in the same units.
+Verified neutral with the flag off (seed 1: 2.2953 against the baseline's 2.2953,
+bit for bit), so the A/B measures the change and not the implementation.
+
+**16 paired seeds: mean -0.1653, sd 0.8321, sem 0.2080 -- NOT MEASURABLE, the seeds
+that moved disagree on the sign.** Per game:
+
+| game | paired diff | shape |
+|---|---|---|
+| tn36 | **-0.455** | never once positive beyond +0.06; two seeds at -2.11 |
+| vc33 | -0.140 | swings from +4.63 to -7.28 |
+| lp85 | -0.048 | **15 of 16 seeds exactly 0.00** |
+| r11l | -0.019 | mixed, +3.46 to -3.57 |
+
+**Read the per-game column, not the aggregate: it failed on precisely the two games
+it was designed for.** tn36 -- where the live control is offered every single step
+and the learned term was invisible against the prior -- got worse and never better.
+lp85 did not move at all on 15 of 16 seeds, so re-weighting never changed which
+action was taken there. Whatever makes those two games choose badly, it is not the
+ratio between the learned term and the rank prior, even though that ratio is
+genuinely lopsided.
+
+What this does NOT license: concluding the 0.013-vs-0.150 imbalance is harmless.
+It is measured, and it is real. What is now also measured is that correcting it,
+alone, buys nothing -- so the next attempt has to explain why an agent that CAN see
+the live control and CAN be made to value it still does not take it. The
+epsilon-exploration (0.2) and the taboo term, which is an order of magnitude larger
+than either prior, are the two unexamined terms in that sum.
+
+Mechanism reverted; the trace and candidate logging that produced these numbers
+stay, and are proven behaviour-neutral over 16 seeds.

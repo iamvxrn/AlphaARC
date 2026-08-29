@@ -245,5 +245,32 @@ left to decode; the holdout stays sealed.
    tokens are ever live in the whole run, and 94% of transitions do nothing. A
    perfect dead-detector suppresses 14 of 16 and still chooses between the same
    two -- no world model reaches past a candidate-set limit.
+   **SPLIT BY MEASUREMENT, 2026-08-30 -- reachability is NOT what binds lp85 or
+   tn36.** The trace now logs the candidate set per step (`ARC_TRACE`), so "the
+   policy never saw the live control" and "it saw it and walked past it" are finally
+   separable. Counting only steps where the policy already knew a control was live:
+
+   | game | live control WAS offered | and taken | offered, passed over |
+   |---|---|---|---|
+   | tn36 | **100%** | 22% | **77%** |
+   | lp85 | 82% | 8% | **91%** |
+   | vc33 | 43% | 51% | 48% |
+
+   On tn36 the live control is on the table at every single step and is taken one
+   time in five. That is item 4's territory, not item 5's. vc33's 43% is the only
+   real reachability component among the three. This does not touch the s5i5/su15
+   evidence above, which was never re-traced -- it says reachability is not the
+   binding constraint on the two games that were blamed on it.
+   **And the obvious repair does not work.** The learned value is worth 0.013 at
+   the median against 0.150 for being ranked first, because `drive_gain_weight` is
+   fixed while `|d|` is a property of the game (median 44 on vc33, 3 on tn36).
+   Putting both in the same units -- `residual_bonus * EMA / running mean |d|`, no
+   new constant -- measured **-0.1653, sem 0.2080 over 16 paired seeds, NOT
+   MEASURABLE**, and it failed on exactly the two games it was built for: tn36
+   -0.455 and never positive, lp85 unchanged on 15 of 16 seeds (Rejected #7).
+   So an agent that CAN see the live control and CAN be made to value it still does
+   not take it. The two unexamined terms in that sum are the epsilon-exploration
+   (0.2 -- one action in five is uniform over the candidates) and the taboo, whose
+   traced values reach 1.4 against priors of order 0.15.
 
 **Do NOT touch the holdout** — sealed by the user, criterion above.
