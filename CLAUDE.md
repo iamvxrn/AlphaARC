@@ -159,22 +159,28 @@ left to decode; the holdout stays sealed.
    not the credit: dc22's mode is a cursor position that moves 9 cells of 4096, and
    the per-primitive level vector cannot see it. The class needs a state that also
    carries WHERE the last small change happened.
-2. **Movement: the GOAL, not the avatar and not the route.** Narrowed hard on
-   2026-08-29 and this is now the sharpest open item in the file. The avatar
-   detector was fixed (it tested a whole COLOUR as one body, so g50t's 24-cell
-   avatar inside 119 cells of colour 9 was invisible; now a per-component back-off
-   sees it) and **the score did not move by 0.0000 on six paired seeds**. Because
-   the detector was never the blocker: instrumented over a full run, ls20's
-   `_route` fires **243 of 249** calls with the avatar found and four directions
-   learned and completes ZERO levels, while g50t's is **silent 248 of 248** even
-   with five directions -- the target it picks, the nearest residual/object
-   candidate, sits adjacent to the avatar and no 6-cell step shortens a distance of
-   1. So the route half is built and demonstrably insufficient, and
-   **"the nearest anomaly" is not the goal of any of these games**. What is needed
-   is a perception answer to "what on this board is a DESTINATION?" -- su15's decode
-   already names the shape of one (a 9-blob goal with a dashed route and a
-   waypoint), and su15 belongs to this class despite being played with clicks.
-   Do NOT spend more effort on detecting or steering the avatar.
+2. **Movement: what MARKS a destination.** Narrowed twice on 2026-08-29. The
+   avatar detector was never the blocker (fixed, measured 0.0000). What was
+   broken beneath it: the destination was re-derived every step, so it was a
+   gradient that reversed as the avatar moved -- ls20 spent 249 route decisions
+   oscillating between six positions on opposite keys -- and greedy distance
+   cannot round a wall, which a maze needs. Both fixed: a destination is held
+   until reached or proven unreachable then crossed off, and the route is a BFS
+   over the lattice the avatar's own offsets define, with walls learned as edges
+   that do not exist. Result, 16 paired seeds: **ls20 takes L1 in 8 of 16 seeds
+   (was 2), g50t in 2 of 16 (was 0, and it had never scored in any run)**, at 23
+   actions against a baseline of 22 and 48 against 78. The aggregate difference
+   is +0.1550, sem 0.1157 -- NOT resolved, and it read +0.41 over the first six
+   seeds, so quote the counts, not the mean.
+   **What is still missing is the goal itself.** The sweep works by crossing
+   candidates off, not by recognising a destination, which is why m0r0 and sp80
+   stay at zero and ls20 fails half its seeds. Two criteria are closed by
+   measurement: imagined compression scores EVERY candidate negative on ls20 (an
+   avatar in a corridor breaks the corridor) with the real goal tenth, and
+   "nearest" is what caused the oscillation. The live lead is perceptual: ls20's
+   destination is a 5-cell plus of rare colours at (32,21), and su15's decode
+   independently named a 5-cell colour-0 plus as its waypoint marker. Two
+   independently decoded games sharing a figure is a specification.
 3. Depth on the four scoring games; vc33 still reaches level 2 of 7 on every seed,
    and the seam fix did not change that -- it made the levels already reached much
    cheaper (vc33 L2 x5.95 -> x2.27). Remaining efficiency headroom, mean over 16

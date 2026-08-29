@@ -706,3 +706,69 @@ itself" while it could not see an avatar that translates perfectly rigidly. Note
 the rule asks for 16 seeds and this has 6 -- defensible only because the difference
 is an identity rather than a small number.
 
+### The movement class, second pass: a destination that is HELD, and a route that searches
+
+The section above closed the avatar question. What was left was the goal, and two
+defects sat between the agent and any goal at all -- both found by instrumenting a
+run rather than by reading the code.
+
+**The destination was re-derived on every step.** `_route` took "the nearest
+candidate" afresh each call, which is not a goal but a gradient that reverses the
+moment the avatar moves, because the nearest anomaly is usually whatever the avatar
+is standing beside. On ls20 seed 1: 249 route decisions, the position changed on
+223 of them, and the whole run was spent oscillating between about six positions
+with the key alternating k3/k4 -- opposite directions. Fixed by choosing a
+destination once, holding it until reached or proven unreachable, and crossing it
+off so the sweep moves on. "Proven unreachable" needs no constant: when every known
+direction has been spent without the distance improving, greedy has nothing left.
+
+**Greedy distance cannot go around a wall, and ls20 is a maze.** The avatar's
+offsets define a lattice; a wall is an edge that does not exist, learned by trying
+(a routed key that leaves the avatar in place marks `(anchor, key)` blocked).
+Breadth-first over the known-good edges, untried ones assumed open, can step AWAY
+from the target to get past something. No gradient can.
+
+**Measured paired on the movement split, 16 seeds.** Read the counts, not the
+aggregate:
+
+| | HEAD | committed + search |
+|---|---|---|
+| ls20 takes level 1 | **2 of 16** | **8 of 16** |
+| g50t takes level 1 | **0 of 16** | **2 of 16** |
+| m0r0, sp80 | 0 | 0 |
+| aggregate | 0.0084 | 0.1634 |
+
+Paired difference **+0.1550, sd 0.4629, sem 0.1157**: it does NOT clear twice its
+standard error, so no claim is made on the aggregate. 7 seeds up, 2 down, 7
+unchanged. The counts are far better resolved than the mean -- 7 discordant seeds
+one way against 1 the other, McNemar p ~= 0.04-0.07 -- because the aggregate is
+dominated by whether a lucky seed happens to land near baseline.
+
+**And the six-seed reading was +0.4107, against +0.1550 at sixteen.** Same code,
+same arms; the first six happened to contain the 1.71 seed. This is the third time
+this file has had to record that, so treat any n < 16 as a screen and nothing more.
+
+What the score does when it lands is worth seeing, though: ls20 takes its level in
+**23 actions against a baseline of 22** and g50t in **48 against 78** -- at and
+under baseline, where the quadratic term pays most. g50t had never appeared in any
+scoring list in any run before this change.
+
+**Two destination criteria were closed by measurement here**, and neither is worth
+retrying without new evidence:
+
+- *Imagined compression.* Set the avatar down on each candidate in imagination and
+  ask the drive. On ls20's opening board EVERY candidate scores negative -- an
+  avatar standing in a corridor breaks the corridor's regularity -- and the real
+  destination ranks tenth. The drive rewards a tidier board, not ARRIVAL, which is
+  what ls20's decode said a session earlier and is now measured.
+- *Walls as the first suspect.* The avatar was not pushing into a wall. It was
+  oscillating, and the wall question only became real AFTER the destination was
+  held still long enough to walk toward.
+
+Still open, and now sharply: **what marks a destination.** The sweep works by
+crossing candidates off rather than by recognising the goal, which is why m0r0 and
+sp80 stay at zero and why ls20 fails half its seeds. One empirical lead: ls20's
+destination is a five-cell plus of rare colours at (32,21), and su15's decode
+independently named "a 5-cell colour-0 plus marks the NEXT waypoint". Two
+independently decoded games sharing a figure is a specification, not a coincidence.
+
