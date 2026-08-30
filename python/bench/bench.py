@@ -156,6 +156,13 @@ def main() -> None:
 
     kit = args.kit.expanduser()
     agent_path = args.agent or (kit / "agent" / "my_agent.py")
+
+    def _tilde(path) -> str:
+        try:
+            return "~/" + str(Path(path).resolve().relative_to(Path.home()))
+        except ValueError:
+            return str(path)
+
     for p, what in ((kit, "kit"), (agent_path, "agent")):
         if not p.exists():
             raise SystemExit(f"{what} not found: {p}")
@@ -237,7 +244,9 @@ def main() -> None:
         "max_steps": args.max_steps,
         "repeats": args.repeats,
         "seed": args.seed,
-        "agent": str(agent_path),
+        # Home-relative: these files are committed, and an absolute path writes the
+        # machine's user name into the repository on every regeneration.
+        "agent": _tilde(agent_path),
         "aggregate": agg,
         "games": results,
     }
