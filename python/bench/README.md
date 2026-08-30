@@ -982,3 +982,69 @@ than either prior, are the two unexamined terms in that sum.
 
 Mechanism reverted; the trace and candidate logging that produced these numbers
 stay, and are proven behaviour-neutral over 16 seeds.
+
+## The four movement boards, read directly (2026-08-30)
+
+The first three destination criteria died because they were analogies. This is the
+opening board of each of the four movement games, dumped and read. Facts first.
+
+**ls20** -- a maze on background 4. Bottom-left, OUTSIDE the play area (rows 53-62,
+cols 1-10), sits a 5-framed box containing a colour-9 glyph at 2x scale. The goal
+box (rows 8-16, cols 32-40, where the avatar is known to end) contains a colour-9
+glyph at 1x scale. Descaled and laid side by side:
+
+    legend (rows 55-60)     goal box (rows 11-13)
+        # # #                   # # #
+        # . .                   . . #
+        # . #                   # . #
+
+They are **exact horizontal mirrors of each other**. Also present: a two-colour
+stack, colour 12 over colour 9, at rows 45-49 cols 34-38.
+
+**g50t** -- a maze on background 0. Top-left, outside the maze (rows 1-5, cols 1-7),
+a three-part legend: a 9-ring `###/#.#/###`, a solid 1-square `###/###/###`, and a
+9-bar `###`. In play: a solid 5x5 colour-9 block with one hole (rows 8-12) and the
+goal region (rows 49-55, cols 43-49) which is a 9-bracket -- top, right and bottom
+closed, **open on the left**, with a single 9 cell at (52,46) inside it. A colour-8
+line runs from (9,39) down col 39 to row 40, then left along row 40 to col 14,
+ending in a left-pointing arrowhead.
+
+**sp80** -- background 12. Top of the board, rows 1-3 and 4-7 at cols 36-39: a
+colour-4 block stacked directly on a colour-6 block -- the same two-colour stack
+shape ls20 has. In play: a colour-9 platform (rows 16-19, cols 12-31) and two
+identical colour-11 pedestals, each a solid base with two legs, at cols 16-27 and
+cols 40-51.
+
+**m0r0** -- the board is split into a colour-11 left half and a colour-12 right
+half, and **the right half is the exact mirror of the left about column 31** (x ->
+62-x): every 5-coloured corridor maps over, and the two colour-10 blocks at rows
+49-53 sit at cols 19-23 and cols 39-43, which are exact mirror images.
+
+### The fourth hypothesis, and what it still owes
+
+**The destination is fixed by a CORRESPONDENCE between a reference structure and a
+region of the play area** -- the same Identity / ColourSwap / Reflect relation the
+repo already implements in `correspondence.py` for the relational click games.
+
+Status, stated honestly:
+- **ls20: verified exactly.** Legend glyph and goal glyph are reflections, and the
+  legend sits outside the play area where it cannot be walked to.
+- **m0r0: structurally supported.** The reference is not a legend box but the
+  board's other half, and the relation is again reflection.
+- **g50t: not verified.** There IS a legend outside the maze, but the goal bracket
+  is not an exact correspondent of the 9-ring -- it is open on one side and holds a
+  dot. Suggestive, not established.
+- **sp80: not verified.** It has the legend-shaped two-colour stack ls20 also has,
+  but no level has ever been cleared there, so there is no known goal to check
+  against.
+
+**It is therefore NOT ready to build**, by the rule that killed the third candidate:
+a criterion must yield the known goal where one is known and yield SOMETHING on the
+two games at zero, and this one is two for four. What makes it worth the next hour
+rather than discarding: it is the first candidate derived from the boards instead of
+by analogy, and it points at a primitive that already exists.
+
+One thing it needs that is already a known gap: **ls20's legend is at 2x scale**, and
+Correspondence V1 deliberately excludes scale -- which is also exactly what blocks
+s5i5 (its two template boxes are different sizes). The same missing capability sits
+in front of both the movement class and the relational click class.
