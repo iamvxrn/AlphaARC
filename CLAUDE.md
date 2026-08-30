@@ -273,4 +273,16 @@ left to decode; the holdout stays sealed.
    (0.2 -- one action in five is uniform over the candidates) and the taboo, whose
    traced values reach 1.4 against priors of order 0.15.
 
+6. **Accumulation ACROSS episodes -- the only untested form of "scale".** Measured
+   2026-08-31: doubling the in-episode budget to 500 actions changed NOTHING --
+   501 actions taken against 251, 80 levels against 80, paired score difference
+   exactly +0.0000 on 16 of 16 seeds (Rejected #8). The cap was verified binding
+   first: every game ends at the cap with state=NOT_FINISHED on 64 of 64
+   game-seeds, so the extra 16,000 actions were really spent. What that refutes is
+   more search TIME; `drive_gain` and `succ` are still built fresh every run and
+   thrown away at the end, so the agent starts each episode amnesiac and nothing
+   has ever measured carrying them across. Cheap to test, and the metric scores a
+   game by its BEST of three runs, so a second run that starts knowing the mechanic
+   is worth real points.
+
 **Do NOT touch the holdout** — sealed by the user, criterion above.

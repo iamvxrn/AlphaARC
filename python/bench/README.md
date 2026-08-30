@@ -1048,3 +1048,42 @@ One thing it needs that is already a known gap: **ls20's legend is at 2x scale**
 Correspondence V1 deliberately excludes scale -- which is also exactly what blocks
 s5i5 (its two template boxes are different sizes). The same missing capability sits
 in front of both the movement class and the relational click class.
+
+### Rejected #8: more search time inside the episode
+
+The claim under test was the natural one -- the mechanism explores, it just needs
+more room. It is the cleanest thing to test on this harness, so it was tested
+rather than argued about.
+
+Precondition checked first, because without it the experiment measures nothing: is
+the action cap actually binding? At `--max-steps 250` every game ends at exactly 251
+actions with `state=NOT_FINISHED` on **64 of 64 game-seeds** -- the agent never
+finishes on its own, it is always cut off. So more budget is genuinely more search.
+
+Doubled to `--max-steps 500`, 16 paired seeds, same seeds as `runs/base/`:
+
+| | 250 actions | 500 actions |
+|---|---|---|
+| actions actually taken, every game | 251 | **501** |
+| lp85 / r11l / tn36 levels | 1 on every seed | 1 on every seed |
+| vc33 levels | 2 on every seed | 2 on every seed |
+| total levels over 16 seeds | 80 | **80** |
+| paired score difference | | **+0.0000, max abs 0.0000** |
+
+**16,000 extra actions bought zero extra levels.** The score is not merely
+statistically unchanged, it is bit-identical on every seed, because each level is
+completed at the same action count and everything after that contributes nothing.
+
+**Scope, stated so this is not over-read.** What is refuted is *more search time
+within an episode*. Three other things called "scale" are untouched by it:
+per-decision compute (deeper planning or imagination), accumulation *across*
+episodes, and model size (there is no model to grow -- this agent is not a network).
+The second is the interesting one and is now the only untested form: `drive_gain`
+and `succ` are built fresh each run and discarded at the end, so the agent starts
+every episode amnesiac, and nothing has ever measured what carrying them across
+would do.
+
+The inner loop was parallelised in the same commit: seeds are independent processes
+and were being run one at a time on a 12-core machine, so 16 seeds took ~50 minutes
+with eleven cores idle. `make quick-n` now runs `nproc - 1` workers -- about 15
+minutes, one core left free.

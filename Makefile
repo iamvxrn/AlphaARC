@@ -17,6 +17,10 @@ KIT      ?= $(HOME)/ARC-AGI-3-Kaggle-Starter/ARC-AGI-3-Kaggle-Starter
 PY       := $(KIT)/.venv/bin/python
 GO       ?= /run/host/usr/lib/go/bin/go
 STEPS    ?= 250
+# Seeds are independent processes, so the inner loop is embarrassingly parallel.
+# It ran them one at a time on a 12-core machine: 16 seeds took ~50 min of which
+# eleven cores were idle. One core is left free so the machine stays usable.
+JOBS     ?= $(shell n=$$(nproc 2>/dev/null || echo 2); [ $$n -gt 1 ] && echo $$((n-1)) || echo 1)
 # The engine scores a game by its BEST run, so `repeats` moves the aggregate on
 # its own: the recorded 1.7087 was taken at 3, and the SAME agent reads 0.3383
 # at 2 because vc33 reaches level 2 in only one repeat of three. Every recorded
@@ -48,12 +52,12 @@ quick: bundle ## one seed of the scoring games -- a SMOKE TEST, never a measurem
 
 quick-n: bundle ## INNER LOOP: SEEDS seeds of the scoring games, paired-comparable
 	@mkdir -p python/bench/runs/$(TAG)
-	@for s in $$(seq $(SEED) $$(($(SEED)+$(SEEDS)-1))); do \
-	    echo "=== seed $$s ==="; \
+	@echo "$(SEEDS) seeds across $(JOBS) workers (per-seed output suppressed; the "
+	@echo " summary below is the measurement) ..."
+	@seq $(SEED) $$(($(SEED)+$(SEEDS)-1)) | xargs -P $(JOBS) -I@ \
 	    $(PY) python/bench/bench.py --split scoring --kit $(KIT) --max-steps $(STEPS) \
-	        --repeats $(REPEATS) --seed $$s \
-	        --out python/bench/runs/$(TAG)/seed$$s.json | tail -3; \
-	done
+	        --repeats $(REPEATS) --seed @ \
+	        --out python/bench/runs/$(TAG)/seed@.json > /dev/null
 	@python3 python/bench/seeds.py python/bench/runs/$(TAG)/seed*.json \
 	    $(if $(VSDIR),--vs python/bench/runs/$(VSDIR)/seed*.json)
 
