@@ -1270,3 +1270,50 @@ The first five the agent can already express in some form. The sixth it explicit
 cannot -- and a seventh, which the oracle never had and which is what it actually
 needed, is *terrain that can be changed*. Note the oracle FAILED, so this list is
 what a winning agent needs at least, not what it needs in full.
+
+## Carrying the mechanic across a game's runs: +1.21 (2026-08-31)
+
+Open item 6 -- the only untested form of "scale" left after doubling the in-episode
+budget bought exactly nothing. Every repeat of a game constructed a fresh agent, so
+`drive_gain`, `succ` and the key->offset map were built from scratch and thrown away
+three times per game, while the scorecard keeps a game's BEST of three.
+
+What is carried is the MECHANIC and nothing else: `Policy.drive_gain`, `succ`,
+`tries`, and `RunPlanner.moves` / `avatar` / `avatar_shape`, bound by reference so
+later runs keep filling the same tables. Deliberately NOT carried: `_dest`,
+`blocked`, `profiles` and `inert` -- those describe a level, not a mechanic, and
+`inert` is the permanent write-off that disables g50t's entire repertoire.
+
+Verified neutral with `ARC_CARRY=0` (seed 1 bit-identical to the baseline).
+
+**16 paired seeds: +1.2137, sd 0.8541, sem 0.2135, 14 of 16 seeds positive.**
+`seeds.py` still withholds REAL because two seeds disagree on the sign -- the same
+profile as the control-name fix (+1.0967, sem 0.2653, 13 of 16), which stands as the
+project's largest measured change.
+
+Per level, median over 16 seeds:
+
+| game | level | base | carried |
+|---|---|---|---|
+| vc33 | 1 | 13 actions (x1.93), score 27 | **3 actions (x0.43), score 115 = the cap** |
+| vc33 | 2 | 24 (x1.33), score 56 | **16 (x0.92), score 114** |
+| r11l | 1 | 43 (x1.95), score 26 | **21 (x0.98), score 103** |
+| lp85 | 1 | x2.62, score 15 | x2.74, score 13 -- unmoved |
+| tn36 | 1 | x0.81, score **115** | x1.27, score **62** -- worse |
+
+**Three things follow, and the second one changes what to do next.**
+
+**No new depth.** Levels are identical: 32 vs 32 on vc33, 16 vs 16 elsewhere. The
+whole gain is efficiency, which the metric rewards quadratically, but the arithmetic
+that says 10 needs six of vc33's seven levels is untouched.
+
+**vc33's efficiency is now EXHAUSTED.** Both levels it reaches sit at 115 and 114
+against a 115 cap. There is nothing left to win there by being faster, so every
+further point on vc33 must come from level 3 -- where it currently spends 231
+actions and fails.
+
+**tn36 got worse, in exactly the way predicted before the run.** Its level 1 was
+already faster than baseline (x0.81, capped) and carrying knowledge into run 2 slows
+it to x1.27. It is the one game whose opening beat baseline, and the one game the
+carry hurts. Not understood; a plausible read is that a value learned on one board
+misleads on the next, which is the same shape as the `inert` failure. Open.
