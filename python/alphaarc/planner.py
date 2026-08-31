@@ -266,11 +266,14 @@ class RunPlanner:
                                          sum(c[1] for c in cl)//len(cl)) for cl in cs)
             except Exception:
                 bodies = None
+            _rows, _cols = self.clock.strip()
+            _st = hash(tuple(tuple(v for c, v in enumerate(row) if c not in _cols)
+                             for r, row in enumerate(grid) if r not in _rows))
             with open(self._trace_path, "a") as fh:
                 fh.write(json.dumps({"event": "fired", "tok": self._run_token,
                                      "pos": pos, "bodies": bodies, "n": len(cells),
                                      "shape": self.avatar_shape is not None,
-                                     "nothing": bool(_co)}) + "\n")
+                                     "s": _st, "nothing": bool(_co)}) + "\n")
         if _co:
             if self._trace_path and self._run_token not in self.inert:
                 self._writeoffs += 1

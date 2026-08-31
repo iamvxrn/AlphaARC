@@ -1317,3 +1317,52 @@ already faster than baseline (x0.81, capped) and carrying knowledge into run 2 s
 it to x1.27. It is the one game whose opening beat baseline, and the one game the
 carry hurts. Not understood; a plausible read is that a value learned on one board
 misleads on the next, which is the same shape as the `inert` failure. Open.
+
+### Rejected #10: preferring a control not yet tried from this board
+
+Traced first, built second -- and the trace turned out to answer the question on its
+own. On vc33 level 3 the agent spends 73 steps in **3 distinct states** over 11
+controls and repeats an already-tried (state, control) pair **60 times**. Splitting
+those repeats by cause, from the replay alone:
+
+| cause | measured |
+|---|---|
+| repetition the mechanic requires | 1 legitimate against 6 useless |
+| repetition from FORGETTING | **0** |
+| repetition from ranking | **60 of 60** |
+| state collapsing hidden modes | 3 contradictory pairs of 11 (27%) |
+
+Nothing is forgotten. At every repeat the taboo is not merely present, it is **large
+-- median 0.750, max 1.312, above the 0.150 top-rank prior on 100% of repeats**. It
+still fails to suppress, and the reason (inferred, not measured -- only the chosen
+token's taboo is logged) is that every one of the 11 controls is pressed repeatedly,
+so all of them carry a similar taboo, it cancels out of the comparison, and the
+ordering falls back to the rank prior. **Uniform suppression is no suppression.**
+
+The fix that follows: a bonus, worth `residual_bonus`, for a control not yet tried
+from THIS board (full grid hash minus the learned move-clock strip). Unlike
+`Policy.dead` and `RunPlanner.inert`, which punish a control's name globally, this
+key clears itself whenever anything changes.
+
+**16 paired seeds: +0.1382, sem 0.1620 -- not measurable. And on vc33, the game it
+was built for, 14 of 16 seeds moved by exactly 0.0000.**
+
+Re-traced with the flag on, the reason is not "it helped and the budget had nowhere
+to go". **It never fired.** With the bonus on, vc33 level 3 is bit-identical: 73
+steps, 3 states, 13 distinct pairs, 60 repeats. Thirteen distinct pairs are
+exhausted in thirteen presses, after which `untried` is false for every candidate,
+the bonus is uniform, and it cancels exactly like the taboo does.
+
+**What this establishes about level 3, which is worth more than the fix would have
+been.** Every term that could discriminate between controls -- the learned value,
+the taboo, the untried bonus -- goes uniform within a dozen moves. The agent
+exhausts its entire reachable (state, action) space in 13 actions and then has 217
+actions with nothing new to try. Level 3 is therefore not bounded by wasteful
+exploration; it is bounded by **reachability**: the control that would move the
+board is not among the 11-13 the candidate generator can propose. That agrees with
+the independent measurement earlier the same day, where vc33 was the only one of
+three games with a real reachability component (the live control on the table on
+just 43% of steps).
+
+Mechanism reverted, seed 1 bit-identical to the baseline afterwards. The
+clock-masked state hash stays in the trace -- it is what made this measurable.
