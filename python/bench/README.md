@@ -1540,3 +1540,54 @@ Where that leaves level 3: the panel is the only thing that acts, it is seven sc
 regulators rather than seven bits, and no clear was observed in 902 of its states.
 The next question is the structure of the panel space itself, not a hunt for another
 control.
+
+## H19: vc33 level 3 has a clean coordinate model, and it did not yield a clear
+
+Measured with the research-only save-state oracle. Result **B**: the coordinate
+model is found and verified, no clear was produced, and the next barrier is stated.
+
+### The mechanic
+
+The lower band is five cells divided by colour-5 walls of different heights (walls
+at cols 14-15, 26-27, 36-37, 48-49, starting at rows 38, 52, 36, 30). Colour 3 is
+the substance, colour 0 the void. Tanks: cols 6-13, 16-25, 28-35, 38-47, 50-57.
+
+The eight panel buttons sit in pairs beside each wall, and each is a **constant
+transfer of two rows across its wall**:
+
+    0 (-16, 0, 0, 0, 0)   drain T1        4 (0, 0,-16,+20, 0)   T3 -> T4
+    1 (+16,-20, 0, 0, 0)  T2 -> T1        5 (0, 0,+16,-20, 0)   T4 -> T3
+    2 (0,-20,+16, 0, 0)   T2 -> T3        6 (0, 0, 0,-20,+16)   T4 -> T5
+    3 (0, 0,-16, 0, 0)    drain T3        7 (0, 0, 0,+20,-16)   T5 -> T4
+
+-16 and +20 are two rows of an 8-wide and a 10-wide tank. So
+`phi(T_a(s)) - phi(s) = v_a` holds with a constant `v_a` per button, **except at
+bounds**, which is where the zeros and the two non-commuting pairs come from: button
+7 is dead until T5 has something to give back (it becomes live after `[6,6,6]`), and
+from `[1,3,5]` button 1 delivered +6 instead of +16 because T1 could take no more.
+That is the whole conditional part of the system.
+
+Liquid flows one way, T2 -> T3 -> T4 -> T5 with a branch T2 -> T1, and buttons 0
+and 3 destroy it.
+
+### What the coordinates buy, measured
+
+* 902 frame states collapse to **455 phi states** -- so phi alone is not complete;
+* adding the floating object gives **561 (surfaces, object) states**;
+* the object riding T5 satisfies **object row = T5 surface - 1** exactly, and is
+  reachable at rows 29, 31, ... 47;
+* reachable surfaces: T1 46-58, T2 52-58, T3 52-58, T4 36-58, T5 30-48.
+
+### Why this is result B and not A
+
+**No clear** in 561 explored states, nor in five directed extremes (fill T5, fill
+T4, everything into T1, drain-then-pump, alternating).
+
+The concrete next barrier, and it is measurable: the two wall markers -- colour 14
+at **row 41** on the wall at cols 14-15, colour 15 at **row 39** on the wall at cols
+36-37 -- sit at heights the neighbouring tanks' surfaces never reach in any explored
+state (T1 tops out at 46, T3 at 52; smaller row means higher). Either the markers are
+not the goal, or reaching them needs liquid the system cannot hold once buttons 0
+and 3 have destroyed any, or the goal is not a surface height at all. That is the
+next thing to test, and it is a question about the win condition rather than about
+the algebra, which is now known.
