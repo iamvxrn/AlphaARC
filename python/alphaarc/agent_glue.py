@@ -87,10 +87,17 @@ class MyAgent(Agent):
         # ARC_DEAD_DECAY sweeps how long a dead control stays suppressed; see
         # Policy.dead_decay for why 0.75 cannot accumulate.
         _decay = float(os.environ.get("ARC_DEAD_DECAY", "0.75"))
+        # ARC_MAXCAND: the candidate cap, and nothing else. vc33 level 3 puts its
+        # eight live buttons at ranks 10-17 of a smallest-first ordering while the
+        # cap is 8, so the policy never sees them. Raising it adds a tail without
+        # permuting the head -- the one thing Rejected #5 said a candidate change
+        # must not do.
+        _cap = int(os.environ.get("ARC_MAXCAND", "8"))
         if mode == "planner":
-            self._policy = RunPlanner(rng=random.Random(seed))
+            self._policy = RunPlanner(rng=random.Random(seed), max_candidates=_cap)
         elif mode == "policy":
-            self._policy = Policy(rng=random.Random(seed), dead_decay=_decay)
+            self._policy = Policy(rng=random.Random(seed), dead_decay=_decay,
+                                  max_candidates=_cap)
         else:
             # ARC_DEAD_STREAK / ARC_CLOCK_DEADRUN exist so the hand-over threshold
             # can be swept by the bench WITHOUT editing code between runs -- it was
@@ -101,6 +108,7 @@ class MyAgent(Agent):
                 dead_decay=_decay,
                 dead_streak=int(os.environ.get("ARC_DEAD_STREAK", "20")),
                 clock_dead_run=os.environ.get("ARC_CLOCK_DEADRUN", "1") == "1",
+                max_candidates=_cap,
             )
         # ARC_CARRY=1: keep what was learned about the MECHANIC across the
         # repeats of a game. The scorecard keeps a game's BEST of three runs, and

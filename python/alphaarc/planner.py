@@ -568,7 +568,8 @@ class HybridPolicy:
 
     def __init__(self, switch_after: int = 25, dead_streak: int = 20,
                  rng: Optional[random.Random] = None, policy=None, planner=None,
-                 clock_dead_run: bool = True, dead_decay: float = 0.75):
+                 clock_dead_run: bool = True, dead_decay: float = 0.75,
+                 max_candidates: int = 8):
         rng = rng or random.Random()
         # The engine adapter falls back to a random simple action when no click is
         # available -- keyboard-only games take that path on every step -- and it
@@ -579,8 +580,10 @@ class HybridPolicy:
         # SAME stream, so a change that only alters a constant keeps the whole run
         # comparable seed for seed. Handing the policy its own Random would move
         # every subsequent draw and show up as a difference that is purely the RNG.
-        self.policy = policy if policy is not None else Policy(rng=rng, dead_decay=dead_decay)
-        self.planner = planner if planner is not None else RunPlanner(rng=rng)
+        self.policy = policy if policy is not None else Policy(
+            rng=rng, dead_decay=dead_decay, max_candidates=max_candidates)
+        self.planner = planner if planner is not None else RunPlanner(
+            rng=rng, max_candidates=max_candidates)
         # Hand over early if the cheap agent is visibly getting nowhere. lp85 puts
         # a row of six small blocks at the top -- a progress indicator, not a
         # control -- and "smallest object first" ranks those AHEAD of the 4x4
