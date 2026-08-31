@@ -1219,3 +1219,54 @@ from the other two is not yet known, and no candidate here survived. Note that
 m0r0 and sp80 are already classified as stateful-mode (open item 1) and ls20 is the
 one pure movement game of the four, which is the shape of a real split, but that is
 an observation and not a measurement.
+
+## The g50t oracle: the destination cannot be walked to (2026-08-31)
+
+Three destination criteria, a state-key hypothesis and a body-configuration
+hypothesis were all guessed and all refuted. So instead of guessing again, this is
+`python/bench/oracle_g50t.py`: an agent hand-given everything about g50t -- which
+component is the avatar, where the goal is, and permission to read walkability off
+the board -- which declares every fact it consults. A diagnostic, not a solver.
+
+It learned the controls correctly (`ACTION2 (6,0)`, `ACTION1 (-6,0)`,
+`ACTION4 (0,6)`, `ACTION3 (0,-6)`; 6-cell steps, a 5x5 body), routed itself down
+the left corridor, and **stopped dead at (34,16)**: 122 consecutive presses of a
+move the board says is legal, every one refused by the game.
+
+Checked offline against the dumped board, BFS over the avatar's own 6-cell lattice
+with a 5x5 footprint:
+
+| walkable colours | result |
+|---|---|
+| `{5, 9}` corridor + own colour | **goal UNREACHABLE**, limit row 34 |
+| `{5, 8, 9}` also the colour-8 barrier | goal reachable in 12 moves -- **on paper only** |
+
+Row 34 is exactly where the live oracle stopped. The colour-8 structure at rows
+38-42 seals the corridor, and the engine refuses every move into it.
+
+**So the goal region at rows 49-55 x cols 43-49 cannot be reached by moving.**
+Something must change the board first. That is why the destination work has been
+stuck: every criterion tried so far -- imagined compression, the five-cell plus,
+enclosure, and the two-stage legend correspondence -- silently assumed the same
+frame, *identify the target and walk to it*. On this game that frame is false
+before any criterion is even applied.
+
+It also re-reads the human result. A person cleared level 1 with the spacebar; the
+natural conclusion was "the trigger is a key we write off". The oracle says the
+harder part is elsewhere: the key cannot matter until the board has been altered
+enough for the destination to exist as a place you can stand.
+
+**What the oracle needed, by kind** (the vocabulary a general mechanism would have
+to be able to express):
+
+    identity_of_controlled_body            which component is me
+    effect_of_key_on_my_position           key -> (drow, dcol)
+    goal_region_membership                 am I there yet
+    reachability_over_learned_offsets      route over my own lattice
+    walkability_read_from_the_board        can my footprint stand here
+    retry_a_control_that_was_dead_elsewhere
+
+The first five the agent can already express in some form. The sixth it explicitly
+cannot -- and a seventh, which the oracle never had and which is what it actually
+needed, is *terrain that can be changed*. Note the oracle FAILED, so this list is
+what a winning agent needs at least, not what it needs in full.
