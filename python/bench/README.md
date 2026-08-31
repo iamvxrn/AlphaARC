@@ -1511,3 +1511,32 @@ not exhausted.**
 returning, not the state: two different boards can carry the same savings. Direct
 measurement from a restored clean state shows no button is an involution. This is
 the argmax-collapse trap this file warns about, walked into with a scalar.
+
+### H18: there is no second kind of action on vc33 level 3
+
+The idea was that the panel sets a parametric state and some other action tests or
+uses it -- a thing that becomes clickable, moves, or changes role in the right
+configuration. Measured with the save-state oracle, from a clean level 3:
+
+* **dense sweep, stride 2 over the whole 64x64 board -- 1024 points probed. Exactly
+  7 change the board, all in row 56, all panel buttons.** Nothing else on the board
+  does anything.
+* the same 104 non-panel targets (31 component centroids plus an 81-point grid)
+  probed again in **seven panel-derived states** -- `[]`, `[0]`, `[3]`, `[0,3]`,
+  `[1,2,4]`, `[0,1,2,3,4]`, `[2,5,6,1,3,0]` -- gave **0 live actions in every one**,
+  including at depth 6.
+
+So no second action type was found, either on the clean board or in any sampled
+panel configuration. **The entire observed live action space of vc33 level 3 is the
+seven panel buttons.**
+
+Residual limits, stated so this is not over-read: stride 2 would miss a single-cell
+control sitting at odd row AND odd column (every component centroid was probed
+separately, so it would have to be a control that is not a component); only seven
+panel states were sampled for the non-panel census; and the panel-only graph itself
+was never exhausted (902 states, 51 nodes still queued).
+
+Where that leaves level 3: the panel is the only thing that acts, it is seven scalar
+regulators rather than seven bits, and no clear was observed in 902 of its states.
+The next question is the structure of the panel space itself, not a hunt for another
+control.
