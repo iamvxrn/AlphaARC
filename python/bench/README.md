@@ -1485,3 +1485,29 @@ fires a **phantom `board_replaced("level_clear")` after every reset**. Observed:
 
 It drops the transition trace at a moment nothing happened, and it makes any
 level-indexed reading of a trace wrong unless episodes are split on `reset` first.
+
+## The algebra of vc33 level 3's panel (2026-08-31)
+
+Measured with a save-state oracle (`python/bench/oracle_state.py`, research only --
+it reaches through `env._game._levels`, which is more access than an agent has).
+
+* the panel is **8 colour-9 components** at rows 56-57;
+* from a clean level 3, **7 of the 8 change the board**;
+* **0 of the 7 are involutions** -- pressing one twice never returns the board;
+* **19 of 21 pairs commute**; the two that do not are `(0,3)` and `(3,4)`;
+* panel-only breadth-first search: **902 unique states**, path lengths to **17**,
+  **60,005 oracle actions**, 51 nodes still queued, **no level clear observed**.
+
+**H17 in the form "a small toggle space, 2^7 combinations" is refuted.** Seven
+controls producing hundreds of states with near-total commutativity are seven
+scalar regulators, not seven bits -- consistent with this repo's own earlier decode
+of vc33 as a reversible SCALAR control.
+
+**No clear was observed in 902 reachable panel-only states; the reachable graph was
+not exhausted.**
+
+**A retraction.** The earlier reading that "the panel buttons are toggles", from
+`c9/f6/#5` giving `d=+27` then `d=-27`, was wrong. That is the compression delta
+returning, not the state: two different boards can carry the same savings. Direct
+measurement from a restored clean state shows no button is an involution. This is
+the argmax-collapse trap this file warns about, walked into with a scalar.
