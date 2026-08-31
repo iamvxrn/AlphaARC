@@ -1541,7 +1541,7 @@ regulators rather than seven bits, and no clear was observed in 902 of its state
 The next question is the structure of the panel space itself, not a hunt for another
 control.
 
-## H19: vc33 level 3 has a clean coordinate model, and it did not yield a clear
+## H19: vc33 level 3's fluid-transfer dynamics, decoded (no clear)
 
 Measured with the research-only save-state oracle. Result **B**: the coordinate
 model is found and verified, no clear was produced, and the next barrier is stated.
@@ -1591,3 +1591,47 @@ not the goal, or reaching them needs liquid the system cannot hold once buttons 
 and 3 have destroyed any, or the goal is not a surface height at all. That is the
 next thing to test, and it is a question about the win condition rather than about
 the algebra, which is now known.
+
+## H20: the win condition, read off the two levels the agent already clears
+
+Instead of guessing at level 3, capture the five frames before each clear on levels
+1 and 2, which vc33 solves on seed 1, and decode them in the same language.
+
+**Both wins are the same relation, and it is visible in the approach.** A movable
+object carries a marker of some colour; a marker of the SAME colour is embedded in a
+wall; the object is driven until the two coincide.
+
+    level 1, colour 11   wall marker fixed at rows 28-31, cols 38-39
+                         object    cols 50-51 -> 54-55 -> 50-51 -> 46-47 -> 42-43
+                         the next step is 38-39, and that move cleared the level
+
+    level 2, colour 14   wall marker fixed at rows 40-43, cols 28-29
+                         object    cols 16-17 -> 16-17 -> 20-21 -> 24-25
+                         the next step is 28-29, and that move cleared the level
+
+The object's rows never change on those levels; only its columns do, in steps of 4.
+The tanks there are horizontal bands and the panel sits on the board's edge, so the
+whole mechanic is the level-3 one rotated.
+
+**On level 3 the same pieces exist**: the object carries colour 11 (row 29, cols
+52-54) and a colour-11 marker is embedded in the wall at cols 48-49, **row 47**. The
+object rides T5's surface exactly, `row = surface - 1`, moving 2 rows per press of
+button 6, and reversing exactly on button 7:
+
+    [6]*k   row 29 -> 31 -> 33 -> ... -> 45, then saturated at 45
+    fill T4 first ([2,4]*10) and then pump: the object reaches row 51
+
+**It passes row 47 and does not clear.** So coincidence in the axis of motion alone
+is not the condition here. The difference from levels 1 and 2 is the second axis: on
+those the object and the wall marker share the other coordinate exactly, and the
+approach closes the only remaining gap. On level 3 the object sits at cols 52-54 and
+the marker at cols 48-49, and no amount of pumping changes that.
+
+So the next test is whether the object must CROSS the wall into T4 rather than reach
+the marker's row -- which would need T4's surface at the same height as T5's, a
+two-tank condition the pumping graph may or may not admit. That is a sharp, small
+question, and it is the last one between here and a level-3 clear.
+
+(The earlier heading claimed the algebra was "solved". Corrected: the
+fluid-transfer dynamics and the saturation rules are decoded; `902 frame -> 455 phi`
+already showed phi is not a complete description of the state.)
