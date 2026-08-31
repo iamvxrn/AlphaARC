@@ -160,7 +160,15 @@ left to decode; the holdout stays sealed.
    not the credit: dc22's mode is a cursor position that moves 9 cells of 4096, and
    the per-primitive level vector cannot see it. The class needs a state that also
    carries WHERE the last small change happened.
-2. **Movement: what MARKS a destination.** Narrowed twice on 2026-08-29. The
+2. **Movement: what MARKS a destination.** *(2026-08-31: a human cleared g50t's
+   level 1 with the SPACEBAR, a key `decode.py` calls dead because it does nothing
+   until the avatar has arrived. `RunPlanner.inert` writes such a control off
+   permanently -- it is cleared nowhere, not even by `board_replaced` -- and on
+   seed 1 it writes off ALL FIVE of g50t's actions and all four of ls20's. Lifting
+   the write-off was measured and changed NO levels (10 of 10, 16 paired seeds)
+   while costing lp85 -0.284 and vc33 -0.277 with every seed negative: Rejected #9.
+   So the write-off is real, disables the winning key, and is still not the binding
+   constraint -- the human won by knowing WHERE TO STAND, which is this item.)* Narrowed twice on 2026-08-29. The
    avatar detector was never the blocker (fixed, measured 0.0000). What was
    broken beneath it: the destination was re-derived every step, so it was a
    gradient that reversed as the avatar moved -- ls20 spent 249 route decisions

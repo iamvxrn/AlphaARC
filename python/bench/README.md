@@ -1087,3 +1087,51 @@ The inner loop was parallelised in the same commit: seeds are independent proces
 and were being run one at a time on a 12-core machine, so 16 seeds took ~50 minutes
 with eleven cores idle. `make quick-n` now runs `nproc - 1` workers -- about 15
 minutes, one core left free.
+
+### Rejected #9: lifting the permanent write-off (and what it clarified)
+
+A human playing g50t cleared level 1 with the **spacebar** -- a key `decode.py`
+had reported dead, because following each control for 8 presses from a fresh board
+shows it changing nothing. It changes nothing *until the avatar has arrived*. The
+decode method is structurally blind to context-dependent controls, and so is the
+agent.
+
+Two facts established from the code and a trace, independent of any fix:
+
+- `RunPlanner.inert` is added to in exactly one place and **cleared nowhere** --
+  not by `board_replaced`, which clears `profiles`, `ran`, `_dest`, `crossed_off`
+  and `blocked` but not this. One clock-only press writes a control off for the
+  rest of the episode, across every level. `Policy.dead` at least decays.
+- Instrumented on seed 1, it fires on everything: **g50t writes off all five of its
+  actions**, ls20 all four, m0r0 all five keys plus nine click controls, sp80 one
+  key plus eight clicks. On a five-action game the agent permanently disables its
+  entire repertoire, `k5` -- the winning key -- included.
+
+The fix tested: when any action actually changes the board, the knowledge "this
+control does nothing" is stale, so clear the write-offs. No new constant. Verified
+neutral with the flag off (seed 1 bit-identical to the baseline).
+
+**It changed no levels at all**, 16 paired seeds on the four keyboard games:
+
+| game | levels, off | levels, on |
+|---|---|---|
+| g50t | 2 of 16 seeds | 2 of 16 |
+| ls20 | 8 of 16 | 8 of 16 |
+| sp80 | 0 | 0 |
+| m0r0 | 0 | 0 |
+| total | 10 | **10** |
+
+and it cost the games that work: on the scoring split, lp85 **-0.284 with all 16
+seeds negative** and vc33 **-0.277, all 16 negative**. `inert` is load-bearing
+where the agent scores, exactly as the Rejected #6 note warned about suppression.
+
+**What it clarifies is worth more than the fix would have been.** The write-off is a
+real defect and it does disable the winning key -- but removing it wins nothing,
+so the write-off is NOT what stops the agent on g50t. Un-writing-off space only lets
+it press space uselessly more often. The human who cleared the level did not succeed
+by pressing space more; they succeeded by knowing **where to stand first**. The
+binding constraint is upstream, and it is the destination rule -- open item 2, and
+now with one more independent argument pointing at it.
+
+The `inert` write-off counter stays in the trace (ARC_TRACE only, behaviour-neutral),
+because it is how this was found.

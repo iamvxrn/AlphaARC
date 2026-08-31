@@ -23,6 +23,8 @@ baseline is what the metric actually rewards.
 
 from __future__ import annotations
 
+import json
+import os
 import random
 from collections import deque
 from typing import Dict, List, Optional, Tuple
@@ -158,6 +160,8 @@ class RunPlanner:
         # control, measured from the board we started the run on.
         self.profiles: Dict[str, List[List[float]]] = {}
         self.inert: set[str] = set()
+        self._trace_path = os.environ.get("ARC_TRACE") or None
+        self._writeoffs = 0
         self.ran: set[str] = set()       # controls already given a full run
         # What each key does to the avatar: key -> (drow, dcol). Learned from the
         # board, never assumed. Compression rewards a tidier board, not ARRIVAL, so
@@ -238,6 +242,11 @@ class RunPlanner:
         # never be true and `inert` was never once set in vc33, r11l, ft09, g50t,
         # s5i5 or su15. See alphaarc/clock.py.
         if self.clock.clock_only(self._prev_grid, grid):
+            if self._trace_path and self._run_token not in self.inert:
+                self._writeoffs += 1
+                with open(self._trace_path, "a") as fh:
+                    fh.write(json.dumps({"event": "inert", "tok": self._run_token,
+                                         "n": self._writeoffs}) + "\n")
             self.inert.add(self._run_token)
             self._presses_left = 0      # a dead control: stop spending on it
             return
