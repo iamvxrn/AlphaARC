@@ -1366,3 +1366,56 @@ just 43% of steps).
 
 Mechanism reverted, seed 1 bit-identical to the baseline afterwards. The
 clock-masked state hash stays in the trace -- it is what made this measurable.
+
+## The candidate cap profiled per level, and a correction (2026-08-31)
+
+`ARC_MAXCAND` varies the candidate-set WIDTH and nothing else. vc33, seed 1,
+deterministic, one run per cap.
+
+**A correction first, because the first version of this table was wrong.** Segmenting
+the trace by counting `level_clear` events merges episodes: after a reset the level
+counter restarts, so a second pass through level 2 was being read as "level 4". The
+"59 states on level 2 at cap 16" in that version was three separate level-2 attempts
+(17 + 22 + 22) added together. There is no single level-2 run with 45 extra states,
+and a question asked about those states has no data behind it. Correct segmentation
+splits on `reset` first, then counts clears within the episode.
+
+The headline result survives segmentation unchanged: cap 8, episode 0, level 3 is
+73 steps in **3 states** with 60 repeats; at cap 16/20 the same level is 17/16
+states with 17/18 repeats.
+
+| cap | ep | level | steps | states | repeats | distinct actions |
+|---|---|---|---|---|---|---|
+| 8 | 0 | 1 | 12 | 6 | 0 | 8 |
+| 8 | 0 | 2 | 20 | 13 | 2 | 7 |
+| 8 | 0 | **3** | 73 | **3** | **60** | 11 |
+| 8 | 1 | 2 | 73 | **1** | 62 | 11 |
+| 8 | 2 | 2 | 63 | **1** | 53 | 10 |
+| 16 | 0 | 2 | 48 | 17 | 7 | 20 |
+| 16 | 1 | **3** | 73 | **17** | 17 | 20 |
+| 16 | 2 | 2 | 57 | 22 | 6 | 18 |
+
+Scores: cap 8 -> 6.28, cap 12 -> 0.99, cap 16 and every wider value -> 0.92, with
+level actions 13/21/217 at cap 8 against 16/100/135 from cap 16 on. Everything from
+cap 16 to cap 32 is identical because the board does not offer more.
+
+**What the corrected profile shows.**
+
+**H13a holds and is sharper than stated:** a fixed width does not suit different
+levels *or different episodes of the same level*.
+
+**The narrow cap's advantage is one lucky first pass, not a better search.** At cap
+8 episode 0 clears level 1 in 12 steps and level 2 in 20. Then episodes 1 and 2
+collapse to a **single state** each and burn 136 steps going nowhere. The scorecard
+keeps the best run, so cap 8 wins on the strength of one pass while two are dead.
+Widening never collapses like that -- no episode at cap >= 12 has fewer than 8
+states -- and still loses, because it never produces the one fast pass.
+
+**Widening opens level 3 reliably and never clears it.** 3 states -> 16-17, distinct
+actions tried 11 -> up to 32, repeats 60 -> 18, and the level is not completed at any
+cap. So the truncation was a real wall and there is a second one behind it.
+
+**H13 (widen on saturation) is NOT supported by this**, and the observation that was
+meant to support it -- extra states being junk -- was the artifact above. Asking what
+separates a useful state change from a useless one needs a within-episode comparison
+that this data cannot provide.
