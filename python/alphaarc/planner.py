@@ -241,7 +241,20 @@ class RunPlanner:
         # The budget strip ticks on every action, so an exact-equality test can
         # never be true and `inert` was never once set in vc33, r11l, ft09, g50t,
         # s5i5 or su15. See alphaarc/clock.py.
-        if self.clock.clock_only(self._prev_grid, grid):
+        _co = self.clock.clock_only(self._prev_grid, grid)
+        if self._trace_path:
+            # Is POSITION the variable that would make "this control does nothing"
+            # a conditional fact instead of a flat one? Log where the avatar was
+            # when the control fired, and what the control did. Nothing reads this.
+            try:
+                cells = self._avatar_cells(self._prev_grid, self._bg) if self._bg is not None else []
+            except Exception:
+                cells = []
+            pos = (sum(c[0] for c in cells)//len(cells), sum(c[1] for c in cells)//len(cells)) if cells else None
+            with open(self._trace_path, "a") as fh:
+                fh.write(json.dumps({"event": "fired", "tok": self._run_token,
+                                     "pos": pos, "nothing": bool(_co)}) + "\n")
+        if _co:
             if self._trace_path and self._run_token not in self.inert:
                 self._writeoffs += 1
                 with open(self._trace_path, "a") as fh:

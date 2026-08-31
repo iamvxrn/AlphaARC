@@ -1135,3 +1135,48 @@ now with one more independent argument pointing at it.
 
 The `inert` write-off counter stays in the trace (ARC_TRACE only, behaviour-neutral),
 because it is how this was found.
+
+## Is POSITION the missing state variable? Partly -- checked before building (2026-08-31)
+
+Three open items appeared to want the same thing: item 1 (stateful mode) needs
+"where the last small change happened", item 2 (movement) needs "where to go", and
+g50t's spacebar needs "where this control comes alive". So: log where the avatar
+was each time a control fired, and what the control did, and ask whether
+conditioning on position turns "this control does nothing" into a *function*.
+
+`ARC_TRACE` now also records, at the moment `RunPlanner` judges a press,
+`{tok, pos, nothing}` -- the control, the avatar's centroid on the previous board,
+and whether only the move clock ticked. Behaviour-neutral; nothing reads it.
+
+First: the outcome does vary with position. Every key on g50t and ls20 shows both
+outcomes across 10-33 distinct positions. That is necessary, not sufficient.
+
+The decisive test is whether `(control, position)` **determines** the outcome.
+Counting only repeated pairs, and not gluing observations across a board change:
+
+| game | repeated (tok,pos) pairs | contradictory | |
+|---|---|---|---|
+| **ls20** | 58 | **1** | position determines the outcome |
+| g50t | 43 | 10 (23%) | helps, insufficient |
+| **m0r0** | 50 | **40 (80%)** | position is nearly useless |
+| sp80 | **1** | 0 | no data to condition on at all |
+
+**So "the three classes want one variable, position" is refuted as stated**, and it
+was refuted before the state key was touched. It would have produced a nearly
+deterministic model on ls20 and nothing on m0r0.
+
+Two diagnoses, both visible in the boards:
+
+- **m0r0 has TWO movable bodies.** Its board is a colour-11 half and a colour-12
+  half that are exact mirrors about column 31, with a colour-10 block in each at
+  rows 49-53, cols 19-23 and 39-43. The avatar detector returns whichever body
+  moved, so a single centroid means a different object from step to step. That is
+  not one variable recorded badly, it is two variables collapsed into one.
+- **sp80 fails differently and exactly as predicted**: one repeated pair in a whole
+  run. The agent so rarely returns to the same place that there is nothing to
+  condition on. Its bottleneck is reach, not representation.
+
+The sharpened hypothesis, not yet tested: the missing variable is not position but
+**the configuration of the movable bodies** -- one position on ls20, two on m0r0.
+The test is to condition m0r0 on both colour-10 blocks and see whether 80%
+contradictions fall.
