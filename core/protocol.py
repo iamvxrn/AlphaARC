@@ -1,124 +1,171 @@
-"""The protocol, and nothing else. No reasoning lives here.
+"""The protocol. No reasoning, no engine names, no task knowledge.
 
-The bet of this branch is NOT that three engines share an internal language. It is
-that each can turn what it believes into something testable, and that the error can
-be scored at the level the claim was made:
+The bet:  claim -> explicit proposition about UNSEEN evidence -> generic verifier.
 
-    claim  ->  testable prediction  ->  error
+Two rules keep it honest.
 
-So `PredictionSet` is deliberately heterogeneous. Forcing an MDL primitive, a
-correspondence and a state-transition edge to all emit a next-State would kill the
-idea with an artificial API long before the idea is tested.
+1. A proposition must be about something the engine was not shown. Predicting the
+   cells you were just handed measures nothing. So evidence is MASKED: engines see
+   a grid with holes and are told where the holes are, never what is in them.
+
+2. `verify` dispatches on the proposition's KIND alone. It cannot see which engine
+   spoke, or which task this is. If it ever needs to, the protocol has failed.
+
+`None` is a first-class result: not testable here. Silence and error are different
+answers, and merging them is how an ensemble passes for reasoning.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Dict, List, Optional, Protocol, Tuple
 
 EvidenceId = str
 Grid = List[List[int]]
+HIDDEN = -1
 
 
-class Level(Enum):
-    """The level a claim speaks at. Error is scored HERE, not translated."""
-    CELL = "cell"                 # concrete cell values
-    RELATION = "relation"         # a relation between two structures
-    TRANSITION = "transition"     # (state, action) -> state'
-    ACTION_EFFECT = "effect"      # a scalar/vector consequence of an action
-    CONSTRAINT = "constraint"     # something that must hold, not a value
+class Kind(Enum):
+    """What sort of proposition this is. The verifier knows only this."""
+    HELD_OUT_CELLS = "held_out_cells"        # {(r,c): v} for cells the engine could not see
+    RELATION_NOW = "relation_now"            # a relation asserted of the CURRENT frame
+    RELATION_PERSISTS = "relation_persists"  # ...asserted to survive an action
+    TRANSITION = "transition"                # (state_digest, action) -> state_digest
+
+
+def digest(g: Grid, skip_rows: Tuple[int, ...] = (0,)) -> str:
+    """Deterministic across processes. Python's hash() is salted; using it for a
+    research fixture is a fine way to rediscover PYTHONHASHSEED as a cognitive
+    phenomenon."""
+    h = hashlib.sha256()
+    for i, row in enumerate(g):
+        if i in skip_rows:
+            continue
+        h.update(bytes(bytearray((v + 1) % 256 for v in row)))
+    return h.hexdigest()[:16]
 
 
 @dataclass(frozen=True)
 class Evidence:
-    """One observed thing. Engines read these; they never read the environment."""
+    """What an engine is allowed to see. `hidden` says WHERE the holes are."""
     id: EvidenceId
-    kind: str                     # grid | grid_pair | transition
+    kind: str                       # grid | transition
     payload: Dict[str, Any]
+    hidden: Tuple[Tuple[int, int], ...] = ()
 
 
 @dataclass(frozen=True)
-class Prediction:
-    level: Level
-    target: str                   # what it is about, free-form but stable
-    value: Any                    # meaning depends on level; the scorer knows
+class Proposition:
+    kind: Kind
+    target: str
+    value: Any
     note: str = ""
 
 
-PredictionSet = List[Prediction]
-
-
 class Claim(Protocol):
-    """What an engine believes. It must be able to make itself testable."""
-    def predict(self, ctx: Evidence) -> PredictionSet: ...
+    def propose(self, ev: Evidence) -> List[Proposition]: ...
     def describe(self) -> str: ...
 
 
 @dataclass
 class Hypothesis:
-    source: str                   # which engine
+    source: str
     claim: Claim
-    scope: str                    # where the claim is meant to hold
+    scope: str
     confidence: float
-    complexity: float             # description length, in whatever unit the engine uses
+    complexity: float
     evidence_ids: List[EvidenceId] = field(default_factory=list)
 
     def describe(self) -> str:
-        return f"[{self.source}] {self.claim.describe()}"
+        return f"{self.claim.describe()}"
 
 
-class Engine(Protocol):
-    name: str
-    def hypotheses(self, ev: Evidence) -> List[Hypothesis]: ...
+# ------------------------------------------------------------------- the verifier
+
+@dataclass
+class Truth:
+    """What actually happened. Held by the runner, never inside Evidence."""
+    grid: Optional[Grid] = None            # the un-masked frame the claim was about
+    after: Optional[Grid] = None           # the frame following the action, if any
 
 
-# ---------------------------------------------------------------- error scoring
-
-def _cell_error(pred_value, obs: Grid) -> Optional[float]:
-    """pred_value: dict {(r,c): v} or a full grid. Fraction of predicted cells wrong."""
-    if obs is None:
+def _cells_at(g: Grid, top_left: Tuple[int, int]) -> Optional[frozenset]:
+    """The connected component containing a point, or None if the point is a hole."""
+    r0, c0 = top_left
+    if not (0 <= r0 < len(g) and 0 <= c0 < len(g[0])):
         return None
-    if isinstance(pred_value, dict):
-        items = pred_value.items()
-    else:
-        items = (((r, c), pred_value[r][c])
-                 for r in range(len(pred_value)) for c in range(len(pred_value[r])))
-    n = wrong = 0
-    for (r, c), v in items:
-        if not (0 <= r < len(obs) and 0 <= c < len(obs[r])):
-            continue
-        n += 1
-        if obs[r][c] != v:
-            wrong += 1
-    return None if n == 0 else wrong / n
+    col = g[r0][c0]
+    if col == HIDDEN:
+        return None
+    seen = {(r0, c0)}; st = [(r0, c0)]
+    while st:
+        r, c = st.pop()
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                q = (r + dr, c + dc)
+                if (0 <= q[0] < len(g) and 0 <= q[1] < len(g[0])
+                        and q not in seen and g[q[0]][q[1]] == col):
+                    seen.add(q); st.append(q)
+    return frozenset(seen)
 
 
-def score(pred: Prediction, observation: Any) -> Optional[float]:
-    """Error in [0,1], or None when this observation cannot test this prediction.
+def _shape_at(g: Grid, top_left: Tuple[int, int]) -> Optional[tuple]:
+    r0, c0 = top_left
+    if not (0 <= r0 < len(g) and 0 <= c0 < len(g[0])):
+        return None
+    col = g[r0][c0]
+    if col == HIDDEN:
+        return None
+    seen = {(r0, c0)}; st = [(r0, c0)]; cells = []
+    while st:
+        r, c = st.pop(); cells.append((r, c))
+        for dr in (-1, 0, 1):
+            for dc in (-1, 0, 1):
+                q = (r + dr, c + dc)
+                if (0 <= q[0] < len(g) and 0 <= q[1] < len(g[0])
+                        and q not in seen and g[q[0]][q[1]] == col):
+                    seen.add(q); st.append(q)
+    ys = [x[0] for x in cells]; xs = [x[1] for x in cells]
+    y0, x0 = min(ys), min(xs)
+    m = [[0] * (max(xs) - x0 + 1) for _ in range(max(ys) - y0 + 1)]
+    for r, c in cells:
+        m[r - y0][c - x0] = 1
+    return tuple(tuple(r) for r in m)
 
-    None is a first-class answer: an engine that could not be tested here is not
-    the same as an engine that was wrong, and conflating them is how ensembles get
-    mistaken for reasoning.
-    """
-    if pred.level is Level.CELL:
-        return _cell_error(pred.value, observation)
-    if pred.level is Level.RELATION:
-        if observation is None:
+
+def verify(p: Proposition, truth: Truth) -> Optional[float]:
+    """Error in [0,1], or None when this truth cannot test this proposition."""
+    if p.kind is Kind.HELD_OUT_CELLS:
+        g = truth.grid
+        if g is None or not p.value:
             return None
-        return 0.0 if pred.value == observation else 1.0
-    if pred.level is Level.TRANSITION:
-        if observation is None:
+        wrong = sum(1 for (r, c), v in p.value.items() if g[r][c] != v)
+        return wrong / len(p.value)
+
+    if p.kind in (Kind.RELATION_NOW, Kind.RELATION_PERSISTS):
+        g = truth.grid if p.kind is Kind.RELATION_NOW else truth.after
+        if g is None:
             return None
-        return 0.0 if pred.value == observation else 1.0
-    if pred.level is Level.ACTION_EFFECT:
-        if observation is None:
+        a, b, rel = p.value
+        ca, cb = _cells_at(g, a), _cells_at(g, b)
+        if ca is None or cb is None:
             return None
-        try:
-            a, b = float(pred.value), float(observation)
-        except (TypeError, ValueError):
-            return 0.0 if pred.value == observation else 1.0
-        denom = max(abs(a), abs(b), 1.0)
-        return min(1.0, abs(a - b) / denom)
-    if pred.level is Level.CONSTRAINT:
-        return None if observation is None else (0.0 if bool(observation) else 1.0)
+        if ca == cb:
+            # the two names resolve to ONE object; "X is identical to X" is not a
+            # claim about the world. Untestable, not correct.
+            return None
+        ma, mb = _shape_at(g, a), _shape_at(g, b)
+        if ma is None or mb is None:
+            return None
+        holds = (ma == mb) if rel == "identity" else None
+        if holds is None:
+            return None
+        return 0.0 if holds else 1.0
+
+    if p.kind is Kind.TRANSITION:
+        if truth.after is None:
+            return None
+        return 0.0 if p.value == digest(truth.after) else 1.0
+
     return None

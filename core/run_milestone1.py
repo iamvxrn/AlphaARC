@@ -1,105 +1,90 @@
-"""Milestone 1: can three existing mechanisms make testable claims about three
-different kinds of experience, through one protocol, with no task-specific code?
+"""Milestone 1.5: are the predictions semantically valid?
 
-Prints, per case: who spoke, what they claimed, and the error scored AT THE LEVEL
-each claim was made. Silence is reported as silence, not as error.
+Every proposition is about cells or outcomes the engine was NOT shown, and the
+verifier sees only the proposition's kind -- never the engine, never the task.
+Each case is run in a positive and a corrupted form; a suite without the corrupted
+twin only proves the engines were asked flattering questions.
 """
 from __future__ import annotations
 import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from protocol import Level, score
-from engines import ENGINES, GraphEngine
-from cases import CASES
-
-
-def observation_for(pred, ev):
-    """What in this evidence can test a prediction at that level."""
-    p = ev.payload
-    if pred.level is Level.CELL:
-        return p.get("after") or p.get("grid")
-    if pred.level is Level.RELATION:
-        # Verify the relation against the board rather than assuming it. The two
-        # boxes named in the target are re-read and their shapes compared; that is
-        # what makes a relational claim falsifiable instead of decorative.
-        g = p.get("after") or p.get("grid")
-        if g is None:
-            return None
-        try:
-            a_s, b_s = pred.target.split("~")
-            a = eval(a_s); b = eval(b_s)
-        except Exception:
-            return None
-        def mask_at(top_left):
-            r0, c0 = top_left
-            col = g[r0][c0]
-            seen, st, cells = {(r0, c0)}, [(r0, c0)], []
-            while st:
-                r, c = st.pop(); cells.append((r, c))
-                for dr in (-1, 0, 1):
-                    for dc in (-1, 0, 1):
-                        q = (r + dr, c + dc)
-                        if (0 <= q[0] < len(g) and 0 <= q[1] < len(g[0])
-                                and q not in seen and g[q[0]][q[1]] == col):
-                            seen.add(q); st.append(q)
-            ys = [x[0] for x in cells]; xs = [x[1] for x in cells]
-            y0, x0 = min(ys), min(xs)
-            h, w = max(ys) - y0 + 1, max(xs) - x0 + 1
-            m = [[0] * w for _ in range(h)]
-            for r, c in cells:
-                m[r - y0][c - x0] = 1
-            return tuple(tuple(r) for r in m)
-        return "identity" if mask_at(a) == mask_at(b) else "different"
-    if pred.level is Level.TRANSITION:
-        after = p.get("after")
-        return GraphEngine._h(after) if after else None
-    return None
+from protocol import Kind, verify
+from engines import fresh_engines
+from cases import build
 
 
 def main() -> int:
-    graph = next(e for e in ENGINES if e.name == "graph")
+    engines = fresh_engines()
+    graph = next(e for e in engines if e.name == "graph")
     rows = []
-    for ev in CASES:
-        print(f"\n=== {ev.id}  ({ev.kind}) ===")
-        print(f"    truth: {ev.payload.get('truth')}")
+    for label, ev, truth, expect in build():
+        print(f"\n=== {label}   expected: {expect} ===")
+        if label == "vc33-transition-BROKEN":
+            graph.observe(ev.payload["before"], ev.payload["action"],
+                          build()[4][1].payload["after"])     # the TRUE successor
         spoke = 0
-        for eng in ENGINES:
+        for eng in engines:
             hs = eng.hypotheses(ev)
             if not hs:
                 print(f"  {eng.name:<11} silent")
-                rows.append((ev.id, eng.name, None, None))
                 continue
             spoke += 1
-            for h in hs[:2]:
-                preds = h.claim.predict(ev)
-                for pr in preds:
-                    err = score(pr, observation_for(pr, ev))
-                    e = "untestable" if err is None else f"error {err:.3f}"
-                    print(f"  {eng.name:<11} {h.describe()[:58]:<58} "
-                          f"[{pr.level.value}] {e}")
-                    rows.append((ev.id, eng.name, pr.level.value, err))
-        # after seeing the transition, the graph engine learns the edge
-        if ev.kind == "transition":
+            for h in hs:
+                for p in h.claim.propose(ev):
+                    err = verify(p, truth)
+                    n = len(p.value) if p.kind is Kind.HELD_OUT_CELLS else 1
+                    e = "untestable" if err is None else f"{err:.3f}"
+                    print(f"  {eng.name:<11} {h.describe()[:52]:<52} "
+                          f"[{p.kind.value:<17}] n={n:<3} error {e}")
+                    rows.append((label, eng.name, p.kind.value, err))
+        if ev.kind == "transition" and label == "vc33-transition":
             graph.observe(ev.payload["before"], ev.payload["action"], ev.payload["after"])
-            hs = graph.hypotheses(ev)
-            if hs:
-                pr = hs[0].claim.predict(ev)[0]
-                err = score(pr, observation_for(pr, ev))
-                print(f"  {'graph':<11} {hs[0].describe()[:58]:<58} "
-                      f"[{pr.level.value}] error {err:.3f}   <- after observing")
-        print(f"    spoke: {spoke} of {len(ENGINES)}")
-    print("\n" + "="*70)
+            for h in graph.hypotheses(ev):
+                p = h.claim.propose(ev)[0]
+                print(f"  {'graph':<11} {h.describe()[:52]:<52} "
+                      f"[{p.kind.value:<17}] n=1   error {verify(p, truth):.3f}"
+                      f"   <- after observing")
+                rows.append((label, "graph", p.kind.value, verify(p, truth)))
+        print(f"    spoke: {spoke}/{len(engines)}")
+
+    # --- the verifier under direct test, independent of any engine ---
+    print("\n=== the verifier head-on: deliberately FALSE propositions ===")
+    from protocol import Proposition, Truth, digest
+    cases = build()
+    g_true = cases[0][2].grid
+    liar_cells = {(r, c): (g_true[r][c] + 1) % 9 for (r, c) in list(cases[0][1].hidden)[:6]}
+    honest_cells = {(r, c): g_true[r][c] for (r, c) in list(cases[0][1].hidden)[:6]}
+    after = cases[4][2].after
+    probes = [
+        ("held_out, every value right",   Proposition(Kind.HELD_OUT_CELLS, "t", honest_cells), Truth(grid=g_true), 0.0),
+        ("held_out, every value wrong",   Proposition(Kind.HELD_OUT_CELLS, "t", liar_cells),   Truth(grid=g_true), 1.0),
+        ("relation_now, no such objects", Proposition(Kind.RELATION_NOW, "t", ((0, 0), (5, 5), "identity")), Truth(grid=cases[2][2].grid), None),
+        ("transition, correct successor", Proposition(Kind.TRANSITION, "t", digest(after)),    Truth(after=after), 0.0),
+        ("transition, wrong successor",   Proposition(Kind.TRANSITION, "t", "deadbeefdeadbeef"), Truth(after=after), 1.0),
+        ("nothing to check against",      Proposition(Kind.TRANSITION, "t", digest(after)),    Truth(), None),
+    ]
+    okc = 0
+    for name, p, t, want in probes:
+        got = verify(p, t)
+        ok = (got is None and want is None) or (got is not None and want is not None and abs(got - want) < 1e-9)
+        okc += ok
+        print(f"  {name:<32} -> {('None' if got is None else f'{got:.3f}'):<6} "
+              f"expected {('None' if want is None else f'{want:.3f}'):<6} {'ok' if ok else 'FAIL'}")
+    print(f"  verifier: {okc}/{len(probes)} probes correct")
+
+    print("\n" + "=" * 74)
     tested = [r for r in rows if r[3] is not None]
-    print(f"propositions total: {len(rows)}, testable: {len(tested)}")
-    lv = sorted({r[2] for r in rows if r[2]})
-    print(f"levels spoken at: {lv}")
-    for name in [e.name for e in ENGINES]:
-        mine = [r for r in rows if r[1] == name]
-        t = [r for r in mine if r[3] is not None]
-        print(f"  {name:<11} propositions {len(mine):>2}, testable {len(t):>2}, "
-              f"mean error {sum(r[3] for r in t)/len(t):.3f}" if t else
-              f"  {name:<11} propositions {len(mine):>2}, testable  0")
+    print(f"propositions {len(rows)}, testable {len(tested)}, "
+          f"silent/untestable {len(rows)-len(tested)}")
+    print("\ndoes ONE generic verifier separate the outcomes:")
+    for fam in sorted({r[2] for r in rows}):
+        pos = [r[3] for r in rows if r[2] == fam and "BROKEN" not in r[0] and r[3] is not None]
+        neg = [r[3] for r in rows if r[2] == fam and "BROKEN" in r[0] and r[3] is not None]
+        f = lambda v: f"{sum(v)/len(v):.3f}" if v else "—"
+        print(f"  {fam:<18} positive {f(pos):<7} corrupted {f(neg):<7} "
+              f"{'SEPARATES' if pos and neg and sum(neg)/len(neg) > sum(pos)/len(pos) else ''}")
     return 0
 
 
