@@ -25,6 +25,31 @@ A Go cognitive architecture that solves **ARC-AGI-3** (interactive games at thre
 - **tn36's wall is NOT aggregation** (new finding): a fine probe sweep (STEP=4, 256 points) found `bestCorrespondenceDelta=+0` everywhere, even the *unmasked* direct Correspondence delta. Correspondence (built for same-shape template *pairs*) likely just doesn't recognize tn36's legend-to-checkerboard relationship at all — a representational gap, not a masking one.
 - **Scale (s5i5-specific, still open):** its two template boxes are different sizes; Correspondence V1 deliberately excludes scale.
 
+## FIRST EXTERNAL NUMBER (2026-08-31): Kaggle public score = 0.19
+
+Submitted to `arc-prize-2026-arc-agi-3` (submission 55912447, kernel version 3).
+The whole path works end to end -- competition wheels, the gateway sidecar, the
+framework copy, the agent registry rewrite, real play on the HIDDEN set, a score.
+
+**We predicted 0.42 and got 0.19: a 2.2x over-prediction.** Everything before this
+was self-measurement on games we had personally decoded. This is the first anchor
+from outside, and the anchor says the train-derived estimate is roughly twice as
+optimistic as reality. Quote 0.19, not 0.42, when talking about where the agent
+stands.
+
+The likely reason is composition and it was foreseeable: all four games that score
+are `click`, while 17 of the 25 public games need keyboard, and the local holdout
+(chosen from never-probed games) is almost entirely keyboard. A hidden set with the
+same skew scores us near zero on most of it. This does NOT touch the sealed local
+holdout -- that is a different set and remains unread.
+
+Notebook mechanics worth knowing before the next submit: a commit runs the
+`else` branch and writes a ONE-ROW DUMMY submission in ~25 s; the real run happens
+only during the competition rerun, when `KAGGLE_IS_COMPETITION_RERUN` is set. A
+fast commit with an empty parquet is correct, not a failure. Scoring took ~30 min.
+Auth: CLI 2.2.4 reads `KAGGLE_API_TOKEN`, which is what the kit's Makefile already
+passed -- `kaggle.json` is not needed and Kaggle no longer offers it.
+
 ## Score measurement (Phase 0, 2026-08-25) — READ BEFORE OPTIMISING ANYTHING
 The leaderboard number is NOT "levels taken". From the installed engine
 (`arc_agi/scorecard.py`): `level_score = min(115,(baseline/actions)^2*100)` if the
