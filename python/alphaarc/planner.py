@@ -251,9 +251,26 @@ class RunPlanner:
             except Exception:
                 cells = []
             pos = (sum(c[0] for c in cells)//len(cells), sum(c[1] for c in cells)//len(cells)) if cells else None
+            # `_avatar_cells` returns EVERY cell of the avatar's colour when the
+            # shape is not uniquely placed -- on m0r0 that blends two mirrored
+            # bodies into one meaningless centroid, and on g50t it mixes the legend
+            # and the budget strip in. So also record the bodies SEPARATELY: the
+            # configuration, not an average of it.
+            bodies = None
+            try:
+                if self.avatar is not None and self._bg is not None:
+                    cs = [cl for col, cl in _components(self._prev_grid, self._bg)
+                          if col == self.avatar]
+                    if cs and len(cs) <= 8:
+                        bodies = sorted((sum(c[0] for c in cl)//len(cl),
+                                         sum(c[1] for c in cl)//len(cl)) for cl in cs)
+            except Exception:
+                bodies = None
             with open(self._trace_path, "a") as fh:
                 fh.write(json.dumps({"event": "fired", "tok": self._run_token,
-                                     "pos": pos, "nothing": bool(_co)}) + "\n")
+                                     "pos": pos, "bodies": bodies, "n": len(cells),
+                                     "shape": self.avatar_shape is not None,
+                                     "nothing": bool(_co)}) + "\n")
         if _co:
             if self._trace_path and self._run_token not in self.inert:
                 self._writeoffs += 1

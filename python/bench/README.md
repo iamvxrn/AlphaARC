@@ -1180,3 +1180,42 @@ The sharpened hypothesis, not yet tested: the missing variable is not position b
 **the configuration of the movable bodies** -- one position on ls20, two on m0r0.
 The test is to condition m0r0 on both colour-10 blocks and see whether 80%
 contradictions fall.
+
+### ...and the configuration of bodies is worse, not better
+
+The sharpened version -- record the movable bodies SEPARATELY instead of one
+blended centroid -- was tested and is refuted:
+
+| game | bodies found | one centroid | body configuration |
+|---|---|---|---|
+| m0r0 | 2 | 50 repeats, 40 contradictory (80%) | 48 repeats, 42 (**87%**) |
+| g50t | 5-6 | 43 repeats, 10 (23%) | 13 repeats, 11 (**84%**) |
+| ls20 | 1 | 58 repeats, 1 (1%) | unchanged |
+| sp80 | 1 | 1 repeat | unchanged |
+
+A finer key partitions the same data into more cells, so it loses repeats (g50t
+43 -> 13) without buying truth. This is the reach/truth trade already documented in
+Rejected #6, arriving from the other direction.
+
+**One guess of mine along the way was wrong and is corrected here.** Seeing 5-6
+colour-9 components on g50t (legend, legend bar, goal bracket, the dot inside it,
+the budget strip) I suspected the avatar centroid was polluted and the 23% was a
+measurement artifact. It is not: logging the size of the located avatar shows **24
+cells on 246 of 248 steps**, with the shape known. g50t's avatar was located
+cleanly and 23% is a real property of the game.
+
+**And the obvious explanation for it does not hold either.** If the spacebar
+toggles a latent mode, the same control at the same position would act differently
+before and after a press of it. Of the 10 contradictory (control, position) pairs,
+4 have a `k5` press in between -- but `k5` is 18% of all presses and the spans are
+several presses long, so chance alone predicts about that many. No evidence, and
+n=10 is too small to carry any anyway.
+
+**Where this leaves the state question.** Position determines the outcome on ls20
+(1 contradiction in 58) and does not on g50t (23%) or m0r0 (80%), with the
+detection verified clean. So the missing variable is not a geometric summary of
+where things are -- neither one position, nor all of them. What distinguishes ls20
+from the other two is not yet known, and no candidate here survived. Note that
+m0r0 and sp80 are already classified as stateful-mode (open item 1) and ls20 is the
+one pure movement game of the four, which is the shape of a real split, but that is
+an observation and not a measurement.
