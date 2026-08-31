@@ -1419,3 +1419,69 @@ cap. So the truncation was a real wall and there is a second one behind it.
 meant to support it -- extra states being junk -- was the artifact above. Asking what
 separates a useful state change from a useless one needs a within-episode comparison
 that this data cannot provide.
+
+## After a GAME_OVER the engine hands back a clean level, and we waste it (2026-08-31)
+
+Three suspects were cleared by measurement before the real one was found. All on a
+clean tree at `1d7a484`, one deterministic vc33 seed 1 run each.
+
+**Recovery is not broken.** `arcengine.base_game.handle_reset` routes a RESET after
+GAME_OVER to `level_reset()` -- clone the clean current level, keep `_score`, set
+`NOT_FINISHED`. That is exactly what AlphaARC gets: `state=NOT_FINISHED`,
+`levels_completed=2`, `available_actions=[6]`, board present. `levels_completed`
+staying at 2 is intended, not a defect.
+
+**And the board it hands back is alive.** Sweeping 67 points on it -- every component
+centroid plus a raw grid -- **8 change the board**, and they are the same colour-9
+panel at rows 56-57: (12,56) (16,56) (24,56) (28,56) (34,56) (38,56) and two more.
+
+**So 142 of vc33's 251 actions -- 57% of the budget -- are lost to the candidate cap,
+twice.** The agent burns level 3's move budget with eight dead candidates, the engine
+resets the level for free, and the candidate set is rebuilt from the same board and
+gives the same eight dead candidates.
+
+`carry` is not involved: on one repeat it does not engage at all (identical runs with
+`ARC_CARRY=0`), and over three repeats it is strongly positive on this seed (10.714
+against 6.283, level 1 at x0.6 and level 2 at x0.9 of baseline). Clearing `inert` on
+a board change changes nothing. The clock mask covers 1 row and 0 columns for the
+whole run, so it hides nothing.
+
+### The second wall on level 3, isolated
+
+Widening ONLY after the first GAME_OVER (`8` before, `20` after, nothing else
+touched) confirms the causal chain and leaves the score unmoved:
+
+| | control | widened after GAME_OVER |
+|---|---|---|
+| episode 0 (L1+L2+first L3) | 105 steps, 22 states | **identical** |
+| episode 1: panel in the candidate set | **0 of 20 steps** | **25 of 25** |
+| episode 1: panel tokens taken | none | `#3 #4 #5 #6` |
+| episode 1: distinct states | **1** | **21** |
+| score | 6.283 | 6.283 |
+
+Recall is fixed and level 3 still does not clear. The transition trace of that second
+attempt says why:
+
+    73 steps, 21 states, 24 tokens pressed, 7 of them move the board (all c9)
+    58 distinct (state,token) pairs, only 15 repeats -- it is genuinely exploring
+    0 non-deterministic transitions -- the world is a clean deterministic graph
+    52 of 72 transitions return to an already-seen state
+
+and the signature is in the first steps: `c9/f6/#5` gives d=+27 and then d=-27.
+**The panel buttons are toggles.** Seven live toggles are up to 2^7 combinations;
+the agent walks them one at a time and most moves undo the last. The level wants a
+COMBINATION, and nothing in the architecture searches combinations. That is the
+second wall, and it is combinatorial rather than perceptual.
+
+### Bug, documented and not fixed here
+
+`agent_glue` zeroes `_levels_done` when it sends a RESET, but the engine keeps its
+own `levels_completed`, so the next frame satisfies `done > self._levels_done` and
+fires a **phantom `board_replaced("level_clear")` after every reset**. Observed:
+
+    step 109  GAME_OVER     levels=2  _levels_done=2   -> RESET, _levels_done := 0
+    step 110  NOT_FINISHED  levels=2  _levels_done=0
+    step 111  NOT_FINISHED  levels=2  _levels_done=2   -> phantom clear fired
+
+It drops the transition trace at a moment nothing happened, and it makes any
+level-indexed reading of a trace wrong unless episodes are split on `reset` first.
