@@ -2,6 +2,21 @@
 
 An engine that cannot derive a consequence of its own claim returns []. Silence is
 better than a 0.000 earned by predicting cells it was just shown.
+
+Milestone 2: abstention vs falsifiability, resolved SEPARATELY for each family,
+because the three abstain for different reasons and only one of them was a gate.
+
+  MDL         -- abstained because `bad == 0` demanded a PERFECT symmetry, so damage
+                 removed the hypothesis. Fixed: fit tolerantly, then commit to the
+                 BOLD universal ("no exceptions anywhere") when agreement clears
+                 COMMIT_AGREE. Bold because it is refutable by one cell; a hedged
+                 "symmetric except at these two cells" is unfalsifiable and, in MDL's
+                 own currency, longer. Measured: 100% separation, silent on noise.
+
+  relational  -- did NOT abstain because of a gate, and loosening it is measured to
+                 make things WORSE, not better. See RelationalEngine.
+
+  graph       -- never abstained; it was already falsifiable at milestone 1.5.
 """
 from __future__ import annotations
 
@@ -65,11 +80,44 @@ class TranslateClaim:
                             note="value of each hidden cell equals its translate")] if out else []
 
 
+class UniversalClaim:
+    """"Rule R holds with NO exception anywhere on this board."
+
+    The bold form. It is refuted by a single violating cell, including cells the
+    engine never saw, so REFUTATION is not confined to the held-out locations --
+    which is the whole reason it exists (see protocol.py, rule 3).
+
+    Not the same as being mask-independent. `self.rule` and `self.params` were chosen
+    by fitting the MASKED board, so what this claim asserts is still a function of
+    what the mask happened to reveal; only what can refute it is not."""
+    def __init__(self, rule: str, params: tuple, agree: float, ok: int, bad: int):
+        self.rule, self.params = rule, params
+        self.agree, self.ok, self.bad = agree, ok, bad
+
+    def describe(self) -> str:
+        return (f"{self.rule}{self.params} holds EVERYWHERE "
+                f"(fit {self.ok}/{self.ok + self.bad})")
+
+    def propose(self, ev: Evidence) -> List[Proposition]:
+        return [Proposition(Kind.UNIVERSAL, self.rule, (self.rule, self.params),
+                            note="one counterexample anywhere refutes this")]
+
+
+# An engine commits to the bold universal above this in-sample agreement, and stays
+# silent below it. Stated, not derived -- and the runner sweeps it, because an
+# unearned constant is how this project has been burned before.
+COMMIT_AGREE = 0.90
+MIN_AGREE = 20          # too little evidence to be bold about
+
+
 class MdlEngine:
     """Fits the two primitives that can generate consequences. The others -- Count,
     Correspondence as currently written -- produce a saving but no per-cell
     prediction, so they are not offered here at all rather than faked."""
     name = "mdl"
+
+    def __init__(self, commit_agree: float = COMMIT_AGREE, min_agree: int = MIN_AGREE):
+        self.commit_agree, self.min_agree = commit_agree, min_agree
 
     def hypotheses(self, ev: Evidence) -> List[Hypothesis]:
         g = ev.payload.get("grid") or ev.payload.get("before")
@@ -78,7 +126,7 @@ class MdlEngine:
         H, W = len(g), len(g[0])
         bg = background_color([[v for v in row] for row in g])
         out: List[Hypothesis] = []
-        best = (0, None)
+        best = (0.0, None, 0, 0)
         for axis in range(W - 1, 2 * W - 2):          # axis = c1 + c2
             ok = bad = 0
             for r in range(H):
@@ -88,12 +136,17 @@ class MdlEngine:
                         if g[r][c] == bg and g[r][m] == bg:
                             continue          # background agreeing with background is not evidence
                         ok += (g[r][c] == g[r][m]); bad += (g[r][c] != g[r][m])
-            if ok >= 20 and bad == 0 and ok > best[0]:
-                best = (ok, axis)
-        if best[1] is not None:
-            out.append(Hypothesis(self.name, ReflectClaim(best[1], best[0]),
-                                  "whole board", min(0.99, best[0] / 400), 1.0, [ev.id]))
-        bestp = (0, None)
+            if ok >= self.min_agree and ok + bad > 0 and ok / (ok + bad) > best[0]:
+                best = (ok / (ok + bad), axis, ok, bad)
+        if best[1] is not None and best[0] >= self.commit_agree:
+            agree, axis, ok, bad = best
+            # the weak instrument, kept so the two can be compared in one run
+            out.append(Hypothesis(self.name, ReflectClaim(axis, ok),
+                                  "whole board", agree, 1.0, [ev.id]))
+            # the bold one
+            out.append(Hypothesis(self.name, UniversalClaim("mirror", (axis,), agree, ok, bad),
+                                  "whole board", agree, 1.0, [ev.id]))
+        bestp = (0.0, None, 0, 0)
         for period in range(2, W // 2):
             ok = bad = 0
             for r in range(H):
@@ -102,11 +155,14 @@ class MdlEngine:
                         if g[r][c] == bg and g[r][c + period] == bg:
                             continue
                         ok += (g[r][c] == g[r][c + period]); bad += (g[r][c] != g[r][c + period])
-            if ok >= 20 and bad == 0 and ok > bestp[0]:
-                bestp = (ok, period)
-        if bestp[1] is not None:
-            out.append(Hypothesis(self.name, TranslateClaim(bestp[1], bestp[0]),
-                                  "whole board", min(0.99, bestp[0] / 400), 1.0, [ev.id]))
+            if ok >= self.min_agree and ok + bad > 0 and ok / (ok + bad) > bestp[0]:
+                bestp = (ok / (ok + bad), period, ok, bad)
+        if bestp[1] is not None and bestp[0] >= self.commit_agree:
+            agree, period, ok, bad = bestp
+            out.append(Hypothesis(self.name, TranslateClaim(period, ok),
+                                  "whole board", agree, 1.0, [ev.id]))
+            out.append(Hypothesis(self.name, UniversalClaim("period", (period,), agree, ok, bad),
+                                  "whole board", agree, 1.0, [ev.id]))
         return out
 
 
@@ -140,6 +196,27 @@ class RelationPersistsClaim:
 
 
 class RelationalEngine:
+    """MEASURED, 2026-09-01: this engine's silence is NOT a gate that can be loosened,
+    and the obvious fix is worse than the disease. Damage to a copy does not merely
+    break the exact shape match -- it DISSOLVES the object. Deleting one cell of the
+    5-cell copy leaves two 2-cell fragments that are no longer 8-connected, so the
+    referent of the claim ceases to exist and there is nothing left to be wrong about.
+
+    Lowering the size floor to 2 and pairing by nearest shape instead of exact match
+    was tried and rejected on two independent counts:
+
+      - it lets the claim DODGE refutation. On the broken board the engine re-aims at
+        the two identical FRAGMENTS (similarity 1.000) instead of the original pair,
+        and the verifier scores it CORRECT. An engine allowed to choose its own
+        subject after seeing the evidence cannot be falsified by it.
+      - it manufactures error from noise. On scattered same-colour blobs that are not
+        copies of anything, it committed on 37 of 40 boards and was falsified on 23.
+
+    So relational abstention stands, and it is a REPRESENTATIONAL limit, not a
+    threshold: the family needs a notion of a damaged-but-still-identified object
+    (an identity that survives its own cells changing) before it can be bold. That is
+    the same wall as `Correspondence` in the Go stack, arriving from a new direction.
+    """
     name = "relational"
 
     @staticmethod
@@ -221,5 +298,39 @@ class GraphEngine:
                            "this board", 0.95, 1.0, [ev.id])]
 
 
+# ------------------------------------------------------- D: control, not an engine
+class LiarEngine:
+    """Always commits to the best-looking axis, however bad the fit. Not a mechanism:
+    the NOISE FLOOR. Error is only evidence of knowledge if an engine that knows
+    nothing scores worse, so every run reports this alongside the real engines. If a
+    real engine's error ever approaches the liar's, the difference between them was
+    the thing being measured, and it is gone."""
+    name = "liar"
+
+    def hypotheses(self, ev: Evidence) -> List[Hypothesis]:
+        g = ev.payload.get("grid") or ev.payload.get("before")
+        if g is None:
+            return []
+        H, W = len(g), len(g[0])
+        bg = background_color([[v for v in row] for row in g])
+        best = (-1.0, None, 0, 0)
+        for axis in range(W - 1, 2 * W - 2):
+            ok = bad = 0
+            for r in range(H):
+                for c in range(W):
+                    m = axis - c
+                    if _visible(g, r, c) and _visible(g, r, m):
+                        if g[r][c] == bg and g[r][m] == bg:
+                            continue
+                        ok += (g[r][c] == g[r][m]); bad += (g[r][c] != g[r][m])
+            if ok + bad > 0 and ok / (ok + bad) > best[0]:
+                best = (ok / (ok + bad), axis, ok, bad)
+        if best[1] is None:
+            return []
+        agree, axis, ok, bad = best
+        return [Hypothesis(self.name, UniversalClaim("mirror", (axis,), agree, ok, bad),
+                           "whole board", agree, 1.0, [ev.id])]
+
+
 def fresh_engines():
-    return [MdlEngine(), RelationalEngine(), GraphEngine()]
+    return [MdlEngine(), RelationalEngine(), GraphEngine(), LiarEngine()]

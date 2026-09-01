@@ -34,6 +34,22 @@ def _copies_grid() -> Grid:
     return g
 
 
+def _noise_grid(seed: int, density: float = 0.35) -> Grid:
+    """No structure of any kind. A real engine must stay SILENT here."""
+    rng = random.Random(seed)
+    return [[(rng.randrange(1, 5) if rng.random() < density else 0) for _ in range(16)]
+            for _ in range(16)]
+
+
+def _shuffled_mirror(seed: int) -> Grid:
+    """The mirror board's exact colour histogram, with the structure destroyed. The
+    harder control: an engine cannot pass it by noticing the colour distribution."""
+    g = _mirror_grid()
+    flat = [v for row in g for v in row]
+    random.Random(seed).shuffle(flat)
+    return [flat[i * 16:(i + 1) * 16] for i in range(16)]
+
+
 def _transition() -> Tuple[Grid, dict, Grid, str]:
     d = json.loads((HERE / "fixtures" / "vc33_l3_transition.json").read_text())
     return d["before"], d["action"], d["after"], d["note"]
@@ -71,6 +87,15 @@ def build() -> List[Tuple[str, Evidence, Truth, str]]:
         m, hid = _mask(g, 8, seed=2, only_bg=True)
         out.append((label, Evidence(label, "grid", {"grid": m}, hid), Truth(grid=g),
                     "high error" if corrupt else "low error"))
+
+    # --- negative controls: structureless boards. Expectation is SILENCE from the
+    # real engines and commitment from the liar; that gap is the noise floor.
+    for label, gen in (("noise-no-structure", _noise_grid),
+                       ("shuffled-mirror", _shuffled_mirror)):
+        g = gen(7)
+        m, hid = _mask(g, 24, seed=3)
+        out.append((label, Evidence(label, "grid", {"grid": m}, hid), Truth(grid=g),
+                    "silence from the real engines; the liar speaks"))
 
     before, act, after, note = _transition()
     out.append(("vc33-transition",

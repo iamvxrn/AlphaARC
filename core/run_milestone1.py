@@ -15,15 +15,21 @@ from engines import fresh_engines
 from cases import build
 
 
+def _by_label(cases):
+    """Look cases up by NAME, not by index. Positional indexing broke silently the
+    first time a case was inserted in the middle of the list."""
+    return {c[0]: c for c in cases}
+
+
 def main() -> int:
-    engines = fresh_engines()
+    engines = [e for e in fresh_engines() if e.name != "liar"]
     graph = next(e for e in engines if e.name == "graph")
     rows = []
     for label, ev, truth, expect in build():
         print(f"\n=== {label}   expected: {expect} ===")
         if label == "vc33-transition-BROKEN":
             graph.observe(ev.payload["before"], ev.payload["action"],
-                          build()[4][1].payload["after"])     # the TRUE successor
+                          _by_label(build())["vc33-transition"][1].payload["after"])
         spoke = 0
         for eng in engines:
             hs = eng.hypotheses(ev)
@@ -52,15 +58,15 @@ def main() -> int:
     # --- the verifier under direct test, independent of any engine ---
     print("\n=== the verifier head-on: deliberately FALSE propositions ===")
     from protocol import Proposition, Truth, digest
-    cases = build()
-    g_true = cases[0][2].grid
-    liar_cells = {(r, c): (g_true[r][c] + 1) % 9 for (r, c) in list(cases[0][1].hidden)[:6]}
-    honest_cells = {(r, c): g_true[r][c] for (r, c) in list(cases[0][1].hidden)[:6]}
-    after = cases[4][2].after
+    cases = _by_label(build())
+    g_true = cases["static-mirror"][2].grid
+    liar_cells = {(r, c): (g_true[r][c] + 1) % 9 for (r, c) in list(cases["static-mirror"][1].hidden)[:6]}
+    honest_cells = {(r, c): g_true[r][c] for (r, c) in list(cases["static-mirror"][1].hidden)[:6]}
+    after = cases["vc33-transition"][2].after
     probes = [
         ("held_out, every value right",   Proposition(Kind.HELD_OUT_CELLS, "t", honest_cells), Truth(grid=g_true), 0.0),
         ("held_out, every value wrong",   Proposition(Kind.HELD_OUT_CELLS, "t", liar_cells),   Truth(grid=g_true), 1.0),
-        ("relation_now, no such objects", Proposition(Kind.RELATION_NOW, "t", ((0, 0), (5, 5), "identity")), Truth(grid=cases[2][2].grid), None),
+        ("relation_now, no such objects", Proposition(Kind.RELATION_NOW, "t", ((0, 0), (5, 5), "identity")), Truth(grid=cases["relational-copy"][2].grid), None),
         ("transition, correct successor", Proposition(Kind.TRANSITION, "t", digest(after)),    Truth(after=after), 0.0),
         ("transition, wrong successor",   Proposition(Kind.TRANSITION, "t", "deadbeefdeadbeef"), Truth(after=after), 1.0),
         ("nothing to check against",      Proposition(Kind.TRANSITION, "t", digest(after)),    Truth(), None),

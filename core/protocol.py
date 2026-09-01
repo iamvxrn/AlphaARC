@@ -13,6 +13,37 @@ Two rules keep it honest.
 
 `None` is a first-class result: not testable here. Silence and error are different
 answers, and merging them is how an ensemble passes for reasoning.
+
+Milestone 2 adds a third rule, forced by measurement rather than by taste.
+
+3. A held-out prediction over RANDOMLY masked cells is a WEAK instrument. Measured
+   on the mirror board: a one-cell violation is caught only at the mask coverage
+   rate -- 5.3% at 8 hidden cells, 17.3% at 24, 53.0% at 128 -- and it then FALLS to
+   32.5% at 200, because masking hard enough to hit the damage also hides the cell
+   the prediction would have been derived from. There is no mask size at which this
+   instrument becomes reliable.
+
+   So `UNIVERSAL` exists: a claim that a rule holds with no exception ANYWHERE. One
+   counterexample refutes it, wherever it sits, so REFUTATION OF AN EMITTED UNIVERSAL
+   IS NOT LIMITED TO HELD-OUT LOCATIONS -- measured 100% separation against 16.6%.
+
+   That is the precise claim, and it is narrower than "universals are mask-independent",
+   which would be false. The masking still governs the OTHER half of the loop: the
+   hypothesis and its parameters -- which axis, which period -- are selected from the
+   masked evidence, so what gets ASSERTED remains mask-dependent even though what
+   REFUTES it does not. The two halves are visible separately in section D of
+   `run_milestone2.py`: at a 1.00 commit threshold the engine still emitted 30
+   universals that were refuted in full, because the mask had hidden the counterexample
+   from the engine while leaving it in plain view of the verifier. Selection was fooled;
+   refutation was not.
+
+   The cost is real and is stated rather than hidden: to check a universal, the
+   verifier must know what the rule MEANS, so it owns a small rule vocabulary
+   (`_RULES`). It still cannot see which engine spoke or which task this is -- an
+   engine names a schema and its parameters and cannot supply the checker, so it
+   cannot grade itself -- but the verifier is no longer free of all content, and
+   every rule added to that vocabulary is a claim the protocol makes on its own
+   behalf. Keep the vocabulary small and general, and count it as a cost.
 """
 from __future__ import annotations
 
@@ -32,6 +63,7 @@ class Kind(Enum):
     RELATION_NOW = "relation_now"            # a relation asserted of the CURRENT frame
     RELATION_PERSISTS = "relation_persists"  # ...asserted to survive an action
     TRANSITION = "transition"                # (state_digest, action) -> state_digest
+    UNIVERSAL = "universal"                  # "rule R holds with NO exception anywhere"
 
 
 def digest(g: Grid, skip_rows: Tuple[int, ...] = (0,)) -> str:
@@ -134,6 +166,65 @@ def _shape_at(g: Grid, top_left: Tuple[int, int]) -> Optional[tuple]:
     return tuple(tuple(r) for r in m)
 
 
+def _background(g: Grid) -> int:
+    """Most frequent value. Reimplemented here, deliberately: the verifier must not
+    share a code path with the engines it grades, or a bug agrees with itself."""
+    counts: Dict[int, int] = {}
+    for row in g:
+        for v in row:
+            if v != HIDDEN:
+                counts[v] = counts.get(v, 0) + 1
+    if not counts:
+        return 0
+    best = max(counts.values())
+    return min(v for v, n in counts.items() if n == best)
+
+
+def _rule_mirror(g: Grid, params: tuple) -> Tuple[int, int]:
+    """cell(r,c) == cell(r, axis-c), everywhere. Returns (agreements, violations)."""
+    (axis,) = params
+    H, W = len(g), len(g[0])
+    bg = _background(g)
+    ok = bad = 0
+    for r in range(H):
+        for c in range(W):
+            m = axis - c
+            if not (0 <= m < W):
+                continue
+            if g[r][c] == HIDDEN or g[r][m] == HIDDEN:
+                continue
+            if g[r][c] == bg and g[r][m] == bg:
+                # background agreeing with background is not evidence -- without this
+                # a mostly-blank board satisfies every rule. The verifier owns this
+                # judgement, which is exactly the content it was supposed not to have.
+                continue
+            ok += (g[r][c] == g[r][m])
+            bad += (g[r][c] != g[r][m])
+    return ok, bad
+
+
+def _rule_period(g: Grid, params: tuple) -> Tuple[int, int]:
+    """cell(r,c) == cell(r, c+period), everywhere."""
+    (period,) = params
+    H, W = len(g), len(g[0])
+    bg = _background(g)
+    ok = bad = 0
+    for r in range(H):
+        for c in range(W - period):
+            if g[r][c] == HIDDEN or g[r][c + period] == HIDDEN:
+                continue
+            if g[r][c] == bg and g[r][c + period] == bg:
+                continue
+            ok += (g[r][c] == g[r][c + period])
+            bad += (g[r][c] != g[r][c + period])
+    return ok, bad
+
+
+# The verifier's whole vocabulary. An engine names a key and supplies parameters; it
+# cannot supply the checker, so it cannot grade itself.
+_RULES = {"mirror": _rule_mirror, "period": _rule_period}
+
+
 def verify(p: Proposition, truth: Truth) -> Optional[float]:
     """Error in [0,1], or None when this truth cannot test this proposition."""
     if p.kind is Kind.HELD_OUT_CELLS:
@@ -167,5 +258,18 @@ def verify(p: Proposition, truth: Truth) -> Optional[float]:
         if truth.after is None:
             return None
         return 0.0 if p.value == digest(truth.after) else 1.0
+
+    if p.kind is Kind.UNIVERSAL:
+        g = truth.grid
+        if g is None:
+            return None
+        rule, params = p.value
+        checker = _RULES.get(rule)
+        if checker is None:
+            return None                     # not in the vocabulary: untestable, not wrong
+        ok, bad = checker(g, tuple(params))
+        if ok + bad == 0:
+            return None                     # the rule says nothing about this board
+        return bad / (ok + bad)
 
     return None
