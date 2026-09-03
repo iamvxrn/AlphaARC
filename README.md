@@ -54,11 +54,22 @@ file is only motivating.
 
 ## Growth discipline
 
-    No new cognitive capability without a failure that requires it.
+    a failure licenses an INVESTIGATION, not a mechanism
 
-Not "it seems like the agent needs a causal graph." First show a task the
-current core provably cannot learn from experience alone. Only then add the
-minimal mechanism that resolves that specific failure, and record why.
+An earlier draft said "no new capability without a failure that requires it".
+That is too strong logically: an observed failure almost never identifies the
+capability that would fix it. "It does not transfer to a new configuration" is
+equally consistent with a representation limit, a capacity limit, an
+exploration failure, overwriting, misplaced credit, or noise.
+
+So the rule is a chain, not a step:
+
+    failure → competing explanations → discriminating experiment
+            → identified limitation → minimal intervention → ablation
+
+with `FAILURE OBSERVED — CAUSE UNKNOWN` as an explicitly valid ending. Full
+version, including the predeclared-control rule and the per-capability
+lineage files, in [GROWTH_PROTOCOL.md](GROWTH_PROTOCOL.md).
 
 ## What K₀ contains
 

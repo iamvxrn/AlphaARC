@@ -77,9 +77,12 @@ information about the environment it will be tested on. Operationally:
 - **L1 — order.** K₀ is frozen, and its hash recorded, before the test
   environment is selected. Anything changed after seeing the test environment is
   K_t or a new experiment, never K₀.
-- **L2 — training distribution.** If K₀ is learned, what it was learned from is
-  documented in full. The test environment may not appear in it, and neither may
-  environments chosen *because* they share its mechanic.
+- **L2 — provenance.** If K₀ is learned, its training data and procedure are
+  documented in full, and frozen before evaluation environments are selected, so
+  that transfer can later be analysed at several notions of similarity rather
+  than asserted at one. The test environment itself may not appear in the
+  training data. *This is deliberately weaker than the criterion we want* — see
+  below.
 - **L3 — no constant fitted to a test environment.** No number in K₀ may be set
   by reading behaviour on an environment K₀ will later be scored on. This repo
   has already made that mistake once and had to retract a generalisation claim
@@ -92,11 +95,34 @@ information about the environment it will be tested on. Operationally:
   two mechanically distinct environments. A K₀ that only works on one is
   indistinguishable from a K₀ fitted to it.
 
-Unsolved, and flagged rather than papered over: **"mechanic family" has no sharp
-definition.** L2 currently rests on judgement. If K₀ is ever trained on
-generated environments, this becomes the load-bearing question of the whole
-branch, because "trained on a million synthetic worlds" is only different from
-"pretrained ARC solver" if this line can be drawn and defended.
+### The stronger criterion we do not yet have
+
+We would like to require that the training distribution contain no environment
+of the *same mechanic family* as the test. That requirement is currently
+unusable: **"mechanic family" has no sharp definition**, and defining one in the
+abstract — before any concrete training distribution exists — would be days
+spent adjudicating whether "an entity moves when acted upon" is the same family
+as "a coloured square moves on click". It is left open on purpose.
+
+It is not, however, abandoned. When a learned K₀ actually exists, transfer gets
+measured along explicitly named axes instead of a single intuitive word:
+
+    IID
+    new configuration
+    new composition            (primitives seen, their composition not)
+    new dynamics
+    new causal structure
+    new observation encoding
+    new domain
+
+That turns an unfalsifiable claim — "it never saw this mechanic family" — into
+checkable ones: *"A and B appeared separately in training, A∘B never did"*, or
+*"no training environment contained a transition rule of this class"*.
+
+Until then this is the branch's largest open methodological risk, and it is
+recorded as risk rather than resolved by wording: "trained on a million
+synthetic worlds" differs from "a pretrained ARC solver" only to the extent that
+this line can eventually be drawn and defended.
 
 ## Assumptions, recorded as assumptions
 
@@ -120,7 +146,12 @@ branch, because "trained on a million synthetic worlds" is only different from
 
 ## The rule that governs additions
 
-No capability enters the agent without a specific, demonstrated failure that
-requires it — and the failure must not be a corollary of the definition of a
-learning agent. When something is added, the failure that forced it is recorded
-next to it.
+Moved to [GROWTH_PROTOCOL.md](GROWTH_PROTOCOL.md), and weakened in the process.
+"No capability without a failure that requires it" assumed a failure identifies
+the capability that would fix it; it does not. A failure licenses an
+investigation, and only a discriminating experiment licenses a mechanism.
+
+The one clause that stays here, because it is about knowledge rather than
+growth: a failure that is a corollary of the definition of a learning agent —
+such as a stateless agent losing a history-dependent task — is not a finding and
+may not motivate anything.
