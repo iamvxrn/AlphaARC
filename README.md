@@ -35,31 +35,22 @@ mechanism — never import it because "it already exists."
 
 ## The K₀ / K_t distinction
 
-At episode start, all game-specific knowledge is empty:
+`K₀` is what the agent holds *before* meeting a new environment. It is **not
+empty** — a human's starting state is the product of enormous prior
+optimisation — and it **may be learned**. What it may not contain is anything
+about the specific environment it will be tested on:
 
-    K_0 = ∅
+    I(K₀ ; test environment) ≈ 0
 
-Everything the agent learns about a *specific* game accumulates purely from
-interaction within that episode:
+`K_t` is everything acquired about *this* environment, and it does start empty:
 
-    K_0, K_1, K_2, ..., K_n  ← built from observation + action only
+    K_t = ∅ at t=0, built from observation and action alone
 
-`K_0` itself is not empty — it is the frozen, task-independent core the agent
-is born with. The experiment's independent variable is what that core
-contains.
-
-## Three levels of prior knowledge
-
-| Level | Allowed at t=0 | Example |
-|---|---|---|
-| Interface | physics of interacting with the benchmark | observation format, list of available actions |
-| Cognitive | general-purpose operations | memory, comparison, change-detection, composition, recurrence |
-| Game-specific | forbidden before the episode starts | "this is a button", "color 9 means X", any named mechanic |
-
-Even *objecthood* sits on the boundary: a general capacity for tracking
-persistent entities may belong at the cognitive level, but "connected
-component = object" is already a specific engineering hypothesis about
-grid worlds, and is not assumed here.
+The experiment's independent variable is what `K₀` contains. The forbidden
+thing is leakage, not learning — the operational tests for that distinction,
+and the separation of `K₀` from ARCHITECTURE beneath it, are in
+[CORE_ZERO_CONTRACT.md](CORE_ZERO_CONTRACT.md), which is normative where this
+file is only motivating.
 
 ## Growth discipline
 
@@ -69,30 +60,31 @@ Not "it seems like the agent needs a causal graph." First show a task the
 current core provably cannot learn from experience alone. Only then add the
 minimal mechanism that resolves that specific failure, and record why.
 
-## Candidate K₀ (starting point for reduction, not a conclusion)
+## What K₀ contains
 
-A tentative, deliberately reducible list — to be shrunk and tested, not
-implemented wholesale:
+Unknown. That is the point of the branch, and naming a list here would settle
+by assumption the question the branch exists to ask.
 
-- persistence — things tend to continue existing across observation changes
-- prediction — an internal model anticipates what comes next
-- compression — regularities are preferred explanations of experience
-- memory — past experience is available to present decisions
-- intervention — some changes in the world are consequences of my own actions
+An earlier draft of this file named one — persistence, prediction, compression,
+memory, intervention — and the first design that followed from it was an
+action-conditioned predictor driven by prediction error. That is a specific
+architecture chosen before any failure demanded it, which is the move the
+growth discipline above forbids. It was removed rather than rewritten.
 
-The working bet is that higher concepts humans call "object," "cause," and
-"number" are not primitives to hand-code, but *learned abstractions* that
-fall out of this smaller core when it is run on structured experience:
-an object is what persistence-plus-compression finds useful for predicting
-a stream of observations; cause is an intervention that reliably changes
-future state; number is an invariant of repeated structure.
+What is left at the conceptual level is only the skeleton:
+
+    h_{t+1} = U(h_t, o_t, a_t, o_{t+1})
+    a_t     = P(h_t, o_t)
+
+with `h` deliberately unnamed and `U` deliberately unchosen. The question is
+what `U` must be for new knowledge to appear from experience at all.
 
 ## Success criterion
 
 Not: prediction loss decreases.
 
 Instead: measure end-to-end competence on a game never seen before,
-starting from K_0 = ∅, as a function of accumulated experience —
+starting from K_t = ∅, as a function of accumulated experience —
 
     after 0 actions     ?
     after 5 actions      0.12
