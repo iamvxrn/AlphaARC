@@ -484,3 +484,149 @@ highlight reel, not evidence.
 
 ## Milestone 1 result (interface only)
 
+
+## Milestone 4 result — MetaController v0.1, executed 2026-09-03
+
+**Headline, and it is negative: on this task set, feedback-dependent sequencing adds
+nothing over the best FIXED order — at every budget from 2 to 20.** Pre-registered
+reading #2 fired, and it is reported as written rather than explained away.
+
+    arm                     solved     ops   waste   irrev
+    ORACLE                   97.9%    2.50    1.52      0
+    HARD                     66.7%    4.83    4.67      0
+    CORRUPTED c=0.30         68.8%    4.65    4.46      0
+    CORRUPTED c=0.50         74.0%    4.18    3.94      0
+    ABSTAIN                  97.9%    6.00    1.98      0
+    RANDOM                   47.9%    4.53    6.14      7
+    FIXED best-of-24         97.9%   12.00    2.67      0
+    FIXED median-of-24       50.0%   12.00    2.65     46
+
+Paired over 16 seeds on identical task instances; REAL requires the mean paired
+difference to clear twice its standard error **and** every seed to agree on sign.
+
+    ORACLE  - RANDOM        +50.00 pp   sem 2.64   all seeds agree   REAL
+    ORACLE  - FIXED best     +0.00 pp                                zero
+    HARD    - FIXED best    -31.25 pp   sem 1.42   all seeds agree   REAL
+    ORACLE  - HARD          +31.25 pp   sem 1.42   all seeds agree   REAL
+    ABSTAIN - HARD          +31.25 pp   sem 1.42   all seeds agree   REAL
+    HARD    - RANDOM        +18.75 pp   sem 2.08   seeds DISAGREE    not resolved
+
+### The diagnosis, which matters more than the number
+
+The first explanation — that a fixed cycle merely brute-forces a budget nothing
+exhausts — was **measured and refuted**. The best fixed order matches ORACLE at
+budget 3, and the winner is a single three-step sequence applied **identically to all
+six families**:
+
+    explore -> track -> induce          97.9%, the ORACLE's own score
+
+It works because `explore` reaches the fullest view unconditionally, `track` settles
+the referent question and is harmless on rule tasks (the hypothesis is still empty at
+that point, so the authored `track_destroys` penalty has nothing to destroy), and
+`induce` then commits once on the best available evidence. ORACLE only ever reuses an
+operation — 16/16 on `rule_broken_hidden` and `rule_loose`, 0/16 on the other four —
+because it induces **early**, on a poor view, and must redo it. Exploring first makes
+the reuse unnecessary.
+
+**So the benchmark's flaw is now named: every task is solved by "gather all available
+evidence, then commit once."** Feedback has nothing to contribute where the
+maximally-informed state is reachable unconditionally in a fixed number of steps.
+That is a property of the task set, not a discovery about controllers, and it was not
+visible when the set was frozen — which is why the fixed and random controls were
+frozen alongside it.
+
+### What DID separate, stated at its scope
+
+* **Typed routing beats random sequencing decisively** (+50.00 pp, all 16 seeds).
+  Having heterogeneous operations is not sufficient on its own; order matters, and
+  half the fixed orders are no better than random (median-of-24: 50.0%, with 46
+  irreversible failures against the typed arms' 0). The claim that dies is
+  "*adaptive* order is needed", not "order is needed".
+* **Permission to answer UNKNOWN closes the entire observability gap.** ABSTAIN
+  recovers 66.7% -> 97.9% from *exactly HARD's evidence*, and its UNKNOWN rule cannot
+  be aimed: it fires as hard on `rule_intact` and `ref_intact` as on their broken
+  twins, because the twins are observationally identical by construction. It is a
+  **trade, not an improvement** — 6.00 ops against HARD's 4.83 and ORACLE's 2.50, and
+  at budget 3-4 it falls to 83.3% while ORACLE holds 97.9%. Reading #4 honoured.
+* **HARD's two failures are forced, not handicapped**, and land exactly where M2 and
+  M3 predicted: `rule_broken_hidden` 0/16 (M2 §D — a universal no visible cell
+  contradicts is observationally identical whether true or merely unrefuted) and
+  `ref_replaced` 0/16 (M3 PART 1/2 — R0 answers UNIQUE for an impostor). Everything
+  else observable *was* given to HARD, including "repeated abstention at the fullest
+  view means there is nothing here", so the noise family was not gifted to ORACLE.
+
+### The frozen CORRUPTED arm does not measure what it was specified to measure
+
+**Injected classifier confusion made the controller BETTER**: 66.7% -> 68.8% at
+c=0.30 -> 74.0% at c=0.50, and `ref_replaced` rises 0% -> 12% at c=0.30. The cause is
+not noise being useful. HARD's error on the confusable pair is **systematic and
+one-directional** — it says MODEL_ERROR every time the truth is REPRESENTATION_ERROR
+— so a channel that swaps exactly those two labels is a partial *repair* of a biased
+classifier, not an added burden.
+
+The spec required corruption to be confusion-matrix-aware on precisely that pair, for
+good reasons. The consequence, unforeseen, is that on this benchmark `C_classifier`
+as frozen is **confounded with bias repair** and cannot answer "how much error above
+the observability floor is tolerated". This is a methodological finding about the
+frozen specification and it is recorded rather than patched: a clean robustness arm
+would corrupt toward a *third* label, or corrupt only the labels HARD already gets
+right. That is a design change and therefore a new experiment version.
+
+### The authored cost, ablated as promised
+
+`track_destroys` is the one penalty in the mechanism that was written rather than
+measured, and it is the obvious way to manufacture a win for careful routing.
+
+    track_destroys=True     ORACLE 97.9%  HARD 66.7%  RANDOM 47.9%   O-R +50.00pp REAL
+    track_destroys=False    ORACLE 97.9%  HARD 66.7%  RANDOM 55.2%   O-R +42.71pp not resolved
+
+It is worth ~7 pp of the 50 pp ORACLE-over-RANDOM gap, so the gap is not made of it —
+but with the penalty off, the seeds stop agreeing on sign and the difference no longer
+clears the bar. Quote the gap **with** its ablation, not alone.
+
+### Intervention log
+
+Decision-level counterfactual replay, every decision replaced by each alternative with
+the controller then carrying on: **45.3% of ORACLE's decisions are load-bearing**
+(the outcome changes if replaced), 62.9% of HARD's, 34.7% of ABSTAIN's. Mean
+operations saved against the best single-step deviation: ORACLE +0.29, HARD +0.14,
+ABSTAIN -0.03 — i.e. the typed choices are locally near-optimal, and more than half of
+ORACLE's are not load-bearing at all.
+
+### One declared change of experiment version, announced before the run
+
+v0.1 runs the four frozen arms as cells of a **crossed** design, {forced, abstaining}
+x {oracle, hard, corrupted at c}, because running ABSTAIN only at HARD's noise level
+confounds "can abstain" with "noise level" — the fault that killed the first M3
+decisive pair. It adds cells; it changes nothing about what the original four measure.
+Also recorded: **REFINE was dropped** from the operation set. In this substrate
+re-induction on new evidence strictly dominates parameter refinement, so a REFINE
+operation never has work to do, and shipping it would have padded the RANDOM control's
+denominator to 1-in-5 and flattered typed routing for a reason unrelated to routing.
+An implementation bug was found by tracing `rule_loose` **before any measurement was
+taken** — engine abstention for lack of evidence was labelled NO_MODEL instead of
+INSUFFICIENT_EVIDENCE, so both ORACLE and HARD looped on INDUCE. The fix restores the
+declared semantics and is shared by every arm, so no arm is advantaged by it.
+
+### What a v0.2 benchmark would need — and the trap in building one
+
+A task set that can tell adaptive from fixed sequencing needs at least one property
+this one lacks:
+
+* evidence acquisition expensive enough relative to budget that "gather everything
+  first" is not affordable;
+* an operation whose correct **content** (not merely its identity) depends on what an
+  earlier operation returned;
+* a destructive operation that cannot be dodged by performing it first, while the
+  hypothesis slot is still empty;
+* a task on which the fullest view is **not** the best view.
+
+**The trap is obvious and must be stated before anyone builds it:** designing v0.2
+until adaptive sequencing wins is precisely the confound this project keeps
+destroying. Any v0.2 must freeze its reading, keep the same fixed-order and random
+controls, and be allowed to return this same negative answer.
+
+**M4 v0.1 closes here.** The thesis is not refuted — a benchmark that cannot
+distinguish two policies is evidence about the benchmark. What is refuted is the
+weaker and more tempting claim, that this experiment supports feedback-dependent
+sequencing. It does not.

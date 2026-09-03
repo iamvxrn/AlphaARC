@@ -50,6 +50,7 @@ non-trivial because the other four families PUNISH reaching for TRACK, and becau
 from __future__ import annotations
 
 import copy
+import functools
 import random
 import sys
 from dataclasses import dataclass, field
@@ -149,7 +150,8 @@ def _ref_pair(frame0: Grid) -> Tuple[Referent, ...]:
             Referent.from_component("B", by_pos[-1]))
 
 
-def build(seed: int) -> List[Task]:
+@functools.lru_cache(maxsize=None)
+def _build_cached(seed: int) -> Tuple[Task, ...]:
     """One instance of every family. The seed moves ONLY the random part of the
     masks; the off-diagonal pairs share their mask exactly, so the two members stay
     observationally identical at view 0 for every seed."""
@@ -192,7 +194,14 @@ def build(seed: int) -> List[Task]:
         final = frames[-1]
         out.append(Task(f"{name}-s{seed}", name, "ref", (final,), frames,
                         full=final, ref_alive=alive, refs=_ref_pair(frames[0])))
-    return out
+    return tuple(out)
+
+
+def build(seed: int) -> List[Task]:
+    """Deterministic in `seed`, so caching is safe -- and the paired design REQUIRES
+    every arm to see the identical instance, which the cache now guarantees rather
+    than merely reproducing."""
+    return list(_build_cached(seed))
 
 
 FAMILIES = ("rule_intact", "rule_broken_hidden", "rule_loose", "noise",
