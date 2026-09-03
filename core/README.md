@@ -630,3 +630,63 @@ controls, and be allowed to return this same negative answer.
 distinguish two policies is evidence about the benchmark. What is refuted is the
 weaker and more tempting claim, that this experiment supports feedback-dependent
 sequencing. It does not.
+
+## Postscript to M4 — the diagnosis, stated structurally (2026-09-03)
+
+The result in `a5f5e98` stands unchanged. What follows sharpens **why**, and the
+sharper statement supersedes the looser one written above ("every task is solved by
+gather all available evidence, then commit once"), which described a symptom.
+
+    adaptive typed routing = best fixed routing
+
+not because the budget was loose — measured and refuted, the tie holds at budget 2 —
+but because **there exists one task-independent dominating sequence**:
+
+    EXPLORE -> TRACK -> INDUCE
+
+So the task set contains **no policy branching**. It checks whether a correct
+*pipeline* exists. It cannot check metacontrol, because metacontrol is the thing that
+chooses differently in different situations, and here nothing ever has to.
+
+### That property is decidable before a controller exists
+
+Which makes it an **entry condition on a benchmark**, not a post-mortem on a result.
+`core/admissible.py` decides it:
+
+    fixed_ceiling(T)  = max over EVERY word w in Ops^<=L of solve-rate(w, T)
+    oracle_ceiling(T) = solve-rate of the arm reading ground truth
+                        (an upper bound on ANY policy, adaptive or not)
+
+    ADMISSIBLE  iff  fixed_ceiling < oracle_ceiling
+
+If they are equal, no policy of any kind can beat the best fixed word, so the set
+cannot distinguish routing from a pipeline and must not be used to make a claim about
+metacontrol. Run on the frozen M4 set it rediscovers the sequence mechanically, in
+2.7 s, with no controller involved:
+
+    len   best fixed   word
+      1        50.0%   [induce]
+      2        81.2%   [explore, induce]
+      3        97.9%   [explore, track, induce]
+    fixed ceiling 97.9%   oracle ceiling 97.9%   VERDICT: NOT ADMISSIBLE
+
+The search is exhaustive over all `4^d` words — strictly stronger than the 24 cyclic
+permutations M4's FIXED control used, and it agrees with them, so that control was not
+weak. `STOP` is omitted soundly: in an episode it only truncates, so any word
+containing it scores as its own prefix, and every prefix is searched. The verdict does
+not depend on `track_destroys`: with the authored penalty off the dominating sequence
+merely reorders to `explore -> induce -> track`, at the same ceiling.
+
+### What this test is, and is not
+
+* **Necessary, not sufficient.** Passing says branching is required *somewhere*, not
+  that a controller finds it, nor that feedback rather than luck is what pays. It
+  licenses dropping no control: RANDOM and FIXED still run.
+* **Not gameable toward the answer we want.** It certifies that branching is
+  necessary; it is silent on whether adaptive routing succeeds. A v0.2 that passes is
+  still free to return the same negative answer — which is the whole point, and the
+  reason this is the right thing to build before v0.2 tasks rather than after.
+
+The standing rule is now enforceable rather than promised: **a candidate v0.2 must be
+run through `admissible.py` and come back ADMISSIBLE before any policy is written for
+it.** A task set that has a dominating fixed sequence is rejected at the door.
