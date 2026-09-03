@@ -1,0 +1,34 @@
+# Secrets — ARC_API_KEY lives here, never commit
+.env
+.env.*
+!.env.example
+
+# Experiment output
+runs/
+logs/
+*.log
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+*.npz
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Go
+/bin/
+*.test
+*.out
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
