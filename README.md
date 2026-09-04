@@ -4,8 +4,14 @@
 
 Can an agent equipped only with a minimal, task-independent cognitive core
 acquire — through interaction alone — enough knowledge of a single previously
-unseen environment to reach competent performance (target: ARC-AGI-3 score
-≥ 0.85 on a game it has never seen)?
+unseen environment to reach competent performance?
+
+No numeric target is stated here. An earlier draft named 0.85 on ARC-AGI-3; it
+is removed rather than kept as "provisional", because it was silently calibrated
+to *adult* human performance — which carries acquired linguistic and cultural
+scaffolding ("legend", "button") far beyond the core-knowledge `K₀` this branch
+means to test. A number goes back in once there is an honestly calibrated
+baseline to set it against. See CORE_ZERO_CONTRACT.md's calibration-risk note.
 
 Stated more sharply:
 
@@ -98,13 +104,15 @@ Instead: measure end-to-end competence on a game never seen before,
 starting from K_t = ∅, as a function of accumulated experience —
 
     after 0 actions     ?
-    after 5 actions      0.12
-    after 20 actions     0.37
-    after 50 actions     0.71
-    after 100 actions    0.87
+    after 5 actions      ?
+    after 20 actions     ?
+    after 50 actions     ?
+    after 100 actions    ?
 
-and compare against how much evidence a human needs to reach the same
-mechanic-understanding, not just the final score.
+with no numbers filled in here on purpose (see the Hypothesis section above),
+compared against how much evidence a *matched* baseline needs to reach the same
+mechanic-understanding — matched meaning something whose own prior is argued to
+be similarly minimal, not an adult human by default — not just the final score.
 
 Stronger test of generality: the same frozen K₀ should be able to acquire
 competence in more than one kind of environment (ARC-AGI-3 games, at

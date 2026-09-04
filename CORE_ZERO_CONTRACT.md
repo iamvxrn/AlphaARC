@@ -135,6 +135,33 @@ this line can eventually be drawn and defended.
 - **A2 — episodic boundaries are given.** The agent is told when an episode
   starts. Whether anything of `h` may survive that boundary is open, not settled.
 
+## The calibration risk in the success criterion
+
+An earlier draft of `README.md` named a numeric target — 0.85 on ARC-AGI-3 —
+without asking what it was calibrated *against*, and it has been removed rather
+than kept as "provisional". An adult human solving an ARC-AGI-3 game recognises a
+"legend" panel, a "button", an "avatar" — categories built from years of language
+and cultural exposure, not from persistence/space/time/causality/quantity alone.
+A human infant with only that core-knowledge set, and no acquired symbolic
+scaffolding, would very likely not solve these games either.
+
+So any number calibrated to adult play measures "what a `K₀` already containing
+an adult's acquired semantic and cultural knowledge reaches", not "what a minimal
+`K₀` should reach". Using it as this branch's target would silently swap in
+exactly the kind of prior the branch exists to keep out. Reaching adult-level
+play may turn out to require lifetime-acquiring symbolic scaffolding itself,
+which is a qualitatively larger claim than acquiring one action-effect mapping
+(Q1) — a different, larger research question this branch has not yet asked.
+
+No target is reinstated until there is a baseline honestly matched to this
+branch's `K₀` — not an adult human by default. This is left as a flagged risk,
+the same way L2's "mechanic family" is, rather than resolved by picking a
+substitute number now.
+
+Q1 (`PHASE1_Q1_SPEC.md`) is unaffected: its action labels and observation are
+opaque symbols by construction, carrying no linguistic or cultural category —
+`{α,β,γ,δ}`, not "button one" — so this risk does not reach it.
+
 ## Open, and deliberately unanswered here
 
 - What is `U`?
@@ -143,6 +170,8 @@ this line can eventually be drawn and defended.
 - Is `P` separable from `U`?
 - Does `h` persist across episodes, across levels, across environments?
 - How is "mechanic family" defined sharply enough to make L2 testable?
+- What baseline is honestly matched to this branch's `K₀`, so a numeric target
+  can be set without smuggling in an adult's acquired scaffolding?
 
 ## The rule that governs additions
 
