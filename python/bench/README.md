@@ -1048,3 +1048,374 @@ One thing it needs that is already a known gap: **ls20's legend is at 2x scale**
 Correspondence V1 deliberately excludes scale -- which is also exactly what blocks
 s5i5 (its two template boxes are different sizes). The same missing capability sits
 in front of both the movement class and the relational click class.
+
+### Rejected #8: more search time inside the episode
+
+The claim under test was the natural one -- the mechanism explores, it just needs
+more room. It is the cleanest thing to test on this harness, so it was tested
+rather than argued about.
+
+Precondition checked first, because without it the experiment measures nothing: is
+the action cap actually binding? At `--max-steps 250` every game ends at exactly 251
+actions with `state=NOT_FINISHED` on **64 of 64 game-seeds** -- the agent never
+finishes on its own, it is always cut off. So more budget is genuinely more search.
+
+Doubled to `--max-steps 500`, 16 paired seeds, same seeds as `runs/base/`:
+
+| | 250 actions | 500 actions |
+|---|---|---|
+| actions actually taken, every game | 251 | **501** |
+| lp85 / r11l / tn36 levels | 1 on every seed | 1 on every seed |
+| vc33 levels | 2 on every seed | 2 on every seed |
+| total levels over 16 seeds | 80 | **80** |
+| paired score difference | | **+0.0000, max abs 0.0000** |
+
+**16,000 extra actions bought zero extra levels.** The score is not merely
+statistically unchanged, it is bit-identical on every seed, because each level is
+completed at the same action count and everything after that contributes nothing.
+
+**Scope, stated so this is not over-read.** What is refuted is *more search time
+within an episode*. Three other things called "scale" are untouched by it:
+per-decision compute (deeper planning or imagination), accumulation *across*
+episodes, and model size (there is no model to grow -- this agent is not a network).
+The second is the interesting one and is now the only untested form: `drive_gain`
+and `succ` are built fresh each run and discarded at the end, so the agent starts
+every episode amnesiac, and nothing has ever measured what carrying them across
+would do.
+
+The inner loop was parallelised in the same commit: seeds are independent processes
+and were being run one at a time on a 12-core machine, so 16 seeds took ~50 minutes
+with eleven cores idle. `make quick-n` now runs `nproc - 1` workers -- about 15
+minutes, one core left free.
+
+### Rejected #9: lifting the permanent write-off (and what it clarified)
+
+A human playing g50t cleared level 1 with the **spacebar** -- a key `decode.py`
+had reported dead, because following each control for 8 presses from a fresh board
+shows it changing nothing. It changes nothing *until the avatar has arrived*. The
+decode method is structurally blind to context-dependent controls, and so is the
+agent.
+
+Two facts established from the code and a trace, independent of any fix:
+
+- `RunPlanner.inert` is added to in exactly one place and **cleared nowhere** --
+  not by `board_replaced`, which clears `profiles`, `ran`, `_dest`, `crossed_off`
+  and `blocked` but not this. One clock-only press writes a control off for the
+  rest of the episode, across every level. `Policy.dead` at least decays.
+- Instrumented on seed 1, it fires on everything: **g50t writes off all five of its
+  actions**, ls20 all four, m0r0 all five keys plus nine click controls, sp80 one
+  key plus eight clicks. On a five-action game the agent permanently disables its
+  entire repertoire, `k5` -- the winning key -- included.
+
+The fix tested: when any action actually changes the board, the knowledge "this
+control does nothing" is stale, so clear the write-offs. No new constant. Verified
+neutral with the flag off (seed 1 bit-identical to the baseline).
+
+**It changed no levels at all**, 16 paired seeds on the four keyboard games:
+
+| game | levels, off | levels, on |
+|---|---|---|
+| g50t | 2 of 16 seeds | 2 of 16 |
+| ls20 | 8 of 16 | 8 of 16 |
+| sp80 | 0 | 0 |
+| m0r0 | 0 | 0 |
+| total | 10 | **10** |
+
+and it cost the games that work: on the scoring split, lp85 **-0.284 with all 16
+seeds negative** and vc33 **-0.277, all 16 negative**. `inert` is load-bearing
+where the agent scores, exactly as the Rejected #6 note warned about suppression.
+
+**What it clarifies is worth more than the fix would have been.** The write-off is a
+real defect and it does disable the winning key -- but removing it wins nothing,
+so the write-off is NOT what stops the agent on g50t. Un-writing-off space only lets
+it press space uselessly more often. The human who cleared the level did not succeed
+by pressing space more; they succeeded by knowing **where to stand first**. The
+binding constraint is upstream, and it is the destination rule -- open item 2, and
+now with one more independent argument pointing at it.
+
+The `inert` write-off counter stays in the trace (ARC_TRACE only, behaviour-neutral),
+because it is how this was found.
+
+## Is POSITION the missing state variable? Partly -- checked before building (2026-08-31)
+
+Three open items appeared to want the same thing: item 1 (stateful mode) needs
+"where the last small change happened", item 2 (movement) needs "where to go", and
+g50t's spacebar needs "where this control comes alive". So: log where the avatar
+was each time a control fired, and what the control did, and ask whether
+conditioning on position turns "this control does nothing" into a *function*.
+
+`ARC_TRACE` now also records, at the moment `RunPlanner` judges a press,
+`{tok, pos, nothing}` -- the control, the avatar's centroid on the previous board,
+and whether only the move clock ticked. Behaviour-neutral; nothing reads it.
+
+First: the outcome does vary with position. Every key on g50t and ls20 shows both
+outcomes across 10-33 distinct positions. That is necessary, not sufficient.
+
+The decisive test is whether `(control, position)` **determines** the outcome.
+Counting only repeated pairs, and not gluing observations across a board change:
+
+| game | repeated (tok,pos) pairs | contradictory | |
+|---|---|---|---|
+| **ls20** | 58 | **1** | position determines the outcome |
+| g50t | 43 | 10 (23%) | helps, insufficient |
+| **m0r0** | 50 | **40 (80%)** | position is nearly useless |
+| sp80 | **1** | 0 | no data to condition on at all |
+
+**So "the three classes want one variable, position" is refuted as stated**, and it
+was refuted before the state key was touched. It would have produced a nearly
+deterministic model on ls20 and nothing on m0r0.
+
+Two diagnoses, both visible in the boards:
+
+- **m0r0 has TWO movable bodies.** Its board is a colour-11 half and a colour-12
+  half that are exact mirrors about column 31, with a colour-10 block in each at
+  rows 49-53, cols 19-23 and 39-43. The avatar detector returns whichever body
+  moved, so a single centroid means a different object from step to step. That is
+  not one variable recorded badly, it is two variables collapsed into one.
+- **sp80 fails differently and exactly as predicted**: one repeated pair in a whole
+  run. The agent so rarely returns to the same place that there is nothing to
+  condition on. Its bottleneck is reach, not representation.
+
+The sharpened hypothesis, not yet tested: the missing variable is not position but
+**the configuration of the movable bodies** -- one position on ls20, two on m0r0.
+The test is to condition m0r0 on both colour-10 blocks and see whether 80%
+contradictions fall.
+
+### ...and the configuration of bodies is worse, not better
+
+The sharpened version -- record the movable bodies SEPARATELY instead of one
+blended centroid -- was tested and is refuted:
+
+| game | bodies found | one centroid | body configuration |
+|---|---|---|---|
+| m0r0 | 2 | 50 repeats, 40 contradictory (80%) | 48 repeats, 42 (**87%**) |
+| g50t | 5-6 | 43 repeats, 10 (23%) | 13 repeats, 11 (**84%**) |
+| ls20 | 1 | 58 repeats, 1 (1%) | unchanged |
+| sp80 | 1 | 1 repeat | unchanged |
+
+A finer key partitions the same data into more cells, so it loses repeats (g50t
+43 -> 13) without buying truth. This is the reach/truth trade already documented in
+Rejected #6, arriving from the other direction.
+
+**One guess of mine along the way was wrong and is corrected here.** Seeing 5-6
+colour-9 components on g50t (legend, legend bar, goal bracket, the dot inside it,
+the budget strip) I suspected the avatar centroid was polluted and the 23% was a
+measurement artifact. It is not: logging the size of the located avatar shows **24
+cells on 246 of 248 steps**, with the shape known. g50t's avatar was located
+cleanly and 23% is a real property of the game.
+
+**And the obvious explanation for it does not hold either.** If the spacebar
+toggles a latent mode, the same control at the same position would act differently
+before and after a press of it. Of the 10 contradictory (control, position) pairs,
+4 have a `k5` press in between -- but `k5` is 18% of all presses and the spans are
+several presses long, so chance alone predicts about that many. No evidence, and
+n=10 is too small to carry any anyway.
+
+**Where this leaves the state question.** Position determines the outcome on ls20
+(1 contradiction in 58) and does not on g50t (23%) or m0r0 (80%), with the
+detection verified clean. So the missing variable is not a geometric summary of
+where things are -- neither one position, nor all of them. What distinguishes ls20
+from the other two is not yet known, and no candidate here survived. Note that
+m0r0 and sp80 are already classified as stateful-mode (open item 1) and ls20 is the
+one pure movement game of the four, which is the shape of a real split, but that is
+an observation and not a measurement.
+
+## The g50t oracle: the destination cannot be walked to (2026-08-31)
+
+Three destination criteria, a state-key hypothesis and a body-configuration
+hypothesis were all guessed and all refuted. So instead of guessing again, this is
+`python/bench/oracle_g50t.py`: an agent hand-given everything about g50t -- which
+component is the avatar, where the goal is, and permission to read walkability off
+the board -- which declares every fact it consults. A diagnostic, not a solver.
+
+It learned the controls correctly (`ACTION2 (6,0)`, `ACTION1 (-6,0)`,
+`ACTION4 (0,6)`, `ACTION3 (0,-6)`; 6-cell steps, a 5x5 body), routed itself down
+the left corridor, and **stopped dead at (34,16)**: 122 consecutive presses of a
+move the board says is legal, every one refused by the game.
+
+Checked offline against the dumped board, BFS over the avatar's own 6-cell lattice
+with a 5x5 footprint:
+
+| walkable colours | result |
+|---|---|
+| `{5, 9}` corridor + own colour | **goal UNREACHABLE**, limit row 34 |
+| `{5, 8, 9}` also the colour-8 barrier | goal reachable in 12 moves -- **on paper only** |
+
+Row 34 is exactly where the live oracle stopped. The colour-8 structure at rows
+38-42 seals the corridor, and the engine refuses every move into it.
+
+**So the goal region at rows 49-55 x cols 43-49 cannot be reached by moving.**
+Something must change the board first. That is why the destination work has been
+stuck: every criterion tried so far -- imagined compression, the five-cell plus,
+enclosure, and the two-stage legend correspondence -- silently assumed the same
+frame, *identify the target and walk to it*. On this game that frame is false
+before any criterion is even applied.
+
+It also re-reads the human result. A person cleared level 1 with the spacebar; the
+natural conclusion was "the trigger is a key we write off". The oracle says the
+harder part is elsewhere: the key cannot matter until the board has been altered
+enough for the destination to exist as a place you can stand.
+
+**What the oracle needed, by kind** (the vocabulary a general mechanism would have
+to be able to express):
+
+    identity_of_controlled_body            which component is me
+    effect_of_key_on_my_position           key -> (drow, dcol)
+    goal_region_membership                 am I there yet
+    reachability_over_learned_offsets      route over my own lattice
+    walkability_read_from_the_board        can my footprint stand here
+    retry_a_control_that_was_dead_elsewhere
+
+The first five the agent can already express in some form. The sixth it explicitly
+cannot -- and a seventh, which the oracle never had and which is what it actually
+needed, is *terrain that can be changed*. Note the oracle FAILED, so this list is
+what a winning agent needs at least, not what it needs in full.
+
+## Carrying the mechanic across a game's runs: +1.21 (2026-08-31)
+
+Open item 6 -- the only untested form of "scale" left after doubling the in-episode
+budget bought exactly nothing. Every repeat of a game constructed a fresh agent, so
+`drive_gain`, `succ` and the key->offset map were built from scratch and thrown away
+three times per game, while the scorecard keeps a game's BEST of three.
+
+What is carried is the MECHANIC and nothing else: `Policy.drive_gain`, `succ`,
+`tries`, and `RunPlanner.moves` / `avatar` / `avatar_shape`, bound by reference so
+later runs keep filling the same tables. Deliberately NOT carried: `_dest`,
+`blocked`, `profiles` and `inert` -- those describe a level, not a mechanic, and
+`inert` is the permanent write-off that disables g50t's entire repertoire.
+
+Verified neutral with `ARC_CARRY=0` (seed 1 bit-identical to the baseline).
+
+**16 paired seeds: +1.2137, sd 0.8541, sem 0.2135, 14 of 16 seeds positive.**
+`seeds.py` still withholds REAL because two seeds disagree on the sign -- the same
+profile as the control-name fix (+1.0967, sem 0.2653, 13 of 16), which stands as the
+project's largest measured change.
+
+Per level, median over 16 seeds:
+
+| game | level | base | carried |
+|---|---|---|---|
+| vc33 | 1 | 13 actions (x1.93), score 27 | **3 actions (x0.43), score 115 = the cap** |
+| vc33 | 2 | 24 (x1.33), score 56 | **16 (x0.92), score 114** |
+| r11l | 1 | 43 (x1.95), score 26 | **21 (x0.98), score 103** |
+| lp85 | 1 | x2.62, score 15 | x2.74, score 13 -- unmoved |
+| tn36 | 1 | x0.81, score **115** | x1.27, score **62** -- worse |
+
+**Three things follow, and the second one changes what to do next.**
+
+**No new depth.** Levels are identical: 32 vs 32 on vc33, 16 vs 16 elsewhere. The
+whole gain is efficiency, which the metric rewards quadratically, but the arithmetic
+that says 10 needs six of vc33's seven levels is untouched.
+
+**vc33's efficiency is now EXHAUSTED.** Both levels it reaches sit at 115 and 114
+against a 115 cap. There is nothing left to win there by being faster, so every
+further point on vc33 must come from level 3 -- where it currently spends 231
+actions and fails.
+
+**tn36 got worse, in exactly the way predicted before the run.** Its level 1 was
+already faster than baseline (x0.81, capped) and carrying knowledge into run 2 slows
+it to x1.27. It is the one game whose opening beat baseline, and the one game the
+carry hurts. Not understood; a plausible read is that a value learned on one board
+misleads on the next, which is the same shape as the `inert` failure. Open.
+
+### Rejected #10: preferring a control not yet tried from this board
+
+Traced first, built second -- and the trace turned out to answer the question on its
+own. On vc33 level 3 the agent spends 73 steps in **3 distinct states** over 11
+controls and repeats an already-tried (state, control) pair **60 times**. Splitting
+those repeats by cause, from the replay alone:
+
+| cause | measured |
+|---|---|
+| repetition the mechanic requires | 1 legitimate against 6 useless |
+| repetition from FORGETTING | **0** |
+| repetition from ranking | **60 of 60** |
+| state collapsing hidden modes | 3 contradictory pairs of 11 (27%) |
+
+Nothing is forgotten. At every repeat the taboo is not merely present, it is **large
+-- median 0.750, max 1.312, above the 0.150 top-rank prior on 100% of repeats**. It
+still fails to suppress, and the reason (inferred, not measured -- only the chosen
+token's taboo is logged) is that every one of the 11 controls is pressed repeatedly,
+so all of them carry a similar taboo, it cancels out of the comparison, and the
+ordering falls back to the rank prior. **Uniform suppression is no suppression.**
+
+The fix that follows: a bonus, worth `residual_bonus`, for a control not yet tried
+from THIS board (full grid hash minus the learned move-clock strip). Unlike
+`Policy.dead` and `RunPlanner.inert`, which punish a control's name globally, this
+key clears itself whenever anything changes.
+
+**16 paired seeds: +0.1382, sem 0.1620 -- not measurable. And on vc33, the game it
+was built for, 14 of 16 seeds moved by exactly 0.0000.**
+
+Re-traced with the flag on, the reason is not "it helped and the budget had nowhere
+to go". **It never fired.** With the bonus on, vc33 level 3 is bit-identical: 73
+steps, 3 states, 13 distinct pairs, 60 repeats. Thirteen distinct pairs are
+exhausted in thirteen presses, after which `untried` is false for every candidate,
+the bonus is uniform, and it cancels exactly like the taboo does.
+
+**What this establishes about level 3, which is worth more than the fix would have
+been.** Every term that could discriminate between controls -- the learned value,
+the taboo, the untried bonus -- goes uniform within a dozen moves. The agent
+exhausts its entire reachable (state, action) space in 13 actions and then has 217
+actions with nothing new to try. Level 3 is therefore not bounded by wasteful
+exploration; it is bounded by **reachability**: the control that would move the
+board is not among the 11-13 the candidate generator can propose. That agrees with
+the independent measurement earlier the same day, where vc33 was the only one of
+three games with a real reachability component (the live control on the table on
+just 43% of steps).
+
+Mechanism reverted, seed 1 bit-identical to the baseline afterwards. The
+clock-masked state hash stays in the trace -- it is what made this measurable.
+
+## The candidate cap profiled per level, and a correction (2026-08-31)
+
+`ARC_MAXCAND` varies the candidate-set WIDTH and nothing else. vc33, seed 1,
+deterministic, one run per cap.
+
+**A correction first, because the first version of this table was wrong.** Segmenting
+the trace by counting `level_clear` events merges episodes: after a reset the level
+counter restarts, so a second pass through level 2 was being read as "level 4". The
+"59 states on level 2 at cap 16" in that version was three separate level-2 attempts
+(17 + 22 + 22) added together. There is no single level-2 run with 45 extra states,
+and a question asked about those states has no data behind it. Correct segmentation
+splits on `reset` first, then counts clears within the episode.
+
+The headline result survives segmentation unchanged: cap 8, episode 0, level 3 is
+73 steps in **3 states** with 60 repeats; at cap 16/20 the same level is 17/16
+states with 17/18 repeats.
+
+| cap | ep | level | steps | states | repeats | distinct actions |
+|---|---|---|---|---|---|---|
+| 8 | 0 | 1 | 12 | 6 | 0 | 8 |
+| 8 | 0 | 2 | 20 | 13 | 2 | 7 |
+| 8 | 0 | **3** | 73 | **3** | **60** | 11 |
+| 8 | 1 | 2 | 73 | **1** | 62 | 11 |
+| 8 | 2 | 2 | 63 | **1** | 53 | 10 |
+| 16 | 0 | 2 | 48 | 17 | 7 | 20 |
+| 16 | 1 | **3** | 73 | **17** | 17 | 20 |
+| 16 | 2 | 2 | 57 | 22 | 6 | 18 |
+
+Scores: cap 8 -> 6.28, cap 12 -> 0.99, cap 16 and every wider value -> 0.92, with
+level actions 13/21/217 at cap 8 against 16/100/135 from cap 16 on. Everything from
+cap 16 to cap 32 is identical because the board does not offer more.
+
+**What the corrected profile shows.**
+
+**H13a holds and is sharper than stated:** a fixed width does not suit different
+levels *or different episodes of the same level*.
+
+**The narrow cap's advantage is one lucky first pass, not a better search.** At cap
+8 episode 0 clears level 1 in 12 steps and level 2 in 20. Then episodes 1 and 2
+collapse to a **single state** each and burn 136 steps going nowhere. The scorecard
+keeps the best run, so cap 8 wins on the strength of one pass while two are dead.
+Widening never collapses like that -- no episode at cap >= 12 has fewer than 8
+states -- and still loses, because it never produces the one fast pass.
+
+**Widening opens level 3 reliably and never clears it.** 3 states -> 16-17, distinct
+actions tried 11 -> up to 32, repeats 60 -> 18, and the level is not completed at any
+cap. So the truncation was a real wall and there is a second one behind it.
+
+**H13 (widen on saturation) is NOT supported by this**, and the observation that was
+meant to support it -- extra states being junk -- was the artifact above. Asking what
+separates a useful state change from a useless one needs a within-episode comparison
+that this data cannot provide.

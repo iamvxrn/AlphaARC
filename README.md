@@ -28,7 +28,7 @@ make bench                  # full train split, official Kaggle score
 
 - **Memory & graph plumbing still holds** — Modern Hopfield 96.0% exact recall at 200 patterns (10× capacity), 3-hop spreading activation against hand-computed values, cohesion-gated abstraction compression with zero edge loss.
 - **Grid perception works** — flood-fill blob detection and object segmentation into stable tokens on real 64×64 game grids.
-- **Real ARC-AGI-3 client** — endpoint-for-endpoint against the official server, including two live bugs fixed (stale host, missing cookie jar for sticky sessions).
+- **Real ARC-AGI-3 client** — endpoint-for-endpoint against the official server, including three live bugs fixed (stale host, missing cookie jar for sticky sessions, and the Go client reading the first frame of a multi-step action's animation instead of the settled board — Python's adapter already read the last one; unconfirmed how much this moved any reported number, since the games it plausibly affects are the movement/keyboard ones that don't score yet).
 - **First live wins by intrinsic drive** — L1 of 3 pure-click games (vc33, r11l, lp85) solved with no external reward. Train aggregate ~0.40 (scoring subset ~1.71), up ~27% from the ~0.31 baseline. `python/bench/runs/hybrid_train.json` vs `succ_model.json`.
 - **8 games decoded** — we know what each control *does* (`make decode GAME=vc33`), including why some need 2–3 presses in one direction before the payoff appears.
 

@@ -37,6 +37,30 @@ def _stable_seed(base: int, game_id: str) -> int:
     return base + zlib.crc32(game_id.encode()) % 1_000_000
 
 
+_CARRIED: dict = {}
+
+
+def _inner(p):
+    """The one-step policy and the run planner inside whatever wrapper we built."""
+    return (getattr(p, "policy", p), getattr(p, "planner", None))
+
+
+def _adopt(new, old) -> None:
+    """Point the new run's mechanic tables at the old run's, by reference, so they
+    keep accumulating. Only dicts that describe the CONTROLS, never the board."""
+    np_, npl = _inner(new)
+    op_, opl = _inner(old)
+    for attr in ("drive_gain", "succ", "tries"):
+        if hasattr(np_, attr) and hasattr(op_, attr):
+            setattr(np_, attr, getattr(op_, attr))
+    if npl is not None and opl is not None:
+        if hasattr(npl, "moves") and hasattr(opl, "moves"):
+            npl.moves = opl.moves
+        for attr in ("avatar", "avatar_shape"):
+            if getattr(opl, attr, None) is not None:
+                setattr(npl, attr, getattr(opl, attr))
+
+
 class MyAgent(Agent):
     # Exploration needs ~15+ actions to lock onto the solving click (live wins
     # cluster around action 12-95), so give it room. ~12s/game at the engine's
@@ -63,10 +87,17 @@ class MyAgent(Agent):
         # ARC_DEAD_DECAY sweeps how long a dead control stays suppressed; see
         # Policy.dead_decay for why 0.75 cannot accumulate.
         _decay = float(os.environ.get("ARC_DEAD_DECAY", "0.75"))
+        # ARC_MAXCAND: the candidate cap, and nothing else. vc33 level 3 puts its
+        # eight live buttons at ranks 10-17 of a smallest-first ordering while the
+        # cap is 8, so the policy never sees them. Raising it adds a tail without
+        # permuting the head -- the one thing Rejected #5 said a candidate change
+        # must not do.
+        _cap = int(os.environ.get("ARC_MAXCAND", "8"))
         if mode == "planner":
-            self._policy = RunPlanner(rng=random.Random(seed))
+            self._policy = RunPlanner(rng=random.Random(seed), max_candidates=_cap)
         elif mode == "policy":
-            self._policy = Policy(rng=random.Random(seed), dead_decay=_decay)
+            self._policy = Policy(rng=random.Random(seed), dead_decay=_decay,
+                                  max_candidates=_cap)
         else:
             # ARC_DEAD_STREAK / ARC_CLOCK_DEADRUN exist so the hand-over threshold
             # can be swept by the bench WITHOUT editing code between runs -- it was
@@ -77,7 +108,25 @@ class MyAgent(Agent):
                 dead_decay=_decay,
                 dead_streak=int(os.environ.get("ARC_DEAD_STREAK", "20")),
                 clock_dead_run=os.environ.get("ARC_CLOCK_DEADRUN", "1") == "1",
+                max_candidates=_cap,
             )
+        # ARC_CARRY=1: keep what was learned about the MECHANIC across the
+        # repeats of a game. The scorecard keeps a game's BEST of three runs, and
+        # today every run starts amnesiac -- drive_gain, succ and the key->offset
+        # map are built from scratch and thrown away. Board-specific state
+        # (destinations, walls, profiles, inert) is deliberately NOT carried: it
+        # describes a level, not a mechanic.
+        # Measured +1.2137 (sem 0.2135) over 16 paired seeds, 14 of 16 positive:
+        # vc33 level 1 goes 13 actions -> 3 (x1.93 -> x0.43, score 27 -> the 115
+        # cap) and level 2 24 -> 16 (score 56 -> 114); r11l level 1 43 -> 21.
+        # Default ON; ARC_CARRY=0 restores the amnesiac behaviour for an A/B.
+        # Known cost: tn36 loses its own cap (x0.81 -> x1.27), the one game whose
+        # opening was already faster than baseline. Not understood, see README.
+        if os.environ.get("ARC_CARRY", "1") != "0":
+            prev = _CARRIED.get(self.game_id)
+            if prev is not None:
+                _adopt(self._policy, prev)
+            _CARRIED[self.game_id] = self._policy
         self._levels_done = 0
 
     @property

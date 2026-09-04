@@ -201,6 +201,7 @@ class Policy:
             if self.dead[k] < 0.05:
                 del self.dead[k]
         self._emit({"tok": self._last_token, "d": d,
+                    "s": getattr(self, "_state_key", None),
                     "ema": self.drive_gain[self._last_token],
                     "dead": self.dead.get(self._last_token, 0.0)})
 
@@ -209,6 +210,12 @@ class Policy:
         if bg is None:
             bg = background_color(grid)
         self._step += 1
+        self._state_key = None
+        if self._trace_path:
+            _rows, _cols = self.clock.strip()
+            self._state_key = hash(tuple(
+                tuple(v for c, v in enumerate(row) if c not in _cols)
+                for r, row in enumerate(grid) if r not in _rows))
         level = self._levels(grid, bg)
         self._credit_last(grid, bg, level)
         self._prev_levels = level

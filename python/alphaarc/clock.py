@@ -64,6 +64,19 @@ class ClockTracker:
         if len(self.col_hits) < w:
             self.col_hits.extend([0] * (w - len(self.col_hits)))
 
+    def strip(self):
+        """Rows/cols currently believed to BE the move-budget strip.
+
+        Exposed so a state can be hashed without it: the strip ticks on every
+        action, so a raw board hash makes every state look new and any
+        "am I revisiting?" measurement trivially answers no."""
+        n = max(1, self.transitions)
+        rows = {r for r in range(len(self.row_hits))
+                if self.row_hits[r] >= self.SHARE * n}
+        cols = {c for c in range(len(self.col_hits))
+                if self.col_hits[c] >= self.SHARE * n}
+        return rows, cols
+
     def clock_only(self, before: Optional[Grid], after: Grid) -> bool:
         """True if `after` differs from `before` only in clock lines (or not at all).
 
