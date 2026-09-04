@@ -164,10 +164,24 @@ type actionInput struct {
 //
 // Frame is confirmed to be a LIST of 2D grids, not a single grid --
 // agent.py converts it as `frame=[arr.tolist() for arr in raw.frame]`.
-// What multiple entries mean (history vs. layers) wasn't confirmed from
-// what's been read, so this stays a 3D slice instead of assuming length 1;
-// toFrame() below takes the first entry as "the" current grid, which is
-// the only interpretation that's actually been verified.
+// What the entries MEAN is now confirmed from the engine source
+// (arcengine/base_game.py, perform_action): it renders and appends one grid
+// per simulation step for as long as `is_action_complete()` is false, so the
+// list is the ANIMATION one action produced -- entry 0 is the first
+// intermediate frame and the LAST non-empty entry is the settled board.
+// arc_agi/api.py serialises `response.frame` whole, so the live REST API
+// sends the same list.
+//
+// toFrame() therefore takes the last non-empty entry, matching what the
+// Python submission adapter (python/alphaarc/agent_glue.py, _current_grid)
+// already does. Taking entry 0 -- which this client did until 2026-09-04 --
+// hands every live Go tool (alphaarc-play, probe, alphaarc-suite, goalloop,
+// alphaarc-smoke) a MID-ANIMATION board. Measured against the local engine
+// over 80 actions per game: the four click games return exactly one frame per
+// action, so the bug is invisible there, but g50t returns more than one on 44
+// of 80 actions (up to 25) and entry 0 differed from the settled board on
+// every one of them, and ls20 hits it too. That is the movement/keyboard
+// class -- the games that have never scored.
 type frameResponse struct {
 	GameID           string    `json:"game_id"`
 	LevelsCompleted  int       `json:"levels_completed"`
@@ -179,9 +193,15 @@ type frameResponse struct {
 }
 
 func (f frameResponse) toFrame() environment.Frame {
+	// The last NON-EMPTY entry: the settled board after the action finished.
+	// Empty trailing entries are skipped rather than accepted as "the board",
+	// mirroring python/alphaarc/agent_glue.py's _current_grid.
 	var grid [][]int
-	if len(f.Frame) > 0 {
-		grid = f.Frame[0]
+	for i := len(f.Frame) - 1; i >= 0; i-- {
+		if len(f.Frame[i]) > 0 && len(f.Frame[i][0]) > 0 {
+			grid = f.Frame[i]
+			break
+		}
 	}
 	actions := make([]environment.ActionID, len(f.AvailableActions))
 	for i, a := range f.AvailableActions {
