@@ -78,4 +78,51 @@ between NONE and PARTIAL.
 ## Status
 
     FAILURE OBSERVED — CAUSE IDENTIFIED (H2 supported, H1 unsupported)
-    SPEC NOT MODIFIED — resolution deferred to review
+    Q1 REJECTED by its own §11 criterion. Spec never modified.
+
+## Resolution, decided at review
+
+`§11` says *"Anything above 0.25 rejects the design."* B1 returned `0.50`.
+The design is rejected, and the specification frozen at `a4877fb` is **not
+amended** — not even though the diagnosis (H2) says the threshold, rather than
+the design, was the mistaken part.
+
+This is deliberate, and it sets the precedent: **a preregistration binds even
+when we come to believe its text was wrong.** The moment a failed criterion can
+be rewritten by the people it just failed, preregistration stops being a
+constraint and becomes decoration. The cost here is one design round. That is
+the price of the discipline being real, and it is cheap at this stage — no agent
+exists, and nothing about the hypothesis has been observed.
+
+`a4877fb` therefore stands as a rejected experiment, kept in history rather than
+edited into a passing one. A successor, Q1′, is designed from scratch.
+
+## What Q1′ must inherit
+
+Carried forward as established, not re-derived:
+
+- **Novelty by construction works.** `t2` environment-controlled with `t2 ≡ 0`
+  during acquisition makes any `t2 ≠ 0` probe unreachable under every policy —
+  verified exhaustively, 64 reachable observations, none matching. Keep the
+  mechanism.
+- **Drawing `R` after `K₀` is frozen works.** `I(K₀;R) = 0` by sampling. Keep it.
+- **Opaque labels work.** No linguistic or cultural category enters. Keep them.
+- **B2 and B3 pass unchanged.** The floor and ceiling instruments are sound.
+
+## The root cause Q1′ must actually defeat
+
+Two facts, both learned from the run and both constraining:
+
+1. **B1 weights uniformly over *reachable* states, not over a visitation
+   distribution.** So changing where acquisition episodes *start*, or how often
+   something is visited, does not move B1 at all. Only changing what is
+   **reachable** does.
+2. **Isolating dial 2 by satisfying dial 1 is itself the cue.** In acquisition,
+   whenever `d1 == t1` the only remaining work is on dial 2. A table keyed on
+   `{d1,t1}` therefore learns "here, press a dial-2 label" — and the probe, by
+   design, is exactly such a state. The 0.50 was not an accident of tie-breaking;
+   it is structural to isolating the probed dial by satisfying the other one.
+
+Any Q1′ that again probes dial `X` by satisfying every other dial will
+rediscover this. The successor design must make the probe situation
+**unidentifiable from acquisition-reachable features**, not merely unvisited.
