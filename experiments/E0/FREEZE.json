@@ -1,0 +1,7 @@
+{
+  "spec_sha256": "09e481dda9140a895fedf9b8c630d3e47705ba8912fd77c9af77c1ac67114966",
+  "recorded_utc": "2026-09-05T13:42:43Z",
+  "source_repository_head": "3094ad1",
+  "stage": "Specification written before implementation and execution",
+  "qualification": "Local ordering record; not an independent timestamp or immutable preregistration"
+}
