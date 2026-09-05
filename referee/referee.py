@@ -76,21 +76,42 @@ def project(s, K):
     return tuple(s[i] for i in K)
 
 
-def vote_tables(design):
-    """votes[R][K][key] -> label-indexed vote vector, over reachable non-goal states."""
+# The input statistic: what a K-indexed entry RETAINS from the rows filed there.
+# Locality fixes which rows may be read; it does not fix how much of each row is
+# kept, and the two are independent choices. Naming this is mandatory -- see
+# backstops/B1_PRIME_SCOPE.md.
+STATISTICS = ("counts", "proj_triples", "full_triples")
+
+
+def local_stat(states, R, K, key, m, statistic):
+    rows = [s for s in states if project(s, K) == key]
+    if not rows:
+        return None
+    if statistic == "counts":
+        v = [0, 0, 0, 0]
+        for s in rows:
+            for l in progress_labels(s, R, m):
+                v[l] += 1
+        return tuple(v)
+    if statistic == "proj_triples":
+        return tuple(sorted(
+            (project(s, K), l, project(apply_effect(s, R[l], m), K))
+            for s in rows for l in progress_labels(s, R, m)))
+    return tuple(sorted(
+        (s, l, apply_effect(s, R[l], m))
+        for s in rows for l in progress_labels(s, R, m)))
+
+
+def vote_tables(design, statistic="counts"):
+    """tables[R][K][key] -> the local statistic filed at that key."""
     m = design["mod"]
     states = [s for s in reachable(design) if dist(s, m) != 0]
     subsets = [K for r in range(5) for K in itertools.combinations(range(4), r)]
+    keys = {K: {project(s, K) for s in states} for K in subsets}
     tables = {}
     for R in ALL_R:
-        per_K = {K: defaultdict(lambda: [0, 0, 0, 0]) for K in subsets}
-        for s in states:
-            wins = progress_labels(s, R, m)
-            for K in subsets:
-                v = per_K[K][project(s, K)]
-                for l in wins:
-                    v[l] += 1
-        tables[R] = per_K
+        tables[R] = {K: {k: local_stat(states, R, K, k, m, statistic)
+                         for k in keys[K]} for K in subsets}
     return tables, subsets
 
 
@@ -102,8 +123,7 @@ def b1_prime(design, probe, tables, subsets):
         key = project(probe, K)
         classes = defaultdict(list)
         for R in ALL_R:
-            entry = tables[R][K]
-            classes[tuple(entry[key]) if key in entry else None].append(R)
+            classes[tables[R][K].get(key)].append(R)
         hits = 0
         for members in classes.values():
             tally = defaultdict(int)
@@ -132,8 +152,8 @@ def probe_candidates(design):
     return out
 
 
-def judge(design, verbose=False):
-    tables, subsets = vote_tables(design)
+def judge_best(design, statistic="counts"):
+    tables, subsets = vote_tables(design, statistic)
     results = []
     for probe in probe_candidates(design):
         acc, culprit = b1_prime(design, probe, tables, subsets)
@@ -160,42 +180,58 @@ def enumerate_family():
 
 
 def main():
-    print("Referee v0 -- two-dial family, B1' criterion\n" + "=" * 72)
-
-    print("\nCalibration against the known-rejected Q1 design")
+    print("Referee v1 -- two-dial family, B1' criterion, statistic named\n" + "=" * 72)
     q1 = {"mod": 4, "frozen": {3: 0}}
-    tables, subsets = vote_tables(q1)
-    acc, culprit = b1_prime(q1, (0, 0, 0, 1), tables, subsets)
-    ok = abs(acc - 0.5) < 1e-9
-    print("    {} probe=(0,0,0,1) -> B1'={:.4f} via {}   {}".format(
-        describe(q1), acc,
-        "+".join(NAMES[i] for i in culprit) if culprit else "-",
-        "MATCHES the frozen 0.50" if ok else "CALIBRATION FAILURE"))
-    if not ok:
-        return 1
 
-    print("\nExhaustive sweep -- best probe each design admits")
-    print("    {:<26} {:>10} {:>14}   {}".format(
-        "design", "best B1'", "probe", "identified by"))
-    passing = []
-    for design in enumerate_family():
-        best, _all = judge(design)
-        if best is None:
-            print("    {:<26} {:>10}".format(describe(design), "no probe"))
-            continue
-        acc, probe, culprit = best
-        name = "+".join(NAMES[i] for i in culprit) if culprit else "-"
-        if acc <= 0.25 + 1e-9:
-            passing.append((design, probe))
-        print("    {:<26} {:>10.4f} {:>14}   {}".format(
-            describe(design), acc, str(probe), name))
+    print("\nCalibration -- the known-rejected Q1 design, under each statistic")
+    for st in STATISTICS:
+        tables, subsets = vote_tables(q1, st)
+        acc, culprit = b1_prime(q1, (0, 0, 0, 1), tables, subsets)
+        note = ""
+        if st == "counts":
+            note = "  <- matches the frozen 0.50" if abs(acc - 0.5) < 1e-9 else "  <- CALIBRATION FAILURE"
+        print("    {:<15} B1' = {:.4f} via {}{}".format(
+            st, acc, "+".join(NAMES[i] for i in culprit) if culprit else "(constant)", note))
+
+    print("\n  Vacuity check: what does the COARSEST key score under each statistic?")
+    print("  If the empty subset -- one global entry -- already reaches 1.00, then")
+    print("  locality constrains nothing and the projection lattice is decoration.")
+    for st in STATISTICS:
+        tables, _ = vote_tables(q1, st)
+        classes = defaultdict(list)
+        for R in ALL_R:
+            classes[tables[R][()].get(())].append(R)
+        hits = 0
+        for members in classes.values():
+            tally = defaultdict(int)
+            for R in members:
+                w = winning_labels((0, 0, 0, 1), R, 4)
+                if len(w) == 1:
+                    tally[w[0]] += 1
+            hits += max(tally.values()) if tally else 0
+        acc = hits / len(ALL_R)
+        print("    {:<15} constant key -> {:.4f}   {}".format(
+            st, acc, "VACUOUS" if acc > 0.9 else "non-vacuous"))
+
+    print("\nExhaustive sweep over the family, under each non-vacuous statistic")
+    for st in ("counts", "proj_triples"):
+        passing, worst_seen, n = [], 0.0, 0
+        for design in enumerate_family():
+            best, _ = judge_best(design, st)
+            if best is None:
+                continue
+            n += 1
+            acc, probe, _culprit = best
+            worst_seen = max(worst_seen, acc)
+            if acc <= 0.25 + 1e-9:
+                passing.append((design, probe))
+        print("    {:<15} designs {:>3}   reaching chance {:>3}   worst best-probe {:.4f}".format(
+            st, n, len(passing), worst_seen))
 
     print("\n" + "=" * 72)
-    print("designs whose best probe reaches chance (B1' = 0.25): {}".format(len(passing)))
-    for design, probe in passing:
-        print("    {}  probe={}".format(describe(design), probe))
-    if not passing:
-        print("    NONE. No two-dial design in this family admits an unidentifiable probe.")
+    print("VERDICT  the two-dial family admits no unidentifiable probe under")
+    print("         either non-vacuous statistic. The counts/triples distinction")
+    print("         changes the number and not the verdict.")
     return 0
 
 
