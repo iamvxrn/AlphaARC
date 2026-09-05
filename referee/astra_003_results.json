@@ -1,0 +1,125 @@
+{
+  "status": "PASS",
+  "seed_count": 0,
+  "sampling_noise": 0,
+  "plan_sha256": "73300031a5c5871e0573dd3481b6a5f8a8f4207c00f15c0ad9e1cb5292e72067",
+  "script_sha256": "500d174c55d81af0df326c6a91e05bfc286caa16663e25748336be1b3204a2b0",
+  "referee_v0_audit": {
+    "referee_git_commit": "c039d2a",
+    "referee_sha256": "8b35c9c80b8f2680e8abaa24d9dcc8d5919ec646f97212487c5fb49de2c69816",
+    "designs": 74,
+    "designs_per_modulus": {
+      "3": 15,
+      "4": 24,
+      "5": 35
+    },
+    "per_design_minimum_distribution": {
+      "1/2": 74
+    },
+    "all_probe_maximum_distribution": {
+      "1/2": 1384,
+      "1": 3592
+    },
+    "total_design_probe_pairs": 4976
+  },
+  "independent_dial_counterexample": {
+    "probe": [
+      0,
+      1,
+      0,
+      2
+    ],
+    "key": [
+      "d2"
+    ],
+    "identity_votes": [
+      8,
+      8,
+      0,
+      16
+    ],
+    "correct_rule_instances": 24,
+    "rule_instances": 24,
+    "accuracy": "1"
+  },
+  "existence_witness": {
+    "acquisition_start": [
+      4,
+      4
+    ],
+    "probe": [
+      5,
+      0
+    ],
+    "projected_statistics": [
+      {
+        "statistic": "counts",
+        "key_indices": [],
+        "classes": 1,
+        "optimal_accuracy": "1/4"
+      },
+      {
+        "statistic": "counts",
+        "key_indices": [
+          0
+        ],
+        "classes": 1,
+        "optimal_accuracy": "1/4"
+      },
+      {
+        "statistic": "counts",
+        "key_indices": [
+          1
+        ],
+        "classes": 1,
+        "optimal_accuracy": "1/4"
+      },
+      {
+        "statistic": "counts",
+        "key_indices": [
+          0,
+          1
+        ],
+        "classes": 1,
+        "optimal_accuracy": "1/4"
+      },
+      {
+        "statistic": "proj_triples",
+        "key_indices": [],
+        "classes": 1,
+        "optimal_accuracy": "1/4"
+      },
+      {
+        "statistic": "proj_triples",
+        "key_indices": [
+          0
+        ],
+        "classes": 1,
+        "optimal_accuracy": "1/4"
+      },
+      {
+        "statistic": "proj_triples",
+        "key_indices": [
+          1
+        ],
+        "classes": 1,
+        "optimal_accuracy": "1/4"
+      },
+      {
+        "statistic": "proj_triples",
+        "key_indices": [
+          0,
+          1
+        ],
+        "classes": 1,
+        "optimal_accuracy": "1/4"
+      }
+    ],
+    "full_history_classes": 24,
+    "full_history_optimum": "1",
+    "explicit_history_policy_hits": 24,
+    "erased_history_optimum": "1/4",
+    "scope": "Finite overwrite family supplied as prior; logical feasibility witness, not a Q1 repair, learning-family discovery, or AGI result"
+  },
+  "elapsed_seconds": 4.725624904000142
+}
