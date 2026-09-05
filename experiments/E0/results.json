@@ -1,0 +1,190 @@
+{
+  "experiment": "E0 transition-acquisition reference",
+  "status": "PASS",
+  "completed_utc": "2026-09-05T13:47:57.818041+00:00",
+  "python": "3.14.7",
+  "elapsed_seconds": 4.468668493000223,
+  "enumeration": {
+    "rules": 24,
+    "orders": 24,
+    "queries": 48,
+    "matched_cases_per_budget": 27648,
+    "independent_cases_per_budget": 663552,
+    "unique_learner_predictions_across_budgets": 138240,
+    "independent_control_uses_same_prediction_for_24_rules": true,
+    "seeds": 0,
+    "sampling_noise": 0,
+    "qualification": "Finite-population exact expectations, not independent sampled trials"
+  },
+  "learning_curve": [
+    {
+      "transitions": 0,
+      "matched": {
+        "accuracy_exact": "1/4",
+        "accuracy": 0.25,
+        "expected_probability_mass": "6912",
+        "query_cases": 27648,
+        "expected_exact": "1/4",
+        "passed": true
+      },
+      "independent": {
+        "accuracy_exact": "1/4",
+        "accuracy": 0.25,
+        "expected_probability_mass": "165888",
+        "query_cases": 663552,
+        "expected_exact": "1/4",
+        "passed": true
+      }
+    },
+    {
+      "transitions": 1,
+      "matched": {
+        "accuracy_exact": "1/2",
+        "accuracy": 0.5,
+        "expected_probability_mass": "13824",
+        "query_cases": 27648,
+        "expected_exact": "1/2",
+        "passed": true
+      },
+      "independent": {
+        "accuracy_exact": "1/4",
+        "accuracy": 0.25,
+        "expected_probability_mass": "165888",
+        "query_cases": 663552,
+        "expected_exact": "1/4",
+        "passed": true
+      }
+    },
+    {
+      "transitions": 2,
+      "matched": {
+        "accuracy_exact": "3/4",
+        "accuracy": 0.75,
+        "expected_probability_mass": "20736",
+        "query_cases": 27648,
+        "expected_exact": "3/4",
+        "passed": true
+      },
+      "independent": {
+        "accuracy_exact": "1/4",
+        "accuracy": 0.25,
+        "expected_probability_mass": "165888",
+        "query_cases": 663552,
+        "expected_exact": "1/4",
+        "passed": true
+      }
+    },
+    {
+      "transitions": 3,
+      "matched": {
+        "accuracy_exact": "1",
+        "accuracy": 1.0,
+        "expected_probability_mass": "27648",
+        "query_cases": 27648,
+        "expected_exact": "1",
+        "passed": true
+      },
+      "independent": {
+        "accuracy_exact": "1/4",
+        "accuracy": 0.25,
+        "expected_probability_mass": "165888",
+        "query_cases": 663552,
+        "expected_exact": "1/4",
+        "passed": true
+      }
+    },
+    {
+      "transitions": 4,
+      "matched": {
+        "accuracy_exact": "1",
+        "accuracy": 1.0,
+        "expected_probability_mass": "27648",
+        "query_cases": 27648,
+        "expected_exact": "1",
+        "passed": true
+      },
+      "independent": {
+        "accuracy_exact": "1/4",
+        "accuracy": 0.25,
+        "expected_probability_mass": "165888",
+        "query_cases": 663552,
+        "expected_exact": "1/4",
+        "passed": true
+      }
+    }
+  ],
+  "controls": {
+    "erased": {
+      "accuracy_exact": "1/4",
+      "accuracy": 0.25,
+      "expected_probability_mass": "6912",
+      "query_cases": 27648,
+      "expected_exact": "1/4",
+      "passed": true
+    },
+    "exact_observation_lookup": {
+      "accuracy_exact": "1/4",
+      "accuracy": 0.25,
+      "expected_probability_mass": "6912",
+      "query_cases": 27648,
+      "expected_exact": "1/4",
+      "passed": true
+    },
+    "axis_only": {
+      "accuracy_exact": "1/2",
+      "accuracy": 0.5,
+      "expected_probability_mass": "13824",
+      "query_cases": 27648,
+      "expected_exact": "1/2",
+      "passed": true
+    },
+    "oracle": {
+      "accuracy_exact": "1",
+      "accuracy": 1.0,
+      "expected_probability_mass": "27648",
+      "query_cases": 27648,
+      "expected_exact": "1",
+      "passed": true
+    },
+    "excluded_identical": {
+      "accuracy_exact": "5/23",
+      "accuracy": 0.21739130434782608,
+      "expected_probability_mass": "138240",
+      "query_cases": 635904,
+      "expected_exact": "5/23",
+      "passed": true
+    },
+    "stationarity_violation": {
+      "accuracy_exact": "0",
+      "accuracy": 0.0,
+      "expected_probability_mass": "0",
+      "query_cases": 27648,
+      "expected_exact": "0",
+      "passed": true
+    },
+    "violation_oracle": {
+      "accuracy_exact": "1",
+      "accuracy": 1.0,
+      "expected_probability_mass": "27648",
+      "query_cases": 27648,
+      "expected_exact": "1",
+      "passed": true
+    }
+  },
+  "paired_full_acquisition_gain": {
+    "mean_exact": "3/4",
+    "min_exact": "3/4",
+    "max_exact": "3/4",
+    "matched_cases": 27648,
+    "qualification": "Each matched case paired with its exact mean over 24 independent query rules"
+  },
+  "provenance_sha256": {
+    "SPEC.md": "09e481dda9140a895fedf9b8c630d3e47705ba8912fd77c9af77c1ac67114966",
+    "FREEZE.json": "c2e42d3430c4df80c77ffc7e6ad3f2903309b12f9940234be744b362b77170b1",
+    "learner.py": "54b481fe9fd543ec879a90ee5cbcdc13cae556d08e984d726ff69a824852932b",
+    "environment.py": "12d661dcbfe1e613897d77cdc446e34044d091423ca06371ef13454fd9645282",
+    "run_experiment.py": "24947cd7450b3e867bcdbfeaaacdce4381d4aafdb5aaed7f16eb64e9640f8209",
+    "test_reference.py": "601036e70fecf9ef1a42a3e9014ed08ac8a4ca985a7c8a3480f7b15dd610eea4"
+  },
+  "claim_limit": "Engineering reference under known stationary modular-displacement prior; not minimal K0 or AGI"
+}
