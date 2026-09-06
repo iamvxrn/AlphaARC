@@ -1,0 +1,32 @@
+{
+  "model": "one pre-split exchangeable exceptional source",
+  "rows": [
+    {
+      "source_count": 3,
+      "outcomes": 5184,
+      "evidence_outcomes": 1872,
+      "p_agree": "13/36",
+      "p_exceptional_probe_given_agree": "12/13",
+      "accuracy_given_agree": "4/13",
+      "shared_over_one_bayes_factor": "36/13"
+    },
+    {
+      "source_count": 4,
+      "outcomes": 9216,
+      "evidence_outcomes": 2592,
+      "p_agree": "9/32",
+      "p_exceptional_probe_given_agree": "8/9",
+      "accuracy_given_agree": "1/3",
+      "shared_over_one_bayes_factor": "32/9"
+    },
+    {
+      "source_count": 5,
+      "outcomes": 14400,
+      "evidence_outcomes": 3360,
+      "p_agree": "7/30",
+      "p_exceptional_probe_given_agree": "6/7",
+      "accuracy_given_agree": "5/14",
+      "shared_over_one_bayes_factor": "30/7"
+    }
+  ]
+}
