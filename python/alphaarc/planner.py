@@ -534,7 +534,16 @@ class RunPlanner:
                 target = scored[0][1]
                 presses = max(1, self._best_run(sigs[target])[1])
             else:
-                target = self.rng.choice(targets)       # nothing known pays: sample
+                # Every branch above excludes self.inert; this one did not, so once
+                # nothing known pays -- the usual case on a game we are not solving
+                # -- it re-drew controls already written off as dead. On sp80 that
+                # is k1: written off on its first dead press, then pressed 28 times
+                # and wasting 20, while k4 (21 presses) and k3 (1) waste none.
+                # Fall back to the full list only when everything is inert, so the
+                # agent still has something to press.
+                live = ([t for t in targets if sigs[t] not in self.inert]
+                        if os.environ.get("ARC_LIVE_FALLBACK", "1") == "1" else [])
+                target = self.rng.choice(live or targets)
                 presses = self.run_length
 
         self._run_token = sigs[target]
