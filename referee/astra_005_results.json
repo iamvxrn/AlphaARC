@@ -1,0 +1,50 @@
+{
+  "status": "PASS",
+  "rules": 24,
+  "prior_odds_shared_to_independent": "1",
+  "rows": [
+    {
+      "acquired_sources": 1,
+      "p_e_given_shared": "1",
+      "p_e_given_independent": "1",
+      "bayes_factor_shared_over_independent": "1",
+      "posterior_shared_equal_priors": "1/2",
+      "predictive_accuracy_equal_priors": "5/8",
+      "independent_enumeration": {
+        "environments": 576,
+        "evidence_cases": 576,
+        "p_e_given_independent": "1",
+        "accuracy_given_e_and_independent": "1/4"
+      }
+    },
+    {
+      "acquired_sources": 2,
+      "p_e_given_shared": "1",
+      "p_e_given_independent": "1/24",
+      "bayes_factor_shared_over_independent": "24",
+      "posterior_shared_equal_priors": "24/25",
+      "predictive_accuracy_equal_priors": "97/100",
+      "independent_enumeration": {
+        "environments": 13824,
+        "evidence_cases": 576,
+        "p_e_given_independent": "1/24",
+        "accuracy_given_e_and_independent": "1/4"
+      }
+    },
+    {
+      "acquired_sources": 3,
+      "p_e_given_shared": "1",
+      "p_e_given_independent": "1/576",
+      "bayes_factor_shared_over_independent": "576",
+      "posterior_shared_equal_priors": "576/577",
+      "predictive_accuracy_equal_priors": "2305/2308",
+      "independent_enumeration": {
+        "environments": 331776,
+        "evidence_cases": 576,
+        "p_e_given_independent": "1/576",
+        "accuracy_given_e_and_independent": "1/4"
+      }
+    }
+  ],
+  "scope": "Model comparison for declared shared-vs-independent rule family; not evidence for unrestricted generalization"
+}
