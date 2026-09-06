@@ -542,7 +542,7 @@ class RunPlanner:
                 # Fall back to the full list only when everything is inert, so the
                 # agent still has something to press.
                 live = ([t for t in targets if sigs[t] not in self.inert]
-                        if os.environ.get("ARC_LIVE_FALLBACK", "1") == "1" else [])
+                        if os.environ.get("ARC_LIVE_FALLBACK", "0") == "1" else [])
                 target = self.rng.choice(live or targets)
                 presses = self.run_length
 
