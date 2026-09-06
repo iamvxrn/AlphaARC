@@ -471,6 +471,16 @@ class RunPlanner:
         # already says WHERE compression fails, and moving there is what a movement
         # game asks for.
         route = self._route(grid, bg) if (keys and self.moves) else None
+        if self._trace_path:
+            # Behaviour-neutral marker: g50t clears level 1 at exactly 33 actions on
+            # four seeds of sixteen and not at all on eleven, so the question is what
+            # gates the router, not how to invent a destination rule. Records whether
+            # the map exists yet and whether the router returned anything.
+            with open(self._trace_path, "a") as fh:
+                fh.write(json.dumps({"event": "route", "moves": len(self.moves or ()),
+                                     "keys": len(keys), "got": route,
+                                     "dest": self._dest,
+                                     "stale": self._dest_stale}) + "\n")
         if route is not None:
             self._presses_left = 0
             self._run_token = route
