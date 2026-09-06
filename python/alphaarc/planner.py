@@ -614,11 +614,15 @@ class HybridPolicy:
         policy, over 12 candidates none of which is a key. So the switch is kept
         across a reset and released only on a genuinely new board.
 
-        ARC_KEEP_SWITCH=0 restores the old behaviour for the ablation.
+        ARC_KEEP_SWITCH=1 retains the switch across a reset. It is OFF by default:
+        measured at 16 paired seeds it moves the keyboard games by exactly 0.0000
+        and costs lp85 -0.0403, so it fails clause 3 of "when a change is not
+        measurable, keep it only on these grounds". The instrument stays; the
+        behaviour change does not ship.
         """
         self.since_level = 0
         self.dead_run = 0
-        if reason != "reset" or os.environ.get("ARC_KEEP_SWITCH", "1") != "1":
+        if reason != "reset" or os.environ.get("ARC_KEEP_SWITCH", "0") != "1":
             self.switched = False
         self._prev_grid = None
         self.policy.board_replaced(reason)
