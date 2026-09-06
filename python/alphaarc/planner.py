@@ -605,10 +605,21 @@ class HybridPolicy:
 
     def board_replaced(self, reason: str = "board") -> None:
         """A new level is a fresh chance for the cheap agent: reset the clock and
-        hand control back, because the next level's opening may well be short."""
+        hand control back, because the next level's opening may well be short.
+
+        A RESET is not a new level. After GAME_OVER the engine hands back the same
+        board, so returning control to the one-step policy replays an opening that
+        has already failed here -- and the switch costs 25 more actions to earn
+        back. sp80 resets 8 times and spends 168 of its 251 actions in the click
+        policy, over 12 candidates none of which is a key. So the switch is kept
+        across a reset and released only on a genuinely new board.
+
+        ARC_KEEP_SWITCH=0 restores the old behaviour for the ablation.
+        """
         self.since_level = 0
         self.dead_run = 0
-        self.switched = False
+        if reason != "reset" or os.environ.get("ARC_KEEP_SWITCH", "1") != "1":
+            self.switched = False
         self._prev_grid = None
         self.policy.board_replaced(reason)
         self.planner.board_replaced(reason)

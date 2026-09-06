@@ -144,8 +144,14 @@ def main():
         for name, games in (("KEYBOARD", KEYBOARD), ("CLICK", CLICK)):
             d = [group_score(runs[s], games) - group_score(base[s], games) for s in shared]
             m, sd, se = band(d)
-            if se == 0:
+            if len(d) < 2:
                 verdict = "one seed -- not a result"
+            elif se == 0:
+                # Every seed moved by the same amount, which at n>=2 is a real and
+                # usually deterministic finding -- not a missing sample. Reporting
+                # it as "one seed" hid a delta of exactly zero across 8 seeds.
+                verdict = ("IDENTICAL" if m == 0 else
+                           "MOVED" if m > 0 else "REGRESSED")
             elif abs(m) < 2 * se:
                 verdict = "inside the noise"
             else:
