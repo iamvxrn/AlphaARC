@@ -400,8 +400,7 @@ class RunPlanner:
         # Arrived: the avatar covers the destination, or is within one step of it.
         step = min((abs(dr) + abs(dc) for dr, dc in self.moves.values()), default=1)
         if here <= step / 2:
-            self.crossed_off.add(self._dest)
-            self._dest = None
+            self._release("arrived")
             return None
 
         # Search, not gradient. The destination is expressed in ANCHOR space so
@@ -411,8 +410,7 @@ class RunPlanner:
         if best is None:
             # Nothing reachable through what we have learned: cross it off rather
             # than stand still, and let the sweep move to the next candidate.
-            self.crossed_off.add(self._dest)
-            self._dest = None
+            self._release("unreachable")
             return None
         self._routed_from = (anchor, best)
 
@@ -423,10 +421,22 @@ class RunPlanner:
             # Every known direction spent without getting closer: greedy steering
             # has nothing more to offer here, so stop paying for it.
             if self._dest_stale >= len(self.moves):
-                self.crossed_off.add(self._dest)
-                self._dest = None
+                self._release("stale")
                 return None
         return best
+
+
+    def _release(self, why: str) -> None:
+        """Cross the current destination off and record WHY. Behaviour-neutral
+        apart from the trace line: every caller already did both statements."""
+        if self._trace_path:
+            with open(self._trace_path, "a") as fh:
+                fh.write(json.dumps({"event": "release", "why": why,
+                                     "dest": self._dest,
+                                     "stale": self._dest_stale,
+                                     "moves": len(self.moves or ())}) + "\n")
+        self.crossed_off.add(self._dest)
+        self._dest = None
 
     @staticmethod
     def _as_choice(target):
