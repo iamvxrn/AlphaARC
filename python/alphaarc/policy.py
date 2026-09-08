@@ -147,6 +147,35 @@ class Policy:
         b = self.state_bucket
         return tuple(int(v) // b for v in levels)
 
+    def _freeze_clock(self, grid: Grid, bg: int) -> Grid:
+        """Overwrite the move-budget strip with the background, keeping the shape.
+
+        The credit signal is measured over the raw grid, so on a board that draws
+        a ticking budget strip every click is credited with the clock. Measured on
+        su15: 125 of 149 credited clicks carry an effect of exactly -2.0, which is
+        the strip, not the game.
+
+        Rejected #3 CROPPED the strip and measured worse, for a reason that is
+        offline and seed-free: removing a row changes the grid's dimensions and
+        the primitives measure geometry, so Reflect jumped 16 -> 84. Freezing
+        keeps every dimension and only removes the tick, so that reason does not
+        apply here. Whether it helps is a separate question.
+
+        ARC_FREEZE_CLOCK=1 to enable; off by default until measured.
+        """
+        rows, cols = self.clock.strip()
+        if not rows and not cols:
+            return grid
+        out = [row[:] for row in grid]
+        for r in rows:
+            if 0 <= r < len(out):
+                out[r] = [bg] * len(out[r])
+        for c in cols:
+            for row in out:
+                if 0 <= c < len(row):
+                    row[c] = bg
+        return out
+
     @staticmethod
     def _levels(grid: Grid, bg: int) -> List[float]:
         """Savings of EVERY primitive, not just the winner.
@@ -216,7 +245,9 @@ class Policy:
             self._state_key = hash(tuple(
                 tuple(v for c, v in enumerate(row) if c not in _cols)
                 for r, row in enumerate(grid) if r not in _rows))
-        level = self._levels(grid, bg)
+        level = self._levels(
+            self._freeze_clock(grid, bg)
+            if os.environ.get("ARC_FREEZE_CLOCK", "0") == "1" else grid, bg)
         self._credit_last(grid, bg, level)
         self._prev_levels = level
 
