@@ -84,6 +84,7 @@ class Policy:
         # A one-step world model: what the compression levels BECAME, last time this
         # token was used from a board with these levels. Keyed by (token, levels).
         self.succ: Dict[Tuple[str, Tuple[float, ...]], List[float]] = {}
+        self._pred_for: Dict[str, Tuple[float, bool]] = {}
         self.tries: Dict[str, int] = {}          # optimism for the under-tried
         self.dead: Dict[str, float] = {}         # decaying "did nothing" count (inhibition of return)
         self._prev_grid: Optional[Grid] = None
@@ -229,6 +230,13 @@ class Policy:
             self.dead[k] *= self.dead_decay
             if self.dead[k] < 0.05:
                 del self.dead[k]
+        # Did the prediction hold? Behaviour-neutral: recorded, never acted on.
+        _p, _had = self._pred_for.get(self._last_token, (None, False))
+        if _had and _p is not None:
+            self._emit({"event": "predcheck", "tok": self._last_token,
+                        "predicted": _p, "actual": d,
+                        "hit": (abs(_p - d) < 1e-9),
+                        "sign_hit": ((_p > 0) == (d > 0)) or (_p == 0 and d == 0)})
         self._emit({"tok": self._last_token, "d": d,
                     "s": getattr(self, "_state_key", None),
                     "ema": self.drive_gain[self._last_token],
@@ -293,6 +301,11 @@ class Policy:
             # this is the information-gain criterion the MBRL plan asks for,
             # applied to the model we already have.
             known_dead = nxt is not None and predicted == 0.0
+            # Remember what we expected, so the outcome can be checked against it.
+            # The loop predicts and acts and records, and has never compared the
+            # three -- `predicted` appears only here, never at credit time -- so the
+            # agent has no notion of having been wrong. Trace only; nothing reads it.
+            self._pred_for[tok] = (predicted, nxt is not None)
             guess = 0.0 if known_dead else (
                 self.residual_bonus / (i + 1)        # larger clusters rank higher
                 + 0.05 / (self.tries.get(tok, 0) + 1)  # optimism for the under-tried
