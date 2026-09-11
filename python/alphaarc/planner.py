@@ -229,7 +229,14 @@ class RunPlanner:
         self._dest_best = None
         self._dest_stale = 0
         self.crossed_off.clear()
-        self.blocked.clear()          # walls are a property of THIS board
+        # Walls are a property of THIS BOARD -- but a reset hands back the SAME
+        # level, where they are unchanged; only a level clear is a new board.
+        # Measured: sp80 presses k1 from (12,12) 126 times over 18 plays and it
+        # never once moves, which is 7 relearns per play against 8 resets per
+        # play. Each death forgets the wall it had just learned.
+        # ARC_KEEP_WALLS=1 keeps them across a reset; off by default until measured.
+        if reason != "reset" or os.environ.get("ARC_KEEP_WALLS", "0") != "1":
+            self.blocked.clear()
         self._routed_from = None
 
     reset_episode = board_replaced
