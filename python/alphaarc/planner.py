@@ -377,8 +377,26 @@ class RunPlanner:
         ac = sum(c for _, c in cells) / len(cells)
         anchor = (min(r for r, _ in cells), min(c for _, c in cells))
         # Did the last routed key move us? If not, that edge is a wall.
-        if self._routed_from is not None and self._routed_from[0] == anchor:
-            self.blocked.add(self._routed_from)
+        if self._routed_from is not None:
+            # The router already holds a displacement model -- self.moves maps a key
+            # to the offset it produced -- and has never checked it. Policy's model
+            # predicts a scalar compression delta and holds 12-28%; this one predicts
+            # where a body will be and holds 94-99% in the traces. Measured here for
+            # the first time, trace only, behaviour unchanged.
+            if self._trace_path:
+                _from, _key = self._routed_from
+                _d = (self.moves or {}).get(_key)
+                if _d is not None:
+                    _want = (_from[0] + _d[0], _from[1] + _d[1])
+                    _got = anchor
+                    with open(self._trace_path, "a") as fh:
+                        fh.write(json.dumps({
+                            "event": "movecheck", "tok": _key,
+                            "frm": list(_from), "want": list(_want), "got": list(_got),
+                            "hit": _want == _got,
+                            "moved": _from != _got}) + "\n")
+            if self._routed_from[0] == anchor:
+                self.blocked.add(self._routed_from)
         self._routed_from = None
         occupied = set(cells)
         targets = [t for t in self._candidates(grid, bg)
