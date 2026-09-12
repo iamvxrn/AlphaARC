@@ -301,7 +301,7 @@ class RunPlanner:
             if got:
                 self.avatar, self.avatar_shape = got[0], got[1]
                 self.moves[self._run_token] = (got[2], got[3])
-            elif (os.environ.get("ARC_TWO_BODIES", "0") == "1"
+            elif (os.environ.get("ARC_TWO_BODIES", "1") == "1"
                   and self.avatar is not None):
                 # TWO BODIES, moving DIFFERENTLY. m0r0's horizontal key sends one
                 # marker (0,-5) and the other (0,+5), so their union is not a
@@ -410,7 +410,7 @@ class RunPlanner:
         # ARC_TWO_BODIES=1; off by default until measured.
         pair = None
         if (self.avatar is not None
-                and os.environ.get("ARC_TWO_BODIES", "0") == "1"):
+                and os.environ.get("ARC_TWO_BODIES", "1") == "1"):
             comps = [cl for col, cl in _components(grid, bg) if col == self.avatar]
             if len(comps) == 2:
                 comps.sort(key=lambda cl: (min(r for r, _ in cl), min(c for _, c in cl)))
