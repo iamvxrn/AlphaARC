@@ -234,8 +234,12 @@ class RunPlanner:
         # Measured: sp80 presses k1 from (12,12) 126 times over 18 plays and it
         # never once moves, which is 7 relearns per play against 8 resets per
         # play. Each death forgets the wall it had just learned.
-        # ARC_KEEP_WALLS=1 keeps them across a reset; off by default until measured.
-        if reason != "reset" or os.environ.get("ARC_KEEP_WALLS", "0") != "1":
+        # ARC_KEEP_WALLS=0 restores the forgetting, for the ablation. ON by default:
+        # measured at 16 paired seeds, repeats=1, aggregate +0.0002 +/- 0.0003 -- no
+        # score effect -- while sp80 misses fall 80 -> 36 and its worst repeated
+        # point goes 21 hits to 3. Kept under the README rule: it fixes a code/claim
+        # inconsistency, adds no tunable, and its mean is not negative.
+        if reason != "reset" or os.environ.get("ARC_KEEP_WALLS", "1") != "1":
             self.blocked.clear()
         self._routed_from = None
 
