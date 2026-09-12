@@ -301,6 +301,28 @@ class RunPlanner:
             if got:
                 self.avatar, self.avatar_shape = got[0], got[1]
                 self.moves[self._run_token] = (got[2], got[3])
+            elif (os.environ.get("ARC_TWO_BODIES", "0") == "1"
+                  and self.avatar is not None):
+                # TWO BODIES, moving DIFFERENTLY. m0r0's horizontal key sends one
+                # marker (0,-5) and the other (0,+5), so their union is not a
+                # translation and rigid_body records nothing -- which is why only
+                # the two VERTICAL keys are ever learned there, and why the router
+                # was called 200 times and returned a route zero times: it cannot
+                # reach a body that is offset horizontally using vertical moves
+                # alone. Per body it is an ordinary translation, so learn it from
+                # the first body and let the pair logic below aim at the second.
+                _b = [cl for col, cl in _components(self._prev_grid, self._bg)
+                      if col == self.avatar]
+                _a = [cl for col, cl in _components(grid, self._bg)
+                      if col == self.avatar]
+                if len(_b) == 2 and len(_a) == 2:
+                    key = lambda cl: (min(r for r, _ in cl), min(c for _, c in cl))
+                    _b.sort(key=key); _a.sort(key=key)
+                    if len(_b[0]) == len(_a[0]):
+                        d = (key(_a[0])[0] - key(_b[0])[0],
+                             key(_a[0])[1] - key(_b[0])[1])
+                        if d != (0, 0):
+                            self.moves[self._run_token] = d
 
     # ------------------------------------------------------------- deciding
 
@@ -380,7 +402,20 @@ class RunPlanner:
         """
         if self.avatar is None or len(self.moves) < 2:
             return None
-        cells = self._avatar_cells(grid, bg)
+        # TWO BODIES. m0r0 puts one marker in each mirrored half and the task is to
+        # bring them together, so the goal is a RELATION between two objects and not
+        # a place -- which is why every destination detector, enclosure included,
+        # returned zero candidates there. Steer the first body at the second and let
+        # the existing offset map, BFS and wall memory do the rest.
+        # ARC_TWO_BODIES=1; off by default until measured.
+        pair = None
+        if (self.avatar is not None
+                and os.environ.get("ARC_TWO_BODIES", "0") == "1"):
+            comps = [cl for col, cl in _components(grid, bg) if col == self.avatar]
+            if len(comps) == 2:
+                comps.sort(key=lambda cl: (min(r for r, _ in cl), min(c for _, c in cl)))
+                pair = comps
+        cells = pair[0] if pair is not None else self._avatar_cells(grid, bg)
         if not cells:
             return None
         self._h, self._w = len(grid), len(grid[0]) if grid else 1
@@ -413,7 +448,13 @@ class RunPlanner:
         targets = [t for t in self._candidates(grid, bg)
                    if (t.y, t.x) not in occupied and (t.y, t.x) not in self.crossed_off]
 
-        if self._dest is not None and self._dest in self.crossed_off:
+        if pair is not None:
+            other = pair[1]
+            want = (sum(c[0] for c in other) // len(other),
+                    sum(c[1] for c in other) // len(other))
+            if want != self._dest:
+                self._dest, self._dest_best, self._dest_stale = want, None, 0
+        if self._dest is not None and self._dest in self.crossed_off and pair is None:
             self._dest = None
         if self._dest is None:
             if not targets:
